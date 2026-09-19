@@ -58,7 +58,7 @@ prod の作業は**導入団体のアカウント・導入団体の PC・導入�
 | アカウント | GitHub・AWS・Cloudflare・IdP・Claude Code とも導入団体名義（費用も導入団体）。個人のアカウントでログインしない |
 | git の名義 | `git config user.name / user.email` を導入団体のアカウントに（コミットの名義が作業の帰属の記録になる） |
 | OS | スクリプトは bash＋macOS／Linux 前提。Windows なら WSL2（Ubuntu）の中にクローンして作業する |
-| ツール | 冒頭「前提」のとおり（terraform・awscli・session-manager-plugin・cloudflared）＋Python 3.12 環境（依存はロックファイルから＝RUNBOOK §7）。`release.sh` はこの環境を PATH の先頭に通して実行 |
+| ツール | 冒頭「前提」のとおり（terraform・awscli・session-manager-plugin・cloudflared）＋Python 3.12 環境（依存はロックファイルから＝RUNBOOK §7。Mac は §7 ② の変種＝`lock_mac_variant.py`）。配布は開発用と分けたクローンから（RUNBOOK §5「配布用のクローンを開発用と分ける」）。`release.sh` はこの環境を PATH の先頭に通して実行 |
 | `.mcp.json` | `.mcp.json.example` を複製して `<PYTHON>`・`<REPO>` を自分の環境のパスに（ローカル stdio で使う場合のみ・git 外） |
 | 最初に読むもの | ルート [CLAUDE.md](../CLAUDE.md)（記憶ゼロのセッションの入口・運用地雷）→ 本書 |
 

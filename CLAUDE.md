@@ -41,6 +41,7 @@ bash deploy/scripts/release.sh <env>                # ゲート 9 本→S3 配�
 ```
 
 - ★ `release.sh` は**依存の入った Python 環境を PATH の先頭に通して**実行する（素の `python3` だと llama_index 不在で即 FAIL）。
+- ★ **配布は開発用のフォルダからではなく、リポジトリをクローンした別フォルダから**（tar は作業フォルダをそのまま固める＝未コミットの変更が箱に入る。手順と `qdrant-dev` のマウント元の地雷＝RUNBOOK §5「配布用のクローンを開発用と分ける」）。
 - ローカル stdio で使うなら `.mcp.json.example`（`stats/` にも同名）を `.mcp.json` に複製し、`<PYTHON>`・`<REPO>` を自分の環境のパスに書き換える（`.mcp.json` は git 外）。
 - データ（PDF・索引・統計値）は git 外＝S3 が原本。クローンしただけではゲートは回らない（RUNBOOK §3 データ復元）。e-Stat の appId は各自が取得して `stats/.env`（git 外）か環境変数へ。
 

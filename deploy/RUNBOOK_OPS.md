@@ -116,14 +116,37 @@ python -m stats.ops.freshness
 python -m stats.ops.refresh --dataset <コード名>   # ゲート 3 本まで通る・自動コミットしない
 ```
 
+### 配布用のクローンを開発用と分ける（推奨・2026-09-19）
+
+`release.sh` が箱へ送るコードは **git の中身ではなく、作業フォルダをそのまま固めた tar** である（`upload_to_s3.sh`）。
+開発しているフォルダから配布すると、コミットしていない変更や作業中のファイルも箱に入る。配布は**リポジトリをクローンした別フォルダ**から行う
+＝箱に入るものが、リポジトリのコミットと必ず一致する（`VERSION` の刻印にも `-dirty` が付かない）。1 人で開発と運用を兼ねる場合も、フォルダを分ける。
+
+| | 開発用のフォルダ | 配布用のクローン |
+|---|---|---|
+| やること | コード・評価問・文書 → ゲート → コミット → push | `git pull` → 新着取込（`update.sh`・`stats.ops.refresh`）→ `release.sh` |
+| コミットするもの | コード・文書・評価問 | **データ更新だけ**（`catalog.csv`・`stats/data/registry/`・評価セットとアンカー記載）。コードはここで編集しない |
+| git 外で置くもの | ゲート用のデータの写し（任意） | `deploy/env/<env>.env`・`recommendations/.env`・`stats/.env`・データの原本（`recommendations/data/{pdfs,bm25,qdrant}`・`stats/data/{values,cache}`）・terraform state（terraform を触るとき） |
+| Python 環境 | 任意 | 下表のとおりロックから作る（環境は配布用のクローンを指す editable install にする） |
+
+配布の前に確認する 3 点：
+```bash
+git status --short && git log origin/main..HEAD --oneline      # どちらも空＝リポジトリのコミットと一致
+docker inspect qdrant-dev --format '{{json .HostConfig.Binds}}'  # マウント元が「配布用のクローン」の recommendations/data/qdrant であること
+curl -s localhost:6333/collections/policy_claims_v7 | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['points_count'])"
+```
+- ★ **`qdrant-dev` のマウント元は配布用のクローンに置く**：`release.sh` は `qdrant-dev` を止めて `recommendations/data/qdrant` を S3 へ**ミラー（--delete）**する。
+  マウント元が別のフォルダ・空・古いと、その内容で箱の索引を上書きする。開発用のフォルダのゲートは同じ `qdrant-dev` に HTTP（:6333）でつながるので、Qdrant の実体は 1 つでよい。
+- Python の editable install は**最後に `pip install -e` したフォルダ**を指す。リポジトリ root 以外を cwd にして動くスクリプトは、その向き先のコードを import する＝フォルダごとに env を分ける。
+
 ### 手元の製作環境（初回のみ・運用者を引き継ぐ人が最初に整える）
 
 | 要素 | 内容 |
 |---|---|
-| Python | conda env `polyarchy`（`pip install -e ".[recommendations,stats]"`・ルート CLAUDE.md §4）。update.sh/release.sh/triage.sh は `conda activate polyarchy` 済みの shell で実行 |
+| Python | 配布用の env は**ロックファイルから**作る（§7 ②＝Mac は `lock_mac_variant.py` の変種を `--require-hashes` で入れ、本体は `-e . --no-deps`）＝箱と同じ版でゲートを回す。開発だけなら `pip install -e ".[recommendations,stats]"`（ルート CLAUDE.md §4）でよい。update.sh/release.sh/triage.sh はその env を PATH の先頭に通した shell で実行 |
 | 検索 DB | Docker の `qdrant-dev`（ローカル :6333・`recommendations/data/qdrant` を S3 `data/qdrant/` から同期して起動）。release.sh は起動を確認し、upload 中だけ止める |
 | モデル | ruri／リランカーは初回実行時に HF から取得（数 GB）。オフラインでは不可 |
-| CLI | `aws`（プロファイル＝`deploy/env/<env>.env` の `AWS_PROFILE`）・`terraform`（バケット名の取得元＝環境変数 `BUCKET` があれば優先、無ければ `deploy/terraform/` の state）・`git`（タグ込み clone＝`git describe` が版を刻む） |
+| CLI | `aws`（プロファイル＝`deploy/env/<env>.env` の `AWS_PROFILE`）・`terraform`（バケット名の取得元＝環境変数 `BUCKET` があれば優先＝`deploy/env/<env>.env` に書いておける。無ければ `deploy/terraform/` の state）・`git`（タグ込み clone＝`git describe` が版を刻む） |
 | git 外の設定 | `deploy/env/<env>.env`（例は `*.env.example`）・`recommendations/.env`（`ANTHROPIC_API_KEY`＝分野タグ判定／`OPENAI_API_KEY`＝チャンク境界検出）・`stats/.env`（`ESTAT_APP_ID`）・Keychain `cloudflare-api-token`（guard 用）・`~/.cloudflared/<UUID>.json` |
 | 権限 | 定型更新＝[deploy/iam-data-operator-policy.json](iam-data-operator-policy.json)（S3 のみ）。障害対応＝SSM・EC2・CloudWatch Logs の読み書き（PROD_MIGRATION §1.2） |
 | git 運用 | update.sh／refresh は `catalog.csv`・registry の差分を表示して止まる＝**レビューしてコミット**（PR → PdM の承認でマージ＝運用設計 §0。1 人運用のあいだは本人がレビュー）。評価セットを足したらアンカー記載も同一コミット |
