@@ -198,7 +198,8 @@ sudo -u polyarchy -H bash -lc '
   export PYTHONPATH=/opt/polyarchy/polyarchy HF_HOME=/opt/polyarchy/models
   export COLLECTION_NAME=policy_claims_v7 VECTOR_BACKEND=qdrant TOKENIZERS_PARALLELISM=false
   export POLYARCHY_QUERY_LOG=/tmp/gate.jsonl      # 燃料を汚さない
-  # eval のガード用に OPENAI/ANTHROPIC を SSM から（検索は ruri ローカルで OpenAI 実呼び出しは無し）。
+  # 検索ゲートは API キー不要（検索は ruri ローカル＝2026-09-19 にキーのガードを外した）。下の 2 行は、SSM にキーを登録している
+  # 環境で回答まで含む評価（eval/full）も回す場合だけ要る＝無ければ空のままでよい。
   # ※HF_HUB_OFFLINE は付けない：ruri(SentenceTransformer) が完全オフラインだと config 解決に失敗する
   #   （重みはprefetch済で大半キャッシュ利用・箱は egress あり）。ゲートの実行は `scripts/release.sh` が自動化済。
   export OPENAI_API_KEY="$(aws ssm get-parameter --region ap-northeast-1 --with-decryption --name /polyarchy/staging/openai_api_key --query Parameter.Value --output text 2>/dev/null || true)"

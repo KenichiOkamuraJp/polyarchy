@@ -14,6 +14,7 @@ from recommendations.core.config import (
     COLLECTION_NAME,
     HYBRID_SEARCH,
     OPENAI_API_KEY,
+    PRODUCTION_EMBEDDING,
     PRODUCTION_RERANKER,
 )
 from recommendations.core.orgs import ORG_DISPLAY_ORDER
@@ -30,8 +31,10 @@ def run_retrieval_only(eval_set: list[dict], top_k: int) -> None:
     """
     from collections import defaultdict
 
-    if not OPENAI_API_KEY:
-        sys.exit("ERROR: OPENAI_API_KEY が .env に設定されていません")
+    # 本番の埋め込みはローカル（ruri）＝キー不要。OpenAI の埋め込みを本番に選んだ構成のときだけ要求する
+    # （キーを使わないモードでキーを必須にしない＝クローン直後でもゲートが回る）。
+    if PRODUCTION_EMBEDDING.startswith("openai") and not OPENAI_API_KEY:
+        sys.exit("ERROR: OPENAI_API_KEY が .env に設定されていません（PRODUCTION_EMBEDDING が OpenAI の埋め込み）")
 
     from recommendations.core.search_api import PolicySearchService
     svc = PolicySearchService(default_top_k=top_k, text_chars=0)

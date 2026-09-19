@@ -25,6 +25,7 @@ pip install -e ".[recommendations,stats]"   # recommendations だけなら ".[re
 ```bash
 cp .env.example .env
 # .env を編集して OPENAI_API_KEY と ANTHROPIC_API_KEY を入れる
+# （キーが要るのは取込と回答まで含む評価だけ。MCP サーバと検索ゲート 4 本はキーなしで動く）
 ```
 
 ## 実行
