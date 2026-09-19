@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>recommendations（政策主張DB） — Polyarchy</title>
+<style>:root{--fg:#1e1e1e;--bg:#fff;--muted:#666;--line:#ddd;--accent:#1f4e79}
+@media(prefers-color-scheme:dark){:root{--fg:#e8e8e8;--bg:#151515;--muted:#aaa;--line:#333;--accent:#8fb8e8}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.7}
+main{max-width:820px;margin:0 auto;padding:2rem 1.2rem}
+h1{font-size:1.6rem;border-bottom:1px solid var(--line);padding-bottom:.4rem}
+h2{font-size:1.2rem;margin-top:2rem}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
+code{background:rgba(127,127,127,.15);padding:.1rem .3rem;border-radius:3px}
+pre{background:rgba(127,127,127,.12);padding:.8rem;overflow-x:auto}
+footer{max-width:820px;margin:2rem auto;padding:1rem 1.2rem;color:var(--muted);border-top:1px solid var(--line);font-size:.9rem}
+nav a{margin-right:1rem}
+a{color:var(--accent)}
+.note{border-left:4px solid var(--accent);padding:.4rem .8rem;background:rgba(127,127,127,.08)}
+</style></head><body>
+<main>
+<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
+
+<h1>recommendations — 政策主張DB（Polyarchy）</h1>
+<p>更新日：2026-08-28</p>
+<p>経団連・経済同友会・日本商工会議所・連合・政府（骨太方針・規制改革推進会議答申・財政制度等審議会建議）の<strong>公表資料</strong>
+約 3,700 文書（約 187,000 チャンク）を、日本語特化のハイブリッド検索（BM25 語彙検索＋意味検索 → 融合 → 日本語リランカー）で
+横断検索するリモート MCP サーバです。サーバが返すのは<strong>検索結果だけ</strong>（本文抜粋・団体・文書名・発行日・原文 URL）で、
+文章の生成・要約は利用者ご自身の Claude が行います（サーバ側で生成 AI は呼びません）。</p>
+<p class="note">検索対象はすべて各団体・政府のサイトで公表されている資料です。非公開資料は検索経路に含まれず、構造的に返りません
+（検索層は「公開」に固定され、層を切り替える引数は存在しません）。</p>
+
+<h2>接続</h2>
+<ol>
+<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy recommendations</code>、URL は利用者ごとに個別にご案内します（当面は招待制。利用希望は下記連絡先へ）。</li>
+<li>「Connect」→ ブラウザで開くログイン画面でサインイン（初回はアカウント登録）→ 接続できたらチャットの「＋」→ Connectors で有効化。</li>
+<li>Claude Code：<code>claude mcp add --transport http polyarchy-recommendations &lt;URL&gt;</code>。</li>
+</ol>
+<p>Anthropic のコネクタ・ディレクトリへの掲載は準備中です（掲載後は URL を本ページに記載します）。</p>
+
+<h2>ツール（すべて読み取り専用）</h2>
+<table>
+<tr><th>ツール</th><th>引数</th><th>返すもの</th><th>返さないもの</th></tr>
+<tr><td><code>search_policy_docs</code></td>
+<td><code>query</code>（検索語・日本語）／<code>orgs</code>（団体コードの配列・省略で全団体）／<code>since</code>・<code>until</code>（YYYYMMDD の整数）／<code>field</code>（分野の部分一致。照合先は全文書に付与済みの 21 分類）／<code>top_k</code>（既定 5・上限 20）／<code>diversify</code>（既定 true＝同一文書は最良の 1 件だけ。特定文書を深掘りするときは false）</td>
+<td>関連度順のチャンク：<code>rank</code>・<code>score</code>・<code>org</code>・<code>org_type</code>・<code>title</code>・<code>date</code>・<code>doc_type</code>（提言／意見／答申／建議／方針／要望／報告書／資料）・<code>policy_tags</code>（分野タグ 21 分類・最大 3）・<code>field_tags</code>（発行元の分類語）・<code>page</code>・<code>source_url</code>（原文 URL）・<code>text</code>（本文抜粋）・<code>same_doc_hits</code>。<code>applied_filter</code> に適用した絞り込みと top_k の制限を明示</td>
+<td>非公開資料・文書全文（抜粋単位）・生成文や要約。該当が無ければ <code>count=0</code>（空の結果）</td></tr>
+<tr><td><code>sweep_policy_docs</code></td>
+<td><code>query</code>／<code>mode</code>（<code>auto</code> 既定＝設問の形から自動選択・<code>coverage</code>＝団体別の網羅走査・<code>aggregation</code>＝全団体走査で「最初に／唯一」型を確定または棄却根拠を提示）／<code>orgs</code>（走査範囲の限定・省略で全団体）／<code>per_org</code>（団体あたり取得数・既定 3・上限 5）／<code>since</code>・<code>until</code>・<code>field</code></td>
+<td>団体横断の走査結果を 1 コールで：<code>strategy</code>（実際に使った戦略）・<code>org_coverage</code>（団体別の該当有無・最良スコア。aggregation では最古言及日と該当文書も）・<code>decision</code>／<code>rationale</code>（aggregation のみ＝団体を確定できるか、できない根拠の日本語文）・<code>results</code>（団体ごとの代表チャンクの合流・最大 15 件）</td>
+<td>同左。該当の無い団体は <code>org_coverage</code> に <code>covered=false</code> で明示（「主張が存在しない」ことの証明ではありません）</td></tr>
+<tr><td><code>list_orgs</code></td><td>なし</td><td>収録団体のコードと名称（<code>keidanren</code>＝経団連・<code>doyukai</code>＝経済同友会・<code>nissho</code>＝日本商工会議所・<code>rengo</code>＝連合・<code>gov</code>＝政府）</td><td>文書本文</td></tr>
+</table>
+
+<h2>収録範囲（2026-09 時点）</h2>
+<table>
+<tr><th>発行体</th><th>文書数</th><th>主な文書種別</th></tr>
+<tr><td>日本経済団体連合会（経団連）</td><td>約 2,680</td><td>提言・意見・報告書・アンケート結果等の資料</td></tr>
+<tr><td>経済同友会</td><td>約 950</td><td>提言・意見・報告書</td></tr>
+<tr><td>日本商工会議所</td><td>約 60</td><td>要望・意見</td></tr>
+<tr><td>日本労働組合総連合会（連合）</td><td>約 35</td><td>政策・制度 要求と提言、意見</td></tr>
+<tr><td>政府</td><td>約 30</td><td>経済財政運営と改革の基本方針（骨太方針）・規制改革推進会議 答申・財政制度等審議会 建議</td></tr>
+</table>
+<ul>
+<li>発行日：1990 年〜現在（団体により収録の厚みは異なります。新規公表分は随時追加）。</li>
+<li>分野タグ：21 分類（産業政策・成長戦略／通商・国際経済／労働・雇用／行政改革・規制改革／エネルギー・環境／企業経営・ガバナンス／マクロ経済・経済財政運営／税制・財政／デジタル／人材・教育／イノベーション・スタートアップ／社会保障／外交・安全保障／地域経済／政治・統治機構／国土・住宅・交通・防災／金融・資本市場／中小企業／多様性・人権／こども・子育て・人口／農林水産）。<code>field</code> 引数はこの 21 分類（全文書に付与済み・結果の <code>policy_tags</code>）への部分一致です。</li>
+<li><strong>帰属の注意</strong>：<code>doc_type=資料</code> の文書（会員アンケート結果・政党への公開質問状の回答・政策比較 等）は団体自身の提言ではなく転載・調査物です。発言主体は本文と <code>title</code> で確認してください。</li>
+</ul>
+
+<h2>使ってみる（プロンプト例）</h2>
+<ol>
+<li>「賃上げについて、経団連と連合の直近の提言の違いを出典つきで整理して」</li>
+<li>「骨太方針 2025 でスタートアップ支援はどう書かれている？ 該当箇所と原文リンクを示して」</li>
+<li>「各経済団体はインボイス制度をどう評価しているか、団体ごとに並べて」</li>
+<li>「経済同友会が『経済安全保障』に言及し始めたのはいつ頃か、最古の文書を date 順に確認して」</li>
+<li>「日本商工会議所の 2024 年以降の要望で、中小企業の価格転嫁に関する記述を抜き出して」</li>
+</ol>
+<p>「各団体はどう述べているか」のような横断質問は、団体ごとに検索を分ける（<code>orgs</code> を 1 団体ずつ指定する）と偏りなく集まります。
+「最初に提言した団体は」のような最上級は、団体ごとの最古の言及日を突き合わせる必要があり、単一の検索結果からは確定できないことがあります。
+該当が無ければ空の結果が返ります（検索結果を作りません）。</p>
+
+<h2>結果の見方</h2>
+<ul>
+<li><code>text</code> は原文のチャンク（抜粋）です。前後の文脈が必要なときは <code>source_url</code>（原文 PDF／ページ）で確認してください。<code>page</code> は PDF 内のページ番号です。</li>
+<li><code>score</code> はリランカーの関連度（検索間で比較できる絶対値ではありません）。<code>same_doc_hits</code> は同一文書の他のヒット数です。</li>
+<li>1 回の検索で返るのは既定 5 件・最大 20 件です（超過指定は 20 に制限し <code>applied_filter</code> に明示）。絞り込みや言い換えで複数回検索してください。</li>
+<li>文書の内容・正確性は各発行体に帰属します。引用の際は原典で確認してください（<a href="/terms">利用規約</a>）。</li>
+</ul>
+
+<h2>収集する情報</h2>
+<p>ツール名・引数（検索語・団体・期間・分野・件数）・該当件数・上位ヒットの文書名・時刻・利用者のメールアドレスのハッシュ値（ログインに基づく）を 30 日間記録し、
+収録文書の拡充と検索品質の改善（評価セットの整備）に使います。会話本文は取得しません。詳細は<a href="/privacy">プライバシーポリシー</a>。</p>
+
+<h2>制限</h2>
+<ul>
+<li>検索結果は 1 回 20 件まで（既定 5 件）・本文はチャンク単位の抜粋。文書全文の取得ツールはありません。</li>
+<li><code>field</code> は分野タグ 21 分類の語に部分一致する語で指定してください（どの分類にも当たらない語は <code>applied_filter</code> と <code>hint</code> で知らせます）。日付のない文書は <code>since</code>／<code>until</code> で除外されます。</li>
+<li>収録は各団体・政府の公表資料のうち自動収集できた PDF／HTML が対象で、網羅を保証しません。</li>
+<li>レート制限があります（通常の対話利用では到達しません）。</li>
+</ul>
+
+<h2>サポート</h2>
+<p>kenichi.okamura.jp@gmail.com — 接続できない・結果が原文と違う・収録の希望・脆弱性の報告。</p>
+</main>
+<footer>
+運営者：岡村 健一（個人運営）／サポート・脆弱性報告の連絡先：kenichi.okamura.jp@gmail.com<br>
+Polyarchy は Anthropic 社の製品ではありません。Claude は Anthropic PBC の商標です。
+</footer></body></html>

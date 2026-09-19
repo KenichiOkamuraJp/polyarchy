@@ -1,0 +1,15 @@
+# 週次利用レポート 段2（運用設計 §4.2）：箱で生成し S3 ops/report/ へ保存。
+# 集計は数字のみ（検索語は載せない＝プライバシー整合）。対＝polyarchy-usagereport.timer。設置は bootstrap ⑪。
+# 配信＝S3 保存まで（Access 保護ホストでの配信は、外部提示が必要になった時に stats ホストへ静的パスを
+# 追加して行う＝2026-08-28 の A1 適用時の決定。RUNBOOK_OPS.md 参照）。
+[Unit]
+Description=Polyarchy weekly usage report (generate -> S3 ops/report/)
+
+[Service]
+Type=oneshot
+User=polyarchy
+Group=polyarchy
+EnvironmentFile=/etc/polyarchy/deploy.env
+WorkingDirectory=/opt/polyarchy/polyarchy
+Environment=PYTHONPATH=/opt/polyarchy/polyarchy
+ExecStart=/usr/local/bin/polyarchy-usage-report

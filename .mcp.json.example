@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "polyarchy-policy-search": {
+      "command": "<PYTHON>",
+      "args": [
+        "-m",
+        "recommendations.serving.mcp_server"
+      ],
+      "cwd": "<REPO>",
+      "env": {
+        "PYTHONPATH": "<REPO>",
+        "COLLECTION_NAME": "policy_claims_v7",
+        "VECTOR_BACKEND": "qdrant"
+      }
+    },
+    "polyarchy-stats": {
+      "command": "<PYTHON>",
+      "args": [
+        "-m",
+        "stats.serving.mcp_server"
+      ],
+      "cwd": "<REPO>",
+      "env": {
+        "PYTHONPATH": "<REPO>"
+      }
+    }
+  }
+}

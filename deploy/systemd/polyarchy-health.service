@@ -1,0 +1,10 @@
+# 生き死に判定（運用設計 §1.1）：毎分 /healthz を localhost で叩き CloudWatch へ 1/0 を送る。
+# メトリクスは CW agent でなくこのスクリプトが送る（namespace=polyarchy・アラーム定義が単純になる）。
+# 対＝polyarchy-health.timer。設置は bootstrap ⑪。
+[Unit]
+Description=Polyarchy health metric (curl /healthz -> CloudWatch put-metric-data)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/polyarchy/deploy.env
+ExecStart=/usr/local/bin/polyarchy-health-metric

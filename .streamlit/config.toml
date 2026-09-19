@@ -1,0 +1,12 @@
+# Phase 8 参照UI（app.py）用の Streamlit 設定。
+[server]
+# ホットリロードのファイル監視を無効化する。
+# 有効だと Streamlit が transformers 配下の全モジュールを走査し、画像処理系
+# （image_processing_*_fast）が torchvision 未導入で ModuleNotFoundError を大量に吐く。
+# 本RAGは画像を使わず torchvision も不要なので、監視自体を切ってノイズを消す
+# （参照用UIなのでホットリロードは不要。編集後は手動で再起動すればよい）。
+fileWatcherType = "none"
+
+[browser]
+# 使用統計の送信を無効化（プライベート維持）。
+gatherUsageStats = false

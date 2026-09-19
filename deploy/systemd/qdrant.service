@@ -1,0 +1,30 @@
+# Qdrant ベクトルDB（v7 本線・recommendations の検索バックエンド）。
+# ★VECTOR_BACKEND=qdrant のときだけ bootstrap が設置する（chroma の箱には置かない）。
+# バイナリは bootstrap ⑥b が GitHub リリースから版・sha256 固定で /usr/local/bin へ導入。
+# ストレージは S3 から同期した data/qdrant（ローカル qdrant-dev と同一レイアウト＝storage ディレクトリ直付け・
+# collections/ aliases/ raft_state.json）。127.0.0.1 バインド＝箱の外に露出しない（使うのは mcp/web だけ）。
+[Unit]
+Description=Qdrant vector database (127.0.0.1:6333, storage=recommendations/data/qdrant)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polyarchy
+Group=polyarchy
+WorkingDirectory=/opt/polyarchy/polyarchy/recommendations
+# 設定はファイルでなく環境変数で完結（QDRANT__ 二重下線記法）。ポートはローカル運用と同じ 6333/6334。
+Environment=QDRANT__SERVICE__HOST=127.0.0.1
+Environment=QDRANT__SERVICE__HTTP_PORT=6333
+Environment=QDRANT__SERVICE__GRPC_PORT=6334
+Environment=QDRANT__STORAGE__STORAGE_PATH=/opt/polyarchy/polyarchy/recommendations/data/qdrant
+Environment=QDRANT__STORAGE__SNAPSHOTS_PATH=/opt/polyarchy/polyarchy/recommendations/data/qdrant_snapshots
+Environment=QDRANT__TELEMETRY_DISABLED=true
+ExecStart=/usr/local/bin/qdrant
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

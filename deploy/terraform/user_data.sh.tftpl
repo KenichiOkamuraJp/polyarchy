@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+# user_data＝薄いブートローダ（Terraform が値を埋める）。
+# 重い処理（conda/モデルDL/データ同期/systemd）は code tar 内の bootstrap.sh に委譲する。
+# ここでは：base pkg＋awscli 導入 → S3 から code tar → 展開 → deploy.env 生成 → bootstrap.sh。
+# ※ Terraform templatefile の規則：二重ドル記法（$$ に続けて中括弧）はシェル変数として残り、
+#    単一ドルの中括弧記法は Terraform 変数の展開になる（バインドは compute.tf の templatefile()）。
+# ═══════════════════════════════════════════════════════════════════════════
+set -euxo pipefail
+exec > >(tee -a /var/log/polyarchy-bootstrap.log) 2>&1
+echo "[user_data] 開始 $(date -Is)"
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y curl unzip ca-certificates
+
+# AWS CLI v2（Ubuntu は標準で載らないので明示導入。S3 取得と SSM パラメータ読取に使う）。
+if ! command -v aws >/dev/null 2>&1; then
+  curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+  unzip -q /tmp/awscliv2.zip -d /tmp
+  /tmp/aws/install
+fi
+
+INSTALL_DIR="${install_dir}"
+mkdir -p "$${INSTALL_DIR}"
+
+# アプリコードを S3 から取得して展開（tar 内トップは polyarchy/＝リポジトリ root：recommendations/ deploy/ docs/ …）。
+aws s3 cp "s3://${bucket_name}/${code_s3_key}" /tmp/polyarchy.tar.gz --region ${aws_region}
+tar -xzf /tmp/polyarchy.tar.gz -C "$${INSTALL_DIR}"
+
+# bootstrap が参照する環境定義（Terraform の確定値を1ファイルに固める）。
+mkdir -p /etc/polyarchy
+cat > /etc/polyarchy/deploy.env <<EOF
+AWS_REGION=${aws_region}
+S3_BUCKET=${bucket_name}
+CODE_S3_KEY=${code_s3_key}
+DATA_S3_PREFIX=${data_s3_prefix}
+PROJECT=${project}
+ENVIRONMENT=${environment}
+ENABLE_WEB_APP=${enable_web_app}
+COLLECTION_NAME=${collection_name}
+VECTOR_BACKEND=${vector_backend}
+TUNNEL_HOST_MCP=${tunnel_host_mcp}
+TUNNEL_HOST_WEB=${tunnel_host_web}
+ENABLE_STATS_APP=${enable_stats_app}
+TUNNEL_HOST_STATS=${tunnel_host_stats}
+INSTALL_DIR=${install_dir}
+REPO_DIR=${install_dir}/polyarchy
+APP_DIR=${install_dir}/polyarchy/recommendations
+HF_HOME=${hf_home}
+EOF
+
+# 本編へ。再実行可能（冪等）に作ってあるので、失敗時は SSM で入って手動再走行できる。
+bash "$${INSTALL_DIR}/polyarchy/deploy/bootstrap/bootstrap.sh"
+echo "[user_data] 完了 $(date -Is)"

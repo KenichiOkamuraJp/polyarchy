@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>プライバシーポリシー — Polyarchy</title>
+<style>:root{--fg:#1e1e1e;--bg:#fff;--muted:#666;--line:#ddd;--accent:#1f4e79}
+@media(prefers-color-scheme:dark){:root{--fg:#e8e8e8;--bg:#151515;--muted:#aaa;--line:#333;--accent:#8fb8e8}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.7}
+main{max-width:820px;margin:0 auto;padding:2rem 1.2rem}
+h1{font-size:1.6rem;border-bottom:1px solid var(--line);padding-bottom:.4rem}
+h2{font-size:1.2rem;margin-top:2rem}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
+code{background:rgba(127,127,127,.15);padding:.1rem .3rem;border-radius:3px}
+pre{background:rgba(127,127,127,.12);padding:.8rem;overflow-x:auto}
+footer{max-width:820px;margin:2rem auto;padding:1rem 1.2rem;color:var(--muted);border-top:1px solid var(--line);font-size:.9rem}
+nav a{margin-right:1rem}
+a{color:var(--accent)}
+.note{border-left:4px solid var(--accent);padding:.4rem .8rem;background:rgba(127,127,127,.08)}
+</style></head><body>
+<main>
+<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
+
+<h1>プライバシーポリシー</h1>
+<p>更新日：2026-09-03</p>
+<p>岡村 健一（以下「運営者」）は、Polyarchy（stats／recommendations 各サービス。以下「本サービス」）において、次のとおり利用者の情報を取り扱います。</p>
+
+<h2>1. 収集する情報</h2>
+<table>
+<tr><th>情報</th><th>内容</th><th>取得方法</th></tr>
+<tr><td>認証情報</td><td>メールアドレス（および認証プロバイダが発行する利用者識別子）</td><td>接続時の OAuth 認証（外部認証プロバイダ。現在は WorkOS AuthKit）。本サービスの利用にはログインが必要です。運営者のサーバは検証済みのメールアドレスを受け取り、<strong>ハッシュ値（SHA-256 の先頭 16 桁）に変換して保存</strong>します。メールアドレスの平文はサーバ側の記録に残しません（メールアドレスが得られない場合は、プロバイダが発行する利用者識別子のハッシュ値で代替します）</td></tr>
+<tr><td>利用記録（捕捉ログ）</td><td>ツール名・ツールに渡された引数（検索語・系列 ID・期間・団体等）・結果件数または該当有無・時刻・利用者ハッシュ</td><td>ツールが呼ばれるたびにサーバが記録</td></tr>
+<tr><td>接続ログ</td><td>接続元 IP・時刻・パス・応答コード等の技術情報</td><td>Cloudflare および運営者のサーバの標準的なアクセスログ</td></tr>
+</table>
+<p class="note"><strong>収集しないもの</strong>：会話の本文、Claude のメモリ・チャット履歴・要約、利用者がアップロードしたファイル。本サービスのツールはこれらにアクセスしません。ツールの機能に必要な引数以外の会話データは記録しません。</p>
+
+<h2>2. 利用目的</h2>
+<ul>
+<li>認証・アクセス制御（契約者・許可された利用者だけに提供するため）。</li>
+<li>利用者数・利用量の把握、料金の算定（将来有償化した場合）。</li>
+<li><strong>検索・参照品質の改善</strong>：どのような統計・文書が求められ、何が見つからなかったか（found=false）を集計し、収録データの拡充と評価セットの改善に使います。</li>
+<li>不正利用の検知・障害対応。</li>
+</ul>
+
+<h2>3. 保存期間</h2>
+<ul>
+<li>利用記録（捕捉ログ）：<strong>30 日</strong>で自動削除します（サーバ上の削除ジョブとバックアップ先のライフサイクル設定の両方で担保）。集計後の統計（件数等）および評価セットに転記した検索語（利用者を識別できない形）は保持します。</li>
+<li>認証セッション：認証プロバイダ（WorkOS AuthKit）の設定に従います。</li>
+<li>接続ログ：Cloudflare および運営者のログ設定に従い、通常 30 日以内。</li>
+</ul>
+
+<h2>4. 第三者への提供</h2>
+<p>運営者は、法令に基づく場合を除き、利用者の情報を第三者に販売・提供しません。ただし、本サービスの提供に不可欠な次の事業者が、各社のポリシーに従って情報を処理します。</p>
+<ul>
+<li>WorkOS, Inc.（認証基盤。ログイン時のメールアドレス等は WorkOS のポリシーに従って処理されます）</li>
+<li>Cloudflare, Inc.（通信経路・DNS・公開ページの配信）</li>
+<li>Amazon Web Services（サーバ・バックアップ保存。東京リージョン）</li>
+<li>Anthropic, PBC（Claude が本サービスへ接続する経路。利用者と Anthropic の間の取り扱いは Anthropic の規約・ポリシーによります）</li>
+<li>OpenAI（ChatGPT のコネクタから本サービスへ接続する場合の経路。利用者と OpenAI の間の取り扱いは OpenAI の規約・ポリシーによります）</li>
+</ul>
+
+<h2>5. 安全管理</h2>
+<ul>
+<li>通信は TLS で暗号化し、サーバは受信ポートを開けず Cloudflare Tunnel 経由でのみ到達可能にしています。</li>
+<li>本サービスのツールは読み取り専用で、公開データのみを扱います。</li>
+<li>秘密情報（トンネル資格情報・API キー等）はクラウドのシークレット管理サービス（AWS Systems Manager Parameter Store）に保管し、ソースコードのリポジトリには置きません。</li>
+</ul>
+
+<h2>6. 利用者の権利</h2>
+<p>利用記録の開示・削除、接続の停止を希望される場合は、下記の連絡先までご連絡ください。利用者ハッシュに紐づく記録を削除します。</p>
+
+<h2>7. Cookie</h2>
+<p>本サービスの MCP エンドポイントは Cookie を使用しません。認証画面（WorkOS AuthKit）は認証セッションのために Cookie を使用します。</p>
+
+<h2>8. 変更</h2>
+<p>本ポリシーを変更する場合は本ページに掲示し、更新日を改めます。</p>
+
+<h2>9. 連絡先</h2>
+<p>kenichi.okamura.jp@gmail.com — 個人情報の取り扱い、脆弱性の報告、その他のお問い合わせはこちらへ。</p>
+</main>
+<footer>
+運営者：岡村 健一（個人運営）／サポート・脆弱性報告の連絡先：kenichi.okamura.jp@gmail.com<br>
+Polyarchy は Anthropic 社の製品ではありません。Claude は Anthropic PBC の商標です。
+</footer></body></html>

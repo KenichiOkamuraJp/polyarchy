@@ -1,0 +1,41 @@
+# Polyarchy RAG MCP サーバ（prod/staging 共通の主役）。
+#   python -m recommendations.serving.mcp_server --http --host 127.0.0.1 --port 8765
+# 層＝公開固定＋フェイルクローズ（機密は物理遮断・recommendations/core/search_api）。生成は各利用者の Claude＝
+# この箱は LLM を呼ばない＝ランタイム秘密ゼロ（仕様§2.3）。127.0.0.1 バインドで直露出しない。
+[Unit]
+Description=Polyarchy RAG MCP server (Streamable HTTP :8765, layer=public fixed)
+# qdrant.service は VECTOR_BACKEND=qdrant の箱だけに存在（After は「両方あるとき順序を守る」だけ＝chroma の箱でも無害）。
+After=network-online.target qdrant.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polyarchy
+Group=polyarchy
+WorkingDirectory=/opt/polyarchy/polyarchy
+# 確定値は user_data 生成の deploy.env（APP_DIR 等）。無くても動くよう `-` 付き。
+EnvironmentFile=-/etc/polyarchy/deploy.env
+# 秘密パス（MCP_HTTP_PATH=/mcp-<128bit乱数>）。bootstrap が SSM から生成（600）。
+# 公開URLの「合言葉」＝ホスト名と違い DNS/証明書に現れないため探索されない。無ければ既定 /mcp。
+EnvironmentFile=-/etc/polyarchy/mcp.env
+Environment=PYTHONPATH=/opt/polyarchy/polyarchy
+Environment=HF_HOME=/opt/polyarchy/models
+# COLLECTION_NAME / VECTOR_BACKEND は deploy.env（terraform var collection_name / vector_backend）から。ここに固定値を書かない。
+Environment=POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/recommendations/data/query_log/queries.jsonl
+# HF ノイズ抑制。事前DL でモデル重みはキャッシュ済（初回DL不要）だが、ruri(SentenceTransformer)
+# のロードは transformers/sentence-transformers 5.x で完全オフラインだと config 解決に失敗するため
+# HF_HUB_OFFLINE は付けない（重みはキャッシュ利用・小さな config は HF へ・箱は egress あり＝Mac PoC 同挙動）。
+# ※ egress が塞がれた環境向けにオフライン固定したい場合は Phase B で local snapshot パス直指定に切替。
+Environment=TOKENIZERS_PARALLELISM=false
+# transport_security は既定 off（トンネル前提・421 回避・§33.5）。ホスト限定するなら↓を設定。
+# Environment=MCP_ALLOWED_HOSTS=recommendations.<domain>,127.0.0.1:8765
+ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m recommendations.serving.mcp_server --http --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# rsyslog がサービス別ファイル（/var/log/polyarchy/<identifier>.log）へ振り分ける鍵（運用設計 §1.2・CW Logs 転送）。
+SyslogIdentifier=polyarchy-mcp
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+# Polyarchy RAG Web（chat_app・Streamlit :8502）。★staging のみ（enable_web_app=true）。
+# prod では bootstrap がこのユニットを設置しない（MCP のみ＝ランタイム秘密ゼロ・仕様§2.3）。
+# 生成は Anthropic tool-use ループ（Claude 自身に search_policy_docs を多段で叩かせる・§32.8）。
+[Unit]
+Description=Polyarchy RAG Web chat_app (Streamlit :8502, Anthropic tool-use)
+After=network-online.target polyarchy-mcp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polyarchy
+Group=polyarchy
+WorkingDirectory=/opt/polyarchy/polyarchy
+EnvironmentFile=-/etc/polyarchy/deploy.env
+# ANTHROPIC_API_KEY は SSM 由来の web.env（600・prod には存在しない）。`-` 無し＝無ければ起動失敗で気づく。
+EnvironmentFile=/etc/polyarchy/web.env
+Environment=PYTHONPATH=/opt/polyarchy/polyarchy
+Environment=HF_HOME=/opt/polyarchy/models
+# COLLECTION_NAME / VECTOR_BACKEND は deploy.env（terraform var collection_name / vector_backend）から。ここに固定値を書かない。
+Environment=POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/recommendations/data/query_log/queries.jsonl
+# ruri のロードが完全オフラインだと config 解決に失敗するため HF_HUB_OFFLINE は付けない（§mcp.service 参照）。
+Environment=TOKENIZERS_PARALLELISM=false
+# 127.0.0.1 バインド＝トンネル経由のみ到達（直露出しない）。st.table 不可等は §32.3（コード側で対処済）。
+ExecStart=/opt/miniconda/envs/polyarchy/bin/streamlit run recommendations/serving/chat_app.py --server.port 8502 --server.address 127.0.0.1 --server.headless true --browser.gatherUsageStats false
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# rsyslog のサービス別ファイル化（/var/log/polyarchy/）。web は CW Logs へは転送しない（staging のみの補助面）。
+SyslogIdentifier=polyarchy-web
+
+[Install]
+WantedBy=multi-user.target

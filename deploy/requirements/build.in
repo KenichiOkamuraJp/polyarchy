@@ -1,0 +1,4 @@
+# ビルド時依存（pyproject [build-system].requires と同じ）。本体 `pip install -e . --no-deps --no-build-isolation` の前提として
+# env に入れておく＝ビルド時依存も sha256 固定の対象にする（lock_deps.sh が pyproject と一緒に pip-compile へ渡す）。
+setuptools>=68
+wheel

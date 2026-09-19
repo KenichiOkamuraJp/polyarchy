@@ -1,0 +1,2487 @@
+[
+ {
+  "id": "001",
+  "question": "HR部門におけるAI活用の大前提として、経団連はAIをどのように位置づけていますか？",
+  "expected_keywords": [
+   "人間の意思決定のサポート",
+   "人間中心のAI",
+   "HR部門"
+  ],
+  "expected_source": "keidanren_2026_016.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "002",
+  "question": "OECD調査によると、アルゴリズム管理ソフトウェアを導入している企業の割合は日本とアメリカでそれぞれ何％ですか？",
+  "expected_keywords": [
+   "40％",
+   "90％",
+   "アルゴリズム管理"
+  ],
+  "expected_source": "keidanren_2026_016.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "003",
+  "question": "ジェーシービーが新卒採用面接で導入したAI面接システムの名称と、削減できた面接対応時間はどれくらい？",
+  "expected_keywords": [
+   "HireVue",
+   "録画面接",
+   "900時間"
+  ],
+  "expected_source": "keidanren_2026_016.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "004",
+  "question": "デンソーのキャリア実現支援ダッシュボード導入で、人手で行う場合と比べてどれだけ工数を削減できると試算されていますか？",
+  "expected_keywords": [
+   "5,400時間",
+   "15時間",
+   "キャリア実現支援ダッシュボード"
+  ],
+  "expected_source": "keidanren_2026_016.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "005",
+  "question": "HR部門でAIを活用するために求められる対応として、報告書では何を挙げていますか？",
+  "expected_keywords": [
+   "安全性・公平性・透明性",
+   "戦略的推進体制",
+   "運用・定着"
+  ],
+  "expected_source": "keidanren_2026_016.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "006",
+  "question": "提言で言及されている2024年の合計特殊出生率はいくつで、どのような水準にあるとされていますか？",
+  "expected_keywords": [
+   "1.15",
+   "出生低位",
+   "過去最低"
+  ],
+  "expected_source": "keidanren_2026_018.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "007",
+  "question": "組合健保の平均保険料率は2025年度予算ベースで何％とされていますか？",
+  "expected_keywords": [
+   "9.34",
+   "組合健保",
+   "2025年度予算ベース"
+  ],
+  "expected_source": "keidanren_2026_018.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "008",
+  "question": "経団連が税・財政・社会保障一体改革で目指している経済の姿は？",
+  "expected_keywords": [
+   "投資牽引型経済",
+   "成長と分配の好循環",
+   "分厚い中間層"
+  ],
+  "expected_source": "keidanren_2026_018.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "009",
+  "question": "給付付き税額控除について、経団連はどのような制度設計を提案していますか？",
+  "expected_keywords": [
+   "中・低所得者",
+   "年収の壁",
+   "マイナンバー"
+  ],
+  "expected_source": "keidanren_2026_018.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "010",
+  "question": "経団連が独立財政機関の設置を提言する理由は何ですか？",
+  "expected_keywords": [
+   "独立財政機関",
+   "党派を超えた合意形成",
+   "将来推計"
+  ],
+  "expected_source": "keidanren_2026_018.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "011",
+  "question": "高齢者医療・介護の自己負担について、経団連はどのような見直しを提案していますか？",
+  "expected_keywords": [
+   "応能負担",
+   "資産",
+   "自己負担"
+  ],
+  "expected_source": "keidanren_2026_018.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "012",
+  "question": "「スタートアップ躍進ビジョン」で掲げた「10X10X」目標とはどのような目標ですか？",
+  "expected_keywords": [
+   "10X10X",
+   "2027年",
+   "裾野",
+   "10倍"
+  ],
+  "expected_source": "keidanren_2026_019.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "013",
+  "question": "現5か年計画における公共調達のスタートアップ調達比率の目標と現状の実績、および経団連の引き上げ提案は？",
+  "expected_keywords": [
+   "３％",
+   "1.5％",
+   "10％",
+   "公共調達"
+  ],
+  "expected_source": "keidanren_2026_019.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "014",
+  "question": "海外VCの誘致について、経団連はどのような施策を提言していますか？",
+  "expected_keywords": [
+   "トップティア",
+   "マッチング拠出",
+   "誘致"
+  ],
+  "expected_source": "keidanren_2026_019.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "015",
+  "question": "経団連が「第二次5か年計画」の策定を求めている主な理由は？",
+  "expected_keywords": [
+   "第二次５か年計画",
+   "政府の継続的なコミットメント",
+   "AI"
+  ],
+  "expected_source": "keidanren_2026_019.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "016",
+  "question": "官需を成長ドライバーとするスケールアップで、政府にどのような役割を期待していますか？",
+  "expected_keywords": [
+   "アンカーテナンシー",
+   "公共調達",
+   "防衛"
+  ],
+  "expected_source": "keidanren_2026_019.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "017",
+  "question": "経団連は中小受託取引適正化法（取適法）についてどのように評価していますか？",
+  "expected_keywords": [
+   "中小受託取引適正化法",
+   "高く評価",
+   "取引適正化"
+  ],
+  "expected_source": "keidanren_2026_020.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "018",
+  "question": "「荷待ち」を「３ 二」の規制対象から除外すべきと主張する理由は？",
+  "expected_keywords": [
+   "荷待ち",
+   "複数の主体",
+   "改正物流効率化法"
+  ],
+  "expected_source": "keidanren_2026_020.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "019",
+  "question": "製造委託等に係る代金の支払期限について、原則は給付の受領日から何日以内とされていますか？",
+  "expected_keywords": [
+   "60日以内",
+   "給付の受領日",
+   "正当な理由"
+  ],
+  "expected_source": "keidanren_2026_020.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "020",
+  "question": "「３ 一」（運送以外の役務等の提供の要請）の規制対象範囲について、経団連が明記すべきと主張している点は？",
+  "expected_keywords": [
+   "帰責事由",
+   "中小受託事業者の責めに帰すべき理由",
+   "３ 一"
+  ],
+  "expected_source": "keidanren_2026_020.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "021",
+  "question": "2024年度の全部門合計のCO2排出量と、2013年度比の削減率は？",
+  "expected_keywords": [
+   "４億6,605万",
+   "22.8",
+   "2013年度比"
+  ],
+  "expected_source": "keidanren_2025_087.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "022",
+  "question": "2024年度の産業部門のCO2排出量（電力配分後）と2013年度比の削減率は？",
+  "expected_keywords": [
+   "２億9,778万",
+   "25.0",
+   "産業部門"
+  ],
+  "expected_source": "keidanren_2025_087.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "023",
+  "question": "経団連カーボンニュートラル行動計画の「４つの柱」とは何ですか？",
+  "expected_keywords": [
+   "国内の事業活動における排出削減",
+   "主体間連携",
+   "国際貢献",
+   "革新的技術"
+  ],
+  "expected_source": "keidanren_2025_087.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "024",
+  "question": "鉄鋼業界の海外における2024年度のCO2削減貢献量はどれくらいと算定されていますか？",
+  "expected_keywords": [
+   "8,216万",
+   "コークス乾式消火",
+   "高炉炉頂圧発電"
+  ],
+  "expected_source": "keidanren_2025_087.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "025",
+  "question": "2024年度の再生可能エネルギー（FIT電源含む）の送受電端電力量と、総送受電端電力量に占める割合は？",
+  "expected_keywords": [
+   "1,507億kWh",
+   "19",
+   "7,870億kWh"
+  ],
+  "expected_source": "keidanren_2025_087.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "026",
+  "question": "経団連は海外進出戦略について何と述べていますか？",
+  "expected_keywords": [
+   "海外進出戦略"
+  ],
+  "expected_source": null,
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "027",
+  "question": "本提言を取りまとめた経団連の現会長の氏名と就任時期を教えてください。",
+  "expected_keywords": [
+   "経団連",
+   "会長",
+   "就任"
+  ],
+  "expected_source": null,
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "028",
+  "question": "経団連の2026年度の会員数と年会費はいくらですか？",
+  "expected_keywords": [
+   "会員数",
+   "年会費"
+  ],
+  "expected_source": null,
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "029",
+  "question": "骨太2025では、中小企業・小規模事業者に対し2029年度までの5年間でどのくらいの生産性向上投資を官民で行うとしていますか。この計画の名称も含めて答えてください。",
+  "expected_keywords": [
+   "60兆円",
+   "賃金向上推進5か年計画"
+  ],
+  "expected_source": "gov_cefp_2025.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "030",
+  "question": "骨太2025が「令和の日本列島改造」として掲げる地方活性化の中核政策の名称と、2040年頃に視野に入るとする名目GDPの規模を答えてください。",
+  "expected_keywords": [
+   "地方創生2.0",
+   "1,000兆円"
+  ],
+  "expected_source": "gov_cefp_2025.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "031",
+  "question": "骨太2025はインバウンドについて、2030年の訪日外国人旅行者数と消費額の目標をそれぞれいくらとしていますか。",
+  "expected_keywords": [
+   "6,000万人",
+   "15兆円"
+  ],
+  "expected_source": "gov_cefp_2025.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "032",
+  "question": "骨太2024では、2024年6月から実施している、家計の可処分所得を下支えする施策を何と呼んでいますか。",
+  "expected_keywords": [
+   "定額減税",
+   "可処分所得"
+  ],
+  "expected_source": "gov_cefp_2024.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "033",
+  "question": "骨太2024における最低賃金の目標について、2023年の全国加重平均額と、2030年代半ばまでに引き上げるとする目標額を答えてください。",
+  "expected_keywords": [
+   "1,004円",
+   "1,500円",
+   "全国加重平均"
+  ],
+  "expected_source": "gov_cefp_2024.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "034",
+  "question": "骨太2024で、速やかに総額いくら規模の支援を行うとされている、宇宙分野の基金の名称と金額を答えてください。",
+  "expected_keywords": [
+   "宇宙戦略基金",
+   "1兆円"
+  ],
+  "expected_source": "gov_cefp_2024.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "035",
+  "question": "令和8年度予算の編成等に関する建議（財政審）で、金利がベースラインより1%上昇した場合の利払費は、令和7年度の10.5兆円から令和16年度にいくらまで増加すると示されていますか。",
+  "expected_keywords": [
+   "10.5兆円",
+   "34.4兆円",
+   "利払費"
+  ],
+  "expected_source": "gov_zaiseishin_20251202.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "036",
+  "question": "令和8年度予算の編成等に関する建議は、財政制度等審議会のどの会長名で、どの財務大臣に宛てて提出されましたか。",
+  "expected_keywords": [
+   "片山さつき",
+   "十倉雅和"
+  ],
+  "expected_source": "gov_zaiseishin_20251202.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "037",
+  "question": "令和8年度予算の編成等に関する建議によれば、我が国の普通国債残高は現在どの程度の水準に達していますか。",
+  "expected_keywords": [
+   "普通国債残高",
+   "1,000兆円"
+  ],
+  "expected_source": "gov_zaiseishin_20251202.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "038",
+  "question": "令和7年度予算の編成等に関する建議は、財政制度等審議会のどの会長名で、どの財務大臣に宛てて提出されましたか。",
+  "expected_keywords": [
+   "加藤勝信",
+   "十倉雅和"
+  ],
+  "expected_source": "gov_zaiseishin_20241129.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "039",
+  "question": "令和7年度予算の編成等に関する建議で言及されている、令和4年度に計上された過去最高の不用額の金額を答えてください。",
+  "expected_keywords": [
+   "不用額",
+   "11.3兆円"
+  ],
+  "expected_source": "gov_zaiseishin_20241129.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "040",
+  "question": "令和7年度予算の編成等に関する建議によれば、2024年の春季労使交渉における賃上げ率は何％で、過去30年でどのような水準でしたか。",
+  "expected_keywords": [
+   "5.10％",
+   "過去30年で最大"
+  ],
+  "expected_source": "gov_zaiseishin_20241129.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "041",
+  "question": "令和8年6月の規制改革推進に関する答申で、消費の活性化に向けて上限額の引上げが議論された、取引の価額に応じて上限が定められる景品規制の対象は何と呼ばれますか。",
+  "expected_keywords": [
+   "総付景品",
+   "取引の価額"
+  ],
+  "expected_source": "gov_kisei_260629.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "042",
+  "question": "令和8年6月の規制改革推進に関する答申が「働き方・人への投資」の中で労働時間法制として取り上げた、労働日等の特定の在り方に関する制度と、適用対象業務の在り方が論点となった制度は何ですか。",
+  "expected_keywords": [
+   "1年単位の変形労働時間制",
+   "裁量労働制"
+  ],
+  "expected_source": "gov_kisei_260629.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "043",
+  "question": "令和7年5月の規制改革推進に関する答申で、実装加速が求められた特定条件下の自動運転タクシーの自動化レベルは何ですか。",
+  "expected_keywords": [
+   "レベル4",
+   "自動運転タクシー"
+  ],
+  "expected_source": "gov_kisei_250528.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "044",
+  "question": "令和7年5月の規制改革推進に関する答申で、導入促進が取り上げられた水道インフラのデジタル計器と、範囲拡大が検討された救急隊員による医療行為はそれぞれ何ですか。",
+  "expected_keywords": [
+   "水道スマートメーター",
+   "救急救命処置"
+  ],
+  "expected_source": "gov_kisei_250528.pdf",
+  "expected_org": "gov"
+ },
+ {
+  "id": "045",
+  "question": "厚生労働省が公表した2027年度の医療・介護同時報酬改定の改定率は何％ですか。",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "gov"
+ },
+ {
+  "id": "046",
+  "question": "2025年度末時点の日本の生活保護受給世帯数は何世帯ですか。",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "gov"
+ },
+ {
+  "id": "047",
+  "question": "連合の税制改革の提言では、相続税の基礎控除をどのような水準に引き下げるとしていますか。",
+  "expected_keywords": [
+   "相続税の基礎控除",
+   "2,000万円",
+   "400万円"
+  ],
+  "expected_source": "rengo_teigen_03.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "048",
+  "question": "連合は所得税の金融所得課税について、総合課税化までの間、税率をどうすべきと提言していますか。",
+  "expected_keywords": [
+   "金融所得課税",
+   "30%"
+  ],
+  "expected_source": "rengo_teigen_03.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "049",
+  "question": "連合のエネルギー政策では、原子炉を運転できる期間について現行制度をどう説明していますか。",
+  "expected_keywords": [
+   "発電用原子炉を運転できる期間",
+   "原則として40年"
+  ],
+  "expected_source": "rengo_teigen_06.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "050",
+  "question": "連合の資源・エネルギー政策が最終的にめざす社会像はどのようなものですか。",
+  "expected_keywords": [
+   "原子力エネルギーに依存しない社会",
+   "再生可能エネルギー"
+  ],
+  "expected_source": "rengo_teigen_06.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "051",
+  "question": "連合はすべての労働者を対象とする勤務間インターバル規制について、休息時間を原則何時間とすべきと提言していますか。",
+  "expected_keywords": [
+   "勤務間インターバル",
+   "原則11時間"
+  ],
+  "expected_source": "rengo_teigen_07.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "052",
+  "question": "連合は時間外労働・休日労働・深夜労働の法定割増率をそれぞれ何％に引き上げるべきと提言していますか。",
+  "expected_keywords": [
+   "時間外50％",
+   "休日労働100％",
+   "深夜労働50％"
+  ],
+  "expected_source": "rengo_teigen_07.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "053",
+  "question": "連合は法定年次有給休暇の最高付与日数と最低付与日数をそれぞれ何日に引き上げるべきと提言していますか。",
+  "expected_keywords": [
+   "最高付与日数",
+   "25日",
+   "20日"
+  ],
+  "expected_source": "rengo_teigen_07.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "054",
+  "question": "連合の医療政策では、傷病手当金の支給額を標準報酬月額の平均額の何割以上確保すべきとしていますか。",
+  "expected_keywords": [
+   "傷病手当金",
+   "標準報酬月額の平均額の7割"
+  ],
+  "expected_source": "rengo_teigen_09.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "055",
+  "question": "連合の年金政策で示された2024年財政検証によれば、基礎年金の給付水準（所得代替率）はいつからいつまでにどう変化する見通しですか。",
+  "expected_keywords": [
+   "2024年度の36.2％",
+   "2057年度には25.5％"
+  ],
+  "expected_source": "rengo_teigen_13.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "056",
+  "question": "連合は基礎年金と障害厚生年金について、どの給付調整の対象から外すべきと提言していますか。",
+  "expected_keywords": [
+   "マクロ経済スライド",
+   "基礎年金"
+  ],
+  "expected_source": "rengo_teigen_13.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "057",
+  "question": "連合の非正規雇用に関する政策では、非正規雇用で働く人の数と割合はどれくらいとされていますか。",
+  "expected_keywords": [
+   "2,026万人",
+   "36.7％"
+  ],
+  "expected_source": "rengo_teigen_30.txt",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "058",
+  "question": "連合の2026年度重点政策では、最低賃金を中期的にどの水準までめざすとしていますか。",
+  "expected_keywords": [
+   "最低賃金",
+   "賃金中央値の6割"
+  ],
+  "expected_source": "rengo_202605_jyutenseisaku2026.pdf",
+  "expected_org": "rengo"
+ },
+ {
+  "id": "059",
+  "question": "連合はカスタマーハラスメント対策に関し、被害を受けた労働者への慰謝料の最低支給額を何円と定めるべきと提言していますか。",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "rengo"
+ },
+ {
+  "id": "060",
+  "question": "日商が外形標準課税の中小企業への適用拡大に対してどのような立場を示しているか。理由も含めて答えてください。",
+  "expected_keywords": [
+   "断固反対",
+   "賃金課税"
+  ],
+  "expected_source": "nissho_2023_1116143031.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "061",
+  "question": "外形標準課税の適用対象拡大の議論は、そもそも大企業のどのような動きを念頭に示されたものか。",
+  "expected_keywords": [
+   "外形標準課税",
+   "減資"
+  ],
+  "expected_source": "nissho_2023_1116143031.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "062",
+  "question": "成長型経済の実現に向けた意見で、日商が中小企業について挙げているわが国企業数に占める割合と、キーワードとして掲げる考え方は何か。",
+  "expected_keywords": [
+   "99.7%",
+   "価値共創"
+  ],
+  "expected_source": "nissho_2026_0416140000.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "063",
+  "question": "雇用・労働政策に関する重点要望で、日商が深刻な人手不足を乗り越える打ち手として提案している自己変革のモデル名と、その中核となる3つの取組みは何か。",
+  "expected_keywords": [
+   "少数精鋭成長モデル",
+   "3つのチャレンジ"
+  ],
+  "expected_source": "nissho_2025_0917140018.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "064",
+  "question": "日商・東商の調査で示された、2025年の中小企業における正社員の賃上げ率（加重平均）は何％か。また賃上げ実施企業のうち業績改善を伴わない賃上げはどう表現されているか。",
+  "expected_keywords": [
+   "4.03%",
+   "防衛的な賃上げ"
+  ],
+  "expected_source": "nissho_2025_0917140018.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "065",
+  "question": "2025年度の最低賃金について、地方最低賃金審議会を経た全国加重平均の引上げ額はいくらだったか。",
+  "expected_keywords": [
+   "66円",
+   "最低賃金"
+  ],
+  "expected_source": "nissho_2025_0917140018.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "066",
+  "question": "2026年度中小企業・地域活性化施策に関する要望で、米国の関税措置に関して日商が政府に求めている交渉と、8月から適用されるとされた措置の名称は何か。",
+  "expected_keywords": [
+   "相互関税",
+   "適用除外"
+  ],
+  "expected_source": "nissho_2025_0717140010.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "067",
+  "question": "2026年度要望で、取引適正化に向けて日商が推進を求めている官民の宣言の取組みは何か。",
+  "expected_keywords": [
+   "パートナーシップ構築宣言",
+   "中小受託取引適正化法"
+  ],
+  "expected_source": "nissho_2025_0717140010.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "068",
+  "question": "令和6年度税制改正に関する意見で、日商が延長・拡充を求めている、人への投資による人材確保・定着を支援する税制は何か。2023年5月調査での賃上げ実施企業の割合も含めて答えてください。",
+  "expected_keywords": [
+   "賃上げ促進税制",
+   "62.3%"
+  ],
+  "expected_source": "nissho_2023_0921150000_2.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "069",
+  "question": "令和6年度税制改正に関する意見で、日商が円滑な経営承継のため延長・恒久化を求めている税制と、その特例措置を活用するために提出が必要な計画の名称は何か。",
+  "expected_keywords": [
+   "事業承継税制",
+   "特例承継計画"
+  ],
+  "expected_source": "nissho_2023_0921150000_2.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "070",
+  "question": "デジタル化に関する提言で、日商が中小企業のデジタル化を個社から地域・業界・サプライチェーンへ拡げた先に構築を目指すとしている、誰もが相互利用できるオープンな仕組みは何か。",
+  "expected_keywords": [
+   "共通基盤",
+   "面的"
+  ],
+  "expected_source": "nissho_2024_0419110002_2.pdf",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "071",
+  "question": "観光に関する提言について、日商がどの大臣に手交し、着実な推進を求めた観光政策の基本計画の名称は何か。",
+  "expected_keywords": [
+   "国土交通大臣",
+   "第5次観光立国推進基本計画"
+  ],
+  "expected_source": "nissho_2026_0624171640.txt",
+  "expected_org": "nissho"
+ },
+ {
+  "id": "072",
+  "question": "日商は2026年度に会員企業向けの共済保険制度の掛金をいくら引き下げる方針を示していますか。",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "nissho"
+ },
+ {
+  "id": "073",
+  "question": "経団連が裁量労働制の拡充を求める提言で、厚生労働省の裁量労働制実態調査を根拠に、適用労働者の満足度（「満足している」と「やや満足している」の合算）は何％と示しているか。また専門業務型は労働基準法の何年の改正で創設されたか。",
+  "expected_keywords": [
+   "80.4％",
+   "1987年",
+   "専門業務型"
+  ],
+  "expected_source": "keidanren_2026_023.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "074",
+  "question": "経団連の防衛生産・技術基盤の抜本的強化に向けた提言では、安全保障関連三文書で防衛費として約いくらの予算を確保する計画が示されたとしているか。また提言が掲げる重点施策の構成を何と呼んでいるか。",
+  "expected_keywords": [
+   "43兆円",
+   "四本の柱",
+   "防衛装備移転三原則"
+  ],
+  "expected_source": "keidanren_2026_026.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "075",
+  "question": "経団連の科学技術立国戦略で、官民合わせた研究開発投資を「他国並み」ではなくどの水準へ引き上げるとしているか。またマインドセット転換のキーワードと、多様な価値観の併存を受容する目指すべき社会像を何と呼んでいるか。",
+  "expected_keywords": [
+   "世界トップ水準",
+   "投資牽引型",
+   "価値多層社会"
+  ],
+  "expected_source": "keidanren_2026_022.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "076",
+  "question": "経団連の若年社員の活躍推進に関する報告書によると、35歳未満の若年就業者数は1997年から減り続け2025年には何万人になったか。また入社直後に生じる課題として第2章で挙げられている、理想と現実のギャップを表す語は何か。",
+  "expected_keywords": [
+   "1,731万人",
+   "リアリティ・ショック",
+   "36.2％"
+  ],
+  "expected_source": "keidanren_2026_029.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "077",
+  "question": "経団連がまとめた2026年夏季賞与・一時金 大手企業業種別妥結状況（第1回集計・加重平均）で、総平均の妥結額はいくらで、前年からの増減率は何％か。調査対象は主要23業種の大手何社か。",
+  "expected_keywords": [
+   "1,008,706",
+   "1.88",
+   "248社"
+  ],
+  "expected_source": "keidanren_2026_037.pdf",
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "078",
+  "question": "経団連が示す2035年の中小企業向け最低賃金の全国加重平均額の数値目標はいくらか。(棄却)",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "keidanren"
+ },
+ {
+  "id": "101",
+  "question": "経団連の提言によると、日本に住む海外出身の人と、そのうち働いている人の数は、直近でそれぞれおよそ何人に達し、どのような水準にあるとされていますか？",
+  "expected_keywords": [
+   "396万人",
+   "230万人",
+   "過去最高"
+  ],
+  "expected_source": "keidanren_2025_086.pdf",
+  "expected_org": "keidanren",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "102",
+  "question": "経団連と大学側が共同でまとめた報告書では、大学院の最終課程で身につく、専門分野を越えて持ち運べる幅広い能力をカタカナで何と呼び、その日本語での言い換えは何とされていますか？",
+  "expected_keywords": [
+   "トランスファラブルスキル",
+   "汎用的能力",
+   "博士人材"
+  ],
+  "expected_source": "keidanren_2026_004.pdf",
+  "expected_org": "keidanren",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "103",
+  "question": "人手不足を補う自動で動く機械の国家戦略について経団連がまとめた提言では、日本は工場向けの自動機械の世界市場でどれほどの割合を占めるとされ、今後5年ほどの最初の段階の勝ち筋は英語で何と名付けられていますか？",
+  "expected_keywords": [
+   "産業用ロボット",
+   "3分の2",
+   "Build & Run"
+  ],
+  "expected_source": "keidanren_2026_011.pdf",
+  "expected_org": "keidanren",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "104",
+  "question": "医療や健康に関する情報を社会全体で活かす基盤づくりについての経団連の提言では、参考事例とする欧州の制度構想の略称は何で、こうした情報は国民の利益に資するどのようなものと位置づけるべきとされていますか？",
+  "expected_keywords": [
+   "EHDS",
+   "社会的資産",
+   "ヘルスケア・データスペース"
+  ],
+  "expected_source": "keidanren_2026_024.pdf",
+  "expected_org": "keidanren",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "105",
+  "question": "経団連が経営トップ層を対象に毎年続けている人事や労働問題についてのアンケート調査は、いつから始まったもので、2025年の調査では何社から答えが集まり、その結果は主にどの報告書の参考資料として使われていますか？",
+  "expected_keywords": [
+   "1969年",
+   "349社",
+   "経労委報告"
+  ],
+  "expected_source": "keidanren_2026_002.pdf",
+  "expected_org": "keidanren",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "106",
+  "question": "2023年の政府の経済財政運営の基本方針では、働く人の学び直しへの支援、仕事の中身に応じた給与制度の導入、伸びている分野への円滑な転職の3つをまとめて進める改革を何と呼んでいますか？",
+  "expected_keywords": [
+   "三位一体の労働市場改革",
+   "リ・スキリング",
+   "職務給"
+  ],
+  "expected_source": "gov_cefp_2023.pdf",
+  "expected_org": "gov",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "107",
+  "question": "財政審が令和6年度予算に向けてまとめた意見書では、子ども関連の政策を3年間で集中的に強化する枠組みは何と呼ばれ、その予算のおおよその規模と、財源を安定的に確保するため新たにつくるとされた仕組みの名称は何ですか？",
+  "expected_keywords": [
+   "加速化プラン",
+   "３兆円半ば",
+   "支援金制度"
+  ],
+  "expected_source": "gov_zaiseishin_20231120.pdf",
+  "expected_org": "gov",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "108",
+  "question": "2024年5月の規制改革の答申では、タクシー会社の管理のもとで一般のドライバーが自分の車を使って乗客を運ぶ新しい運送の取り組みが取り上げられました。この事業の正式名称と、この種のサービスの一般的なカタカナの呼び名は何ですか？",
+  "expected_keywords": [
+   "自家用車活用事業",
+   "ライドシェア",
+   "道路運送法"
+  ],
+  "expected_source": "gov_kisei_240531.pdf",
+  "expected_org": "gov",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "109",
+  "question": "連合は子育てに関する政策で、子どもの権利を守るために役所から独立した相談・救済の仕組みを地域ごとに設けるよう求めていますが、その仕組みの名称と、どの行政単位に置くべきとしていますか？",
+  "expected_keywords": [
+   "子どもオンブズパーソン",
+   "市町村",
+   "第三者機関"
+  ],
+  "expected_source": "rengo_teigen_12.txt",
+  "expected_org": "rengo",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "110",
+  "question": "温室効果ガスの削減を進める過程で雇用や地域経済への悪影響を最小限に抑えるために、連合が具体化を求めている考え方の呼び名と、職を失うことなく別の仕事へ移れるようにする取り組みを表す言葉は何ですか？",
+  "expected_keywords": [
+   "公正な移行",
+   "失業なき労働移動",
+   "セーフティネット"
+  ],
+  "expected_source": "rengo_teigen_18.txt",
+  "expected_org": "rengo",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "111",
+  "question": "世界的な男女格差の国別順位付けで日本はどの位置にあるとされ、政治の場で女性を増やすために連合が法整備を求めている、人数の割当を定める仕組みは何ですか？",
+  "expected_keywords": [
+   "118位",
+   "クオータ制",
+   "ジェンダー・ギャップ指数"
+  ],
+  "expected_source": "rengo_teigen_28.txt",
+  "expected_org": "rengo",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "112",
+  "question": "日商の2025年度の施策要望では、地域の中小企業や小さな事業者は全国の働き口のうちどれほどを担うとされ、また多くの中小企業にとって円安が重荷である根拠として、売上に占める海外向け販売の割合はどの程度と示されていますか？",
+  "expected_keywords": [
+   "約７割",
+   "約３％",
+   "輸出比率"
+  ],
+  "expected_source": "nissho_2024_0718135000.pdf",
+  "expected_org": "nissho",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "113",
+  "question": "日商の観光の立て直しに関する意見書では、旅行者との交流が地元住民の地域への愛着や誇りを育むとされていますが、その気持ちを本文では何と表現し、それを言い換えたカタカナ語と、観光地域のかじ取り役となる法人の略称は何ですか？",
+  "expected_keywords": [
+   "シビックプライド",
+   "ＤＭＯ",
+   "郷土愛"
+  ],
+  "expected_source": "nissho_2023_0721143022_1.pdf",
+  "expected_org": "nissho",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "114",
+  "question": "災害に強い国づくりに関する日商の意見では、国がこれまで実施した2度の集中的なインフラ対策の事業規模はそれぞれいくら程度とされ、災害が起きる前からの備えの取り組みは何と呼ばれていますか？",
+  "expected_keywords": [
+   "７兆円",
+   "15兆円",
+   "事前防災"
+  ],
+  "expected_source": "nissho_2024_1122140130_2.pdf",
+  "expected_org": "nissho",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "115",
+  "question": "日商の中小企業の収益力強化に関する提言では、経営資源の乏しい小さな事業者に商工会議所などが寄り添い続ける支援のかたちを何と呼び、支援の先に目指す経営の姿はどんな言葉で表現されていますか？",
+  "expected_keywords": [
+   "伴走支援",
+   "自走化",
+   "小規模事業者"
+  ],
+  "expected_source": "nissho_2025_0417170000.pdf",
+  "expected_org": "nissho",
+  "qtype": "paraphrase"
+ },
+ {
+  "id": "116",
+  "question": "2023年の骨太の方針では、構造的賃上げの実現に向けてどのような労働市場改革と学び直しの取り組みを掲げているか？",
+  "expected_keywords": [
+   "構造的賃上げ",
+   "三位一体の労働市場改革",
+   "リ・スキリング"
+  ],
+  "expected_source": "gov_cefp_2023.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "117",
+  "question": "2021年の骨太の方針では、日本の未来を拓く成長の原動力をいくつ掲げ、グリーン分野と行政のデジタル化についてそれぞれ何に言及しているか？",
+  "expected_keywords": [
+   "４つの原動力",
+   "グリーン社会の実現",
+   "デジタル庁"
+  ],
+  "expected_source": "gov_cefp_2021.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "118",
+  "question": "2024年5月の規制改革推進に関する答申では、タクシー事業者の運行管理の下で自家用車を活用する、いわゆるライドシェアの新たな事業について何を行うよう求めているか？",
+  "expected_keywords": [
+   "自家用車活用事業",
+   "ライドシェア",
+   "施策効果の測定"
+  ],
+  "expected_source": "gov_kisei_240531.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "119",
+  "question": "2022年5月の規制改革推進に関する答申では、令和3年12月に策定された構造改革のための5つの原則を何と呼び、規制の横断的見直しにあたりどの会議体との連携に言及しているか？",
+  "expected_keywords": [
+   "デジタル原則",
+   "デジタル臨時行政調査会",
+   "デジタル完結"
+  ],
+  "expected_source": "gov_kisei_220527.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "120",
+  "question": "2023年11月にとりまとめられた令和6年度予算の編成等に関する建議（財政審）では、社会保障分野の課題としてどの報酬改定が取り上げられているか？",
+  "expected_keywords": [
+   "診療報酬改定",
+   "介護報酬改定",
+   "障害報酬改定"
+  ],
+  "expected_source": "gov_zaiseishin_20231120.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "121",
+  "question": "経団連がまとめた2025年の年末賞与・一時金の大手企業業種別妥結結果（加重平均）で、総平均の妥結額はいくらで、増減率は何％か？",
+  "expected_keywords": [
+   "年末賞与・一時金",
+   "1,004,841",
+   "8.57"
+  ],
+  "expected_source": "keidanren_2025_089.pdf",
+  "expected_org": "keidanren",
+  "qtype": "temporal"
+ },
+ {
+  "id": "122",
+  "question": "経団連がまとめた2026年春季労使交渉・大手企業業種別回答状況（第1回集計・加重平均）で、総平均の回答・妥結額はいくらで、アップ率は何％か？",
+  "expected_keywords": [
+   "春季労使交渉",
+   "19,964",
+   "5.46"
+  ],
+  "expected_source": "keidanren_2026_030.pdf",
+  "expected_org": "keidanren",
+  "qtype": "temporal"
+ },
+ {
+  "id": "123",
+  "question": "連合が2035年の社会を展望して取りまとめた中長期の税制に関する構想（第4次・改訂版）のダイジェスト版では、各論の最初にどのような改革を掲げ、その土台となる社会像を何と呼んでいるか？",
+  "expected_keywords": [
+   "税制改革構想",
+   "納税環境の改革",
+   "働くことを軸とする安心社会"
+  ],
+  "expected_source": "rengo_202005_05_shakai4digest.pdf",
+  "expected_org": "rengo",
+  "qtype": "temporal"
+ },
+ {
+  "id": "124",
+  "question": "連合の最新の教育政策に関する提言では、2025年6月に成立した教員の働き方に関する法改正を何と呼び、学級規模や教職員体制についてどのような改善を求めているか？",
+  "expected_keywords": [
+   "給特法",
+   "35人学級",
+   "教職員定数"
+  ],
+  "expected_source": "rengo_teigen_26.txt",
+  "expected_org": "rengo",
+  "qtype": "temporal"
+ },
+ {
+  "id": "125",
+  "question": "2026年4月に日本商工会議所など中小企業4団体が公表した最低賃金に関する要望では、前年の地方での最低賃金審議にみられたどのような動きを問題視しているか？",
+  "expected_keywords": [
+   "地方最低賃金審議会",
+   "目安への大幅な上乗せ",
+   "過度な地域間競争"
+  ],
+  "expected_source": "nissho_2026_0416140005.pdf",
+  "expected_org": "nissho",
+  "qtype": "temporal"
+ },
+ {
+  "id": "126",
+  "question": "2026年の賃上げをめぐり、経団連の経営労働政策特別委員会報告と連合の重点政策はそれぞれどのような方針・要求を掲げているか？",
+  "expected_keywords": [
+   "賃金引上げの力強いモメンタム",
+   "春季生活闘争",
+   "継続的な賃上げ"
+  ],
+  "expected_source": "keidanren_2026_003.txt",
+  "expected_sources": [
+   "keidanren_2026_003.txt",
+   "rengo_202605_jyutenseisaku2026.pdf"
+  ],
+  "expected_org": "keidanren",
+  "qtype": "comparative"
+ },
+ {
+  "id": "127",
+  "question": "政府が掲げる最低賃金「全国加重平均1,500円」目標に対して、日商の要望と骨太方針2025はそれぞれどのような姿勢を示しているか？",
+  "expected_keywords": [
+   "全国加重平均1,500円",
+   "経営実態から著しく乖離",
+   "たゆまぬ努力"
+  ],
+  "expected_source": "nissho_2026_0416140005.pdf",
+  "expected_sources": [
+   "nissho_2026_0416140005.pdf",
+   "gov_cefp_2025.pdf"
+  ],
+  "expected_org": "nissho",
+  "qtype": "comparative"
+ },
+ {
+  "id": "128",
+  "question": "給付付き税額控除の導入について、連合と経団連はそれぞれどのような制度設計・活用を提言しているか？",
+  "expected_keywords": [
+   "給付付き税額控除",
+   "マイナンバー",
+   "低所得者対策"
+  ],
+  "expected_source": "rengo_teigen_03.txt",
+  "expected_sources": [
+   "rengo_teigen_03.txt",
+   "keidanren_2026_018.pdf"
+  ],
+  "expected_org": "rengo",
+  "qtype": "comparative"
+ },
+ {
+  "id": "129",
+  "question": "原子力発電の今後の位置づけについて、連合の提言と政府（骨太方針2025）の方針はどのように異なるか？",
+  "expected_keywords": [
+   "原子力エネルギーに依存しない社会",
+   "原子炉の再稼働",
+   "次世代革新炉"
+  ],
+  "expected_source": "rengo_teigen_06.txt",
+  "expected_sources": [
+   "rengo_teigen_06.txt",
+   "gov_cefp_2025.pdf"
+  ],
+  "expected_org": "rengo",
+  "qtype": "comparative"
+ },
+ {
+  "id": "130",
+  "question": "外国人材の受入れについて、経団連と日商はそれぞれどのような政策・制度整備を求めているか？",
+  "expected_keywords": [
+   "秩序ある戦略的誘致",
+   "外国人材受入れに関する基本法",
+   "共生社会"
+  ],
+  "expected_source": "keidanren_2025_086.pdf",
+  "expected_sources": [
+   "keidanren_2025_086.pdf",
+   "nissho_2025_0917140045.pdf"
+  ],
+  "expected_org": "keidanren",
+  "qtype": "comparative"
+ },
+ {
+  "id": "131",
+  "question": "「パートナーシップ構築宣言」の実効性を高めるため、経団連と日商が公表した文書ではそれぞれどのような取組みが求められているか？",
+  "expected_keywords": [
+   "価格転嫁の商習慣",
+   "実効性向上",
+   "成長と分配の好循環"
+  ],
+  "expected_source": "keidanren_2026_001.pdf",
+  "expected_sources": [
+   "keidanren_2026_001.pdf",
+   "nissho_2024_0117132802.pdf"
+  ],
+  "expected_org": "keidanren",
+  "qtype": "comparative"
+ },
+ {
+  "id": "132",
+  "question": "持続可能な社会保障制度の構築に向けて、連合と経団連はそれぞれどのような改革の方向性を示しているか？",
+  "expected_keywords": [
+   "社会保障制度改革と安定財源の確保",
+   "中福祉・中負担",
+   "国民皆保険・皆年金"
+  ],
+  "expected_source": "rengo_teigen_08.txt",
+  "expected_sources": [
+   "rengo_teigen_08.txt",
+   "keidanren_2026_018.pdf"
+  ],
+  "expected_org": "rengo",
+  "qtype": "comparative"
+ },
+ {
+  "id": "133",
+  "question": "裁量労働制のあり方について、経団連と連合の主張はどのように対立しているか？",
+  "expected_keywords": [
+   "裁量労働制の拡充",
+   "対象業務拡大は行わない",
+   "柔軟で自律的な働き方"
+  ],
+  "expected_source": "keidanren_2026_023.pdf",
+  "expected_sources": [
+   "keidanren_2026_023.pdf",
+   "rengo_teigen_07.txt"
+  ],
+  "expected_org": "keidanren",
+  "qtype": "comparative"
+ },
+ {
+  "id": "134",
+  "question": "デジタル化（DX）の推進をめぐり、日商と連合はそれぞれどのような課題認識と施策を示しているか？",
+  "expected_keywords": [
+   "中小企業のデジタル化",
+   "デジタル化の遅れ",
+   "サプライチェーン"
+  ],
+  "expected_source": "nissho_2024_0419110002_2.pdf",
+  "expected_sources": [
+   "nissho_2024_0419110002_2.pdf",
+   "rengo_teigen_17.txt"
+  ],
+  "expected_org": "nissho",
+  "qtype": "comparative"
+ },
+ {
+  "id": "135",
+  "question": "スタートアップの育成・支援について、政府（骨太方針2025）と経団連はそれぞれどのような方針を示しているか？",
+  "expected_keywords": [
+   "スタートアップ育成５か年計画",
+   "投資立国",
+   "官需を成長ドライバー"
+  ],
+  "expected_source": "gov_cefp_2025.pdf",
+  "expected_sources": [
+   "gov_cefp_2025.pdf",
+   "keidanren_2026_019.pdf"
+  ],
+  "expected_org": "gov",
+  "qtype": "comparative"
+ },
+ {
+  "id": "136",
+  "question": "日商は物価上昇下で中小企業の価格転嫁を定着させるため、どのような環境整備を求めているか？",
+  "expected_keywords": [
+   "価格転嫁の商習慣化",
+   "労務費ガイドライン",
+   "取引適正化"
+  ],
+  "expected_source": "nissho_2023_0720140000_1.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "137",
+  "question": "日商は人口減少に直面する地方都市の中心市街地について、再生を阻害している現象や課題をどのように指摘しているか？",
+  "expected_keywords": [
+   "都市のスポンジ化",
+   "低未利用不動産",
+   "空き店舗"
+  ],
+  "expected_source": "nissho_2023_0721140000_1.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "138",
+  "question": "日商は観光の再生・復活に向けて、政府にどのような施策の強化を求めているか？",
+  "expected_keywords": [
+   "持続可能な観光地域づくり",
+   "高付加価値化",
+   "地方誘客"
+  ],
+  "expected_source": "nissho_2023_0721143022_1.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "139",
+  "question": "日商は東日本大震災からの復興・創生に関する要望で、福島の再生についてどのような取組みを求めているか？",
+  "expected_keywords": [
+   "創造的復興",
+   "ALPS処理水",
+   "福島イノベーション・コースト構想"
+  ],
+  "expected_source": "nissho_2024_0306102000_2.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "140",
+  "question": "日商はデジタル化に未着手の中小企業への支援についてどのような提言をしているか？",
+  "expected_keywords": [
+   "伴走支援",
+   "デジタイゼーション",
+   "省力化"
+  ],
+  "expected_source": "nissho_2024_0419110002_1.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "141",
+  "question": "日商は国土強靭化の加速化に向けた意見で、どのような国土への転換と取組みを求めているか？",
+  "expected_keywords": [
+   "自律・分散・協調",
+   "事前防災",
+   "複合災害"
+  ],
+  "expected_source": "nissho_2024_1122140130_2.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "142",
+  "question": "日商は多様な人材の活躍推進に向けて、シニアや女性の就労を阻害する制度についてどのような見直しを要望しているか？",
+  "expected_keywords": [
+   "在職老齢年金制度",
+   "年収の壁",
+   "第３号被保険者制度"
+  ],
+  "expected_source": "nissho_2024_1219140000.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "143",
+  "question": "日商は令和６年度税制改正に関する意見で、飲食需要の喚起に向けた交際費課税についてどのような要望をしているか？",
+  "expected_keywords": [
+   "交際費課税特例",
+   "中小飲食店",
+   "２万円以下"
+  ],
+  "expected_source": "nissho_2023_0921150000_1.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "144",
+  "question": "日商は次期社会資本整備重点計画・交通政策基本計画に関する意見で、どのような社会基盤整備を求めているか？",
+  "expected_keywords": [
+   "攻めの社会資本整備",
+   "ミッシングリンク",
+   "ストック効果"
+  ],
+  "expected_source": "nissho_2025_0623130010_1.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "145",
+  "question": "日商は地域の稼ぐ力を高めるまちづくりについて、どのような方向性のまちづくりを提言しているか？",
+  "expected_keywords": [
+   "公民共創",
+   "地域経済循環の結節点",
+   "エリア価値"
+  ],
+  "expected_source": "nissho_2025_0717190348_1.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "146",
+  "question": "経済財政運営と改革の基本方針2021（骨太の方針2021）が「日本の未来を拓く」ために掲げた４つの原動力とは、それぞれ何ですか。",
+  "expected_keywords": [
+   "４つの原動力",
+   "グリーン",
+   "活力ある地方創り",
+   "少子化対策"
+  ],
+  "expected_source": "gov_cefp_2021.pdf",
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "147",
+  "question": "骨太の方針2022では、「人への投資」を強化するために何年間でどの程度の規模の施策パッケージを講じるとしていますか。",
+  "expected_keywords": [
+   "人への投資",
+   "３年間",
+   "4,000億円",
+   "施策パッケージ"
+  ],
+  "expected_source": "gov_cefp_2022.pdf",
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "148",
+  "question": "骨太の方針2023が構造的賃上げの実現に向けて実行するとした労働市場改革の名称と、その内容として挙げられている能力向上支援・給与制度・労働移動に関する3つの要素は何ですか。",
+  "expected_keywords": [
+   "三位一体の労働市場改革",
+   "リ・スキリング",
+   "職務給",
+   "成長分野への労働移動"
+  ],
+  "expected_source": "gov_cefp_2023.pdf",
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "149",
+  "question": "令和4年5月の規制改革推進に関する答申（コロナ後に向けた成長の「起動」）では、スタートアップに関する規制・制度見直しとしてどのような事項が挙げられていますか。",
+  "expected_keywords": [
+   "法人設立手続",
+   "エクイティ",
+   "経営者保証",
+   "事業成長担保権"
+  ],
+  "expected_source": "gov_kisei_220527.pdf",
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "150",
+  "question": "令和6年5月の規制改革推進に関する答申では、移動の足不足の解消に向けて、タクシーの規制緩和のほか、いわゆる日本版ライドシェアとして始まったどの事業について施策効果の測定等が実施事項とされていますか。",
+  "expected_keywords": [
+   "自家用車活用事業",
+   "タクシー",
+   "ライドシェア",
+   "移動の足"
+  ],
+  "expected_source": "gov_kisei_240531.pdf",
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "151",
+  "question": "令和8年2月の規制改革推進に関する中間答申では、「強い経済の実現」の分野において、がん情報に関してどのような整備を進めることが実施事項とされていますか。",
+  "expected_keywords": [
+   "全国がん登録",
+   "院内がん情報",
+   "利活用",
+   "強い経済の実現"
+  ],
+  "expected_source": "gov_kisei_260226.pdf",
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "152",
+  "question": "財政審の「財政健全化に向けた建議」（令和3年5月）によれば、政府は新型コロナ対応として令和2年度に何次の補正予算を編成し国債を約いくら増発しましたか。また令和3年度予算に計上された予備費の名称と金額も答えてください。",
+  "expected_keywords": [
+   "三次にわたる補正予算",
+   "80兆円",
+   "新型コロナ対策予備費",
+   "５兆円"
+  ],
+  "expected_source": "gov_zaiseishin_20210521.pdf",
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "153",
+  "question": "令和6年度予算の編成等に関する建議によれば、こども未来戦略方針に盛り込まれた少子化対策のパッケージの名称と毎年度の予算規模はどの程度で、施策の大宗はいつまでに実施に移すこととされていますか。",
+  "expected_keywords": [
+   "加速化プラン",
+   "３兆円半ば",
+   "令和８年度",
+   "こども未来戦略方針"
+  ],
+  "expected_source": "gov_zaiseishin_20231120.pdf",
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "154",
+  "question": "経団連は裁量労働制の適用労働者に支給する裁量労働手当の月額をいくらとすべきと提言しているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "keidanren",
+  "qtype": "abstention",
+  "trap_terms": [
+   "裁量労働制",
+   "裁量労働手当"
+  ]
+ },
+ {
+  "id": "155",
+  "question": "経団連は外国人労働者の受け入れ上限数を何万人とすべきと提言しているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "keidanren",
+  "qtype": "abstention",
+  "trap_terms": [
+   "外国人労働者",
+   "受入れ上限数"
+  ]
+ },
+ {
+  "id": "156",
+  "question": "経団連の調査によると、2025年の中小企業の年末賞与・一時金の平均妥結額はいくらか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "keidanren",
+  "qtype": "abstention",
+  "trap_terms": [
+   "年末賞与",
+   "妥結"
+  ]
+ },
+ {
+  "id": "157",
+  "question": "規制改革推進会議の答申では、タクシー事業者以外の者によるライドシェア事業をいつから解禁するとしているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "gov",
+  "qtype": "abstention",
+  "trap_terms": [
+   "ライドシェア",
+   "タクシー事業者以外の者"
+  ]
+ },
+ {
+  "id": "158",
+  "question": "財政制度等審議会の建議では、消費税率を将来的に何％まで引き上げる必要があるとしているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "gov",
+  "qtype": "abstention",
+  "trap_terms": [
+   "消費税率",
+   "財政健全化"
+  ]
+ },
+ {
+  "id": "159",
+  "question": "経済財政運営と改革の基本方針を審議する経済財政諮問会議の民間議員には誰が任命されているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "gov",
+  "qtype": "abstention",
+  "trap_terms": [
+   "経済財政諮問会議"
+  ]
+ },
+ {
+  "id": "160",
+  "question": "連合は介護労働者の特定最低賃金をいくらに設定すべきと提言しているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "rengo",
+  "qtype": "abstention",
+  "trap_terms": [
+   "特定最低賃金",
+   "介護労働者"
+  ]
+ },
+ {
+  "id": "161",
+  "question": "連合が創設を求めている最低保障年金の給付月額はいくらか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "rengo",
+  "qtype": "abstention",
+  "trap_terms": [
+   "最低保障年金",
+   "所得比例年金"
+  ]
+ },
+ {
+  "id": "162",
+  "question": "連合は保育所の1歳児の職員配置基準を保育士1人あたり子ども何人に改善すべきと提言しているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "rengo",
+  "qtype": "abstention",
+  "trap_terms": [
+   "職員配置基準",
+   "1歳児"
+  ]
+ },
+ {
+  "id": "163",
+  "question": "連合は組合員数を何万人まで拡大する組織目標を掲げているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "rengo",
+  "qtype": "abstention",
+  "trap_terms": [
+   "組織拡大",
+   "組織率"
+  ]
+ },
+ {
+  "id": "164",
+  "question": "日本商工会議所は最低賃金の全国加重平均をいくらまで引き上げるべきと要望しているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "nissho",
+  "qtype": "abstention",
+  "trap_terms": [
+   "最低賃金",
+   "全国加重平均"
+  ]
+ },
+ {
+  "id": "165",
+  "question": "日本商工会議所は宿泊税の税率を何％とすべきと提言しているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "nissho",
+  "qtype": "abstention",
+  "trap_terms": [
+   "宿泊税",
+   "法定外目的税"
+  ]
+ },
+ {
+  "id": "166",
+  "question": "日本商工会議所はIT導入補助金の補助上限額をいくらに引き上げるべきと要望しているか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "nissho",
+  "qtype": "abstention",
+  "trap_terms": [
+   "IT導入補助金"
+  ]
+ },
+ {
+  "id": "167",
+  "question": "日本商工会議所の会員事業者数は何社か？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "nissho",
+  "qtype": "abstention",
+  "trap_terms": [
+   "商工会議所",
+   "中小企業・小規模事業者"
+  ]
+ },
+  {
+    "id": "168",
+    "question": "経済同友会の「物流クライシスからの脱却」提言では、持続可能な物流の実現に向けてどのような具体的施策を挙げているか？",
+    "expected_keywords": [
+      "共同配送",
+      "自家用トラック",
+      "特定技能"
+    ],
+    "expected_source": "doyukai_2020_200610a.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "169",
+    "question": "経済同友会はデジタル庁の設置に向けた意見で、デジタル庁が担うべきデータ戦略のコンセプトや、組織・人事のあり方についてどのような要件を求めたか？",
+    "expected_keywords": [
+      "DFFT",
+      "脱縦割り",
+      "成果創出型人事"
+    ],
+    "expected_source": "doyukai_2020_201104a.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "170",
+    "question": "経済同友会は強靭な経済安全保障の確立に向けて、企業経営者にどのような組織文化の変革を求めているか？",
+    "expected_keywords": [
+      "地経学",
+      "ゼロ・トラスト",
+      "機微技術"
+    ],
+    "expected_source": "doyukai_2021_210421a.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "171",
+    "question": "経済同友会の健康長寿社会を支える社会保障に関する提言では、際限のない負担増を抑制し改革を実現するためにどのような仕組みの導入を提言しているか？",
+    "expected_keywords": [
+      "サーキットブレーカー",
+      "独立財政機関",
+      "マクロ経済スライド"
+    ],
+    "expected_source": "doyukai_2021_210719a.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "172",
+    "question": "経済同友会は2022年春に公表した意見で、政府が6月にまとめる経済財政運営の基本方針に対し、財政支出の質や岸田政権の看板政策との関係についてどのような考えを示しましたか？",
+    "expected_keywords": [
+      "骨太方針2022",
+      "ワイズ・スペンディング",
+      "新しい資本主義"
+    ],
+    "expected_source": "doyukai_2022_220422a.pdf",
+    "expected_org": "doyukai",
+    "qtype": "paraphrase"
+  },
+  {
+    "id": "173",
+    "question": "経済同友会はこども家庭庁の創設に向けた提言で、日本の子どもの貧困の現状をどのようなデータで示し、何が構造的課題だと指摘しているか？",
+    "expected_keywords": [
+      "相対的貧困",
+      "13.5％",
+      "貧困の再生産"
+    ],
+    "expected_source": "doyukai_2022_220518a.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "174",
+    "question": "経済同友会が提言する教育トランスフォーメーション（EX）では、企業が求める人材像と、それを育てるための教育内容をどのように示しているか？",
+    "expected_keywords": [
+      "価値創造人材",
+      "コンピテンシー教育",
+      "リベラルアーツ"
+    ],
+    "expected_source": "doyukai_2023_230405t.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "175",
+    "question": "経済同友会は外部労働市場の真の活性化に向けて、どのような雇用システムの導入と個人の学び直しの開放を提言しているか？",
+    "expected_keywords": [
+      "シン・日本型雇用システム",
+      "リスキリング",
+      "内部労働市場"
+    ],
+    "expected_source": "doyukai_2023_230421t.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "176",
+    "question": "経済同友会が2023年12月に公表した原子力に関する意見では、2011年以来の「縮・原発」という従来姿勢をどのような新しい考え方に改め、既存の発電所を再び動かすことや将来の炉の建て替えについて何を求めていますか？",
+    "expected_keywords": [
+      "活・原子力",
+      "再稼働",
+      "革新炉"
+    ],
+    "expected_source": "doyukai_2023_231220t.pdf",
+    "expected_org": "doyukai",
+    "qtype": "paraphrase"
+  },
+  {
+    "id": "177",
+    "question": "経済同友会は新興企業の生態系を広げるための意見で、成長後期の資金不足を補う手段や、先端科学技術を事業化する企業への支援についてどのような提案をしていますか？",
+    "expected_keywords": [
+      "レイターステージ",
+      "ディープテック",
+      "ベンチャーデット"
+    ],
+    "expected_source": "doyukai_2024_240724.pdf",
+    "expected_org": "doyukai",
+    "qtype": "paraphrase"
+  },
+  {
+    "id": "178",
+    "question": "経済同友会の地方創生の加速に関する報告書では、人口減少下で基礎自治体の持続可能性を高めるために、どの規模の自治体を重視し、どのような連携を推進すべきとしているか？",
+    "expected_keywords": [
+      "30万人以下",
+      "自治体間連携",
+      "近隣地連携",
+      "遠隔地連携"
+    ],
+    "expected_source": "doyukai_2024_241113.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "179",
+    "question": "経済同友会は外国人材との共生社会の実現に向けて、国や企業が優先的に取り組むべき施策として何を提言しているか？",
+    "expected_keywords": [
+      "共生支援プログラム",
+      "共生促進企業",
+      "義務教育"
+    ],
+    "expected_source": "doyukai_2025_250508.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "180",
+    "question": "経済同友会の予防・健康づくりに関する提言では、予防への投資を促すためにどのような考え方の転換と、地域・個人向けの財源確保策や税制を提案しているか？",
+    "expected_keywords": [
+      "コストからアセットへ",
+      "ソーシャルインパクトボンド",
+      "セルフメディケーション税制"
+    ],
+    "expected_source": "doyukai_2025_250523a.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "181",
+    "question": "経済同友会は中学生の部活動改革について、どのような背景と最大の課題を指摘し、財源確保のためにどんな対策を提言しているか？",
+    "expected_keywords": [
+      "地域展開",
+      "教員の長時間勤務",
+      "スポーツ振興くじ"
+    ],
+    "expected_source": "doyukai_2026_260519.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "182",
+    "question": "経済同友会などが公表した企業とソーシャルセクター間の資金供与に関する意見では、どのような社会像を掲げ、資金の流れを円滑にするためにどんな仕組みや制度改正を提案しているか？",
+    "expected_keywords": [
+      "共助成長社会",
+      "コーポレートガバナンス・コード",
+      "自己株式"
+    ],
+    "expected_source": "doyukai_2026_260421.pdf",
+    "expected_org": "doyukai",
+    "qtype": "coverage"
+  },
+  {
+    "id": "183",
+    "question": "外国人材の受入れ・共生のあり方について、経済同友会と経団連はそれぞれどのような社会像や制度整備を提言しているか？",
+    "expected_keywords": [
+      "外国人材との共生社会",
+      "秩序ある戦略的誘致",
+      "ステークホルダー"
+    ],
+    "expected_source": "doyukai_2025_250508.pdf",
+    "expected_sources": [
+      "doyukai_2025_250508.pdf",
+      "keidanren_2025_086.pdf"
+    ],
+    "expected_org": "doyukai",
+    "qtype": "comparative"
+  },
+  {
+    "id": "184",
+    "question": "原子力発電の今後の活用について、経済同友会のエネルギー政策に関する意見と連合の提言はどのように異なるか？",
+    "expected_keywords": [
+      "エネルギー自立",
+      "原子力利用拡大",
+      "原子力エネルギーに依存しない社会"
+    ],
+    "expected_source": "doyukai_2026_260529.pdf",
+    "expected_sources": [
+      "doyukai_2026_260529.pdf",
+      "rengo_teigen_06.txt"
+    ],
+    "expected_org": "doyukai",
+    "qtype": "comparative"
+  },
+  {
+    "id": "185",
+    "question": "最低賃金制度のあり方について、経済同友会と日本商工会議所はそれぞれどのような主張・要望を行っているか？",
+    "expected_keywords": [
+      "エッセンシャルワーク",
+      "特定最低賃金",
+      "支払能力"
+    ],
+    "expected_source": "doyukai_2025_250409.pdf",
+    "expected_sources": [
+      "doyukai_2025_250409.pdf",
+      "nissho_2026_0416140005.pdf"
+    ],
+    "expected_org": "doyukai",
+    "qtype": "comparative"
+  },
+  {
+    "id": "186",
+    "question": "経済同友会は外国人材向けの統一的な日本語教育の実施を提言しているが、そのために国が自治体へ拡充すべき補助金の金額をいくらとしているか？",
+    "expected_keywords": [],
+    "expected_source": null,
+    "expected_org": "doyukai",
+    "qtype": "abstention",
+    "trap_terms": [
+      "日本語教育",
+      "外国人材との共生社会"
+    ]
+  },
+  {
+    "id": "187",
+    "question": "経済同友会が提言するエッセンシャルワーク領域の特定最低賃金について、具体的な時給額は何円とされているか？",
+    "expected_keywords": [],
+    "expected_source": null,
+    "expected_org": "doyukai",
+    "qtype": "abstention",
+    "trap_terms": [
+      "エッセンシャルワーク",
+      "特定最低賃金"
+    ]
+  },
+  {
+    "id": "188",
+    "question": "経済同友会が導入を提言する「雇用型自律労働契約」について、その対象となり得る労働者の規模を何万人と見込んでいるか？",
+    "expected_keywords": [],
+    "expected_source": null,
+    "expected_org": "doyukai",
+    "qtype": "abstention",
+    "trap_terms": [
+      "雇用型自律労働契約",
+      "労働基準法適用除外"
+    ]
+  },
+  {
+    "id": "189",
+    "question": "経済同友会が導入を提言する地域別診療報酬制度では、診療報酬単価を地域ごとに何％の範囲で変動させるとしているか？",
+    "expected_keywords": [],
+    "expected_source": null,
+    "expected_org": "doyukai",
+    "qtype": "abstention",
+    "trap_terms": [
+      "地域別診療報酬",
+      "7つの危機"
+    ]
+  },
+ {
+  "id": "190",
+  "question": "道州制の導入・検討をめぐり、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "道州制",
+   "新たな道州制",
+   "地域主権型の道州制",
+   "自治と統治のバランス"
+  ],
+  "expected_source": "keidanren_2024_054.pdf",
+  "expected_sources": [
+   "keidanren_2024_054.pdf",
+   "doyukai_2024_241024.pdf",
+   "gov_cefp_2019.pdf",
+   "rengo_teigen_24.txt"
+  ],
+  "expected_orgs": [
+   "keidanren",
+   "doyukai",
+   "gov",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "expected_org": "keidanren",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "191",
+  "question": "最低賃金を全国加重平均1500円へ引き上げる目標の是非について、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "全国加重平均",
+   "2030年代半ば",
+   "隣県との過度な競争意識",
+   "賃金中央値の6割水準"
+  ],
+  "expected_source": "gov_cefp_2024.pdf",
+  "expected_sources": [
+   "gov_cefp_2024.pdf",
+   "nissho_2025_0917140018.pdf",
+   "rengo_202605_jyutenseisaku2026.pdf",
+   "doyukai_2025_251021.pdf",
+   "keidanren_2024_064.pdf"
+  ],
+  "expected_orgs": [
+   "gov",
+   "nissho",
+   "rengo",
+   "doyukai",
+   "keidanren"
+  ],
+  "min_coverage": 2,
+  "expected_org": "gov",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "192",
+  "question": "スタートアップの育成・支援に向けて、各団体はどのような施策や論点を提起しているか？",
+  "expected_keywords": [
+   "スタートアップ育成",
+   "ユニコーン",
+   "スタートアップ・エコシステムの抜本強化",
+   "資金供給手段の拡大"
+  ],
+  "expected_source": "keidanren_2024_060.pdf",
+  "expected_sources": [
+   "keidanren_2024_060.pdf",
+   "doyukai_2024_240724.pdf",
+   "gov_kisei_250528.pdf",
+   "nissho_2023_0921150000_2.pdf"
+  ],
+  "expected_orgs": [
+   "keidanren",
+   "doyukai",
+   "gov",
+   "nissho"
+  ],
+  "min_coverage": 2,
+  "expected_org": "keidanren",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "193",
+  "question": "カーボンニュートラル／GXの推進をめぐり、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "カーボンニュートラル",
+   "公正な移行",
+   "省エネ診断",
+   "イノベーション＆トランジション"
+  ],
+  "expected_source": "keidanren_2025_087.pdf",
+  "expected_sources": [
+   "keidanren_2025_087.pdf",
+   "doyukai_2022_230309t.pdf",
+   "gov_cefp_2023.pdf",
+   "nissho_2024_0718135000.pdf",
+   "rengo_202605_jyutenseisaku2026.pdf"
+  ],
+  "expected_orgs": [
+   "keidanren",
+   "doyukai",
+   "gov",
+   "nissho",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "expected_org": "keidanren",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "194",
+  "question": "リスキリング（学び直し）の推進について、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "学び直し",
+   "リスキリング",
+   "リカレント教育エコシステム",
+   "学費支給"
+  ],
+  "expected_source": "keidanren_2026_007.pdf",
+  "expected_sources": [
+   "keidanren_2026_007.pdf",
+   "doyukai_2026_260630.pdf",
+   "gov_cefp_2024.pdf",
+   "nissho_2023_0921150000_2.pdf",
+   "rengo_202005_06.pdf"
+  ],
+  "expected_orgs": [
+   "keidanren",
+   "doyukai",
+   "gov",
+   "nissho",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "expected_org": "keidanren",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "195",
+  "question": "価格転嫁・労務費転嫁の徹底をめぐり、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "価格転嫁",
+   "価格転嫁対策",
+   "取引適正化",
+   "労務費転嫁指針"
+  ],
+  "expected_source": "gov_cefp_2024.pdf",
+  "expected_sources": [
+   "gov_cefp_2024.pdf",
+   "nissho_2025_0717140010.pdf",
+   "rengo_202605_jyutenseisaku2026.pdf"
+  ],
+  "expected_orgs": [
+   "gov",
+   "nissho",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "expected_org": "gov",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "196",
+  "question": "少子化対策・こども／子育て支援について、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "少子化",
+   "共働き・共育て",
+   "こども未来戦略方針",
+   "子ども・子育て支援新制度"
+  ],
+  "expected_source": "doyukai_2025_2506010.pdf",
+  "expected_sources": [
+   "doyukai_2025_2506010.pdf",
+   "gov_zaiseishin_20231120.pdf",
+   "keidanren_2025_061.pdf",
+   "nissho_2024_1219140000.pdf"
+  ],
+  "expected_orgs": [
+   "doyukai",
+   "gov",
+   "keidanren",
+   "nissho"
+  ],
+  "min_coverage": 2,
+  "expected_org": "doyukai",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "197",
+  "question": "女性活躍・女性登用の推進について、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "女性活躍",
+   "女性活躍推進法",
+   "男女間賃金差異",
+   "DEI経営"
+  ],
+  "expected_source": "keidanren_2025_004.pdf",
+  "expected_sources": [
+   "keidanren_2025_004.pdf",
+   "doyukai_2025_250423.pdf",
+   "nissho_2024_1219140000.pdf",
+   "rengo_teigen_28.txt"
+  ],
+  "expected_orgs": [
+   "keidanren",
+   "doyukai",
+   "nissho",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "expected_org": "keidanren",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "198",
+  "question": "インボイス制度（適格請求書等保存方式）の導入とその見直しをめぐり、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "インボイス制度",
+   "免税事業者",
+   "適格請求書等保存方式",
+   "電子帳簿保存法"
+  ],
+  "expected_source": "nissho_2023_0921150000_2.pdf",
+  "expected_sources": [
+   "nissho_2023_0921150000_2.pdf",
+   "rengo_202005_06.pdf",
+   "keidanren_2024_067.pdf"
+  ],
+  "expected_orgs": [
+   "nissho",
+   "rengo",
+   "keidanren"
+  ],
+  "min_coverage": 2,
+  "expected_org": "nissho",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "199",
+  "question": "ライドシェアの導入をめぐり、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "ライドシェア",
+   "自家用車活用事業",
+   "移動の足",
+   "利用者保護"
+  ],
+  "expected_source": "doyukai_2023_240201.pdf",
+  "expected_sources": [
+   "doyukai_2023_240201.pdf",
+   "gov_kisei_240531.pdf",
+   "rengo_teigen_16.txt"
+  ],
+  "expected_orgs": [
+   "doyukai",
+   "gov",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "expected_org": "doyukai",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "200",
+  "question": "選択的夫婦別姓制度の導入について、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "選択的夫婦別姓",
+   "選択的夫婦別姓制度",
+   "旧姓の通称使用",
+   "女性活躍"
+  ],
+  "expected_source": "doyukai_2023_240308.pdf",
+  "expected_sources": [
+   "doyukai_2023_240308.pdf",
+   "keidanren_2024_044.txt",
+   "rengo_202605_jyutenseisaku2026.pdf"
+  ],
+  "expected_orgs": [
+   "doyukai",
+   "keidanren",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "expected_org": "doyukai",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "201",
+  "question": "いわゆる「年収の壁」や配偶者控除の見直しについて、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "年収の壁",
+   "配偶者控除",
+   "就業調整",
+   "130万円"
+  ],
+  "expected_source": "doyukai_2024_240501.pdf",
+  "expected_sources": [
+   "doyukai_2024_240501.pdf",
+   "keidanren_2026_018.pdf",
+   "nissho_2024_0718135000.pdf",
+   "rengo_202605_jyutenseisaku2026.pdf"
+  ],
+  "expected_orgs": [
+   "doyukai",
+   "keidanren",
+   "nissho",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "expected_org": "doyukai",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "202",
+  "question": "デジタル田園都市国家構想や地方創生の推進について、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "デジタル田園都市",
+   "地方創生",
+   "デジタル田園都市国家構想"
+  ],
+  "expected_source": "gov_cefp_2022.pdf",
+  "expected_sources": [
+   "gov_cefp_2022.pdf",
+   "nissho_2025_0717140010.pdf",
+   "keidanren_2025_037.pdf",
+   "doyukai_2025_250404.pdf"
+  ],
+  "expected_orgs": [
+   "gov",
+   "nissho",
+   "keidanren",
+   "doyukai"
+  ],
+  "min_coverage": 2,
+  "expected_org": "gov",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "203",
+  "question": "資産運用立国（貯蓄から投資）の実現に向けて、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "資産運用立国",
+   "貯蓄から投資",
+   "資産運用立国の実現"
+  ],
+  "expected_source": "keidanren_2025_032.pdf",
+  "expected_sources": [
+   "keidanren_2025_032.pdf",
+   "gov_cefp_2025.pdf",
+   "doyukai_2026_260520.pdf"
+  ],
+  "expected_orgs": [
+   "keidanren",
+   "gov",
+   "doyukai"
+  ],
+  "min_coverage": 2,
+  "expected_org": "keidanren",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "204",
+  "question": "全世代型社会保障の構築・社会保障改革について、各団体はどのような立場・論点を示しているか？",
+  "expected_keywords": [
+   "全世代型社会保障",
+   "給付と負担",
+   "社会保障改革"
+  ],
+  "expected_source": "gov_cefp_2024.pdf",
+  "expected_sources": [
+   "gov_cefp_2024.pdf",
+   "keidanren_2024_020.pdf",
+   "doyukai_2022_220708_1601.pdf",
+   "rengo_202005_06.pdf"
+  ],
+  "expected_orgs": [
+   "gov",
+   "keidanren",
+   "doyukai",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "expected_org": "gov",
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "205",
+  "question": "給付付き税額控除を、わが国で最も早い時期に提言した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "rengo",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "給付付き税額控除"
+  ]
+ },
+ {
+  "id": "206",
+  "question": "最低賃金の全国加重平均1,500円への引上げに、最も強く反対している団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "nissho",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "最低賃金",
+   "全国加重平均"
+  ]
+ },
+ {
+  "id": "207",
+  "question": "カーボンニュートラルの実現を、他に先駆けて最も早く掲げた団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "keidanren",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "カーボンニュートラル"
+  ]
+ },
+ {
+  "id": "208",
+  "question": "スタートアップ支援の強化を最初に打ち出した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "doyukai",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "スタートアップ"
+  ]
+ },
+ {
+  "id": "209",
+  "question": "選択的夫婦別姓制度の導入に、最初に賛成を表明した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "keidanren",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "選択的夫婦別姓"
+  ]
+ },
+ {
+  "id": "210",
+  "question": "インボイス制度の導入に、唯一反対した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "nissho",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "インボイス"
+  ]
+ },
+ {
+  "id": "211",
+  "question": "リスキリング支援の予算を、各団体の中で最大額で要求した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "keidanren",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "リスキリング"
+  ]
+ },
+ {
+  "id": "212",
+  "question": "道州制の導入を、わが国で最も早く提言した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "doyukai",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "道州制"
+  ]
+ },
+ {
+  "id": "213",
+  "question": "ジョブ型雇用への転換を、最初に提唱した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "doyukai",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "ジョブ型"
+  ]
+ },
+ {
+  "id": "214",
+  "question": "ライドシェアの全面解禁を、唯一明確に主張した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "gov",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "ライドシェア"
+  ]
+ },
+ {
+  "id": "215",
+  "question": "防衛費の大幅な増額に、唯一反対の立場を示した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "doyukai",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "防衛費"
+  ]
+ },
+ {
+  "id": "216",
+  "question": "配偶者控除の廃止を、最初に主張した団体はどこか？",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "rengo",
+  "qtype": "aggregation",
+  "trap_terms": [
+   "配偶者控除"
+  ]
+ },
+ {
+  "id": "217",
+  "question": "経団連の資料は、特定技能制度における特定技能外国人（1号・2号）の受入れ人数が、どのような水準に達していると述べているか？",
+  "expected_keywords": [
+   "特定技能制度",
+   "特定技能外国人",
+   "いずれも過去最高",
+   "過去最高を更新"
+  ],
+  "expected_source": "keidanren_2025_086.pdf",
+  "expected_org": "keidanren",
+  "qtype": "aggregation"
+ },
+ {
+  "id": "218",
+  "question": "経済同友会の資料は、2020年度予算案の歳出規模が、どのような水準にあると述べているか？",
+  "expected_keywords": [
+   "予算案の歳出",
+   "102.6",
+   "年連続で過去最大",
+   "過去最大を更新"
+  ],
+  "expected_source": "doyukai_2020_200605a.pdf",
+  "expected_org": "doyukai",
+  "qtype": "aggregation"
+ },
+ {
+  "id": "219",
+  "question": "日本商工会議所の資料は、わが国のインバウンド需要（訪日者数・消費額）が、現在どのような状況にあると述べているか？",
+  "expected_keywords": [
+   "インバウンド需要",
+   "訪日者数・消費額",
+   "過去最高を記録",
+   "ともに過去最高"
+  ],
+  "expected_source": "nissho_2025_0304161243_1.pdf",
+  "expected_org": "nissho",
+  "qtype": "aggregation"
+ }
+]

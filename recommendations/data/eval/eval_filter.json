@@ -1,0 +1,310 @@
+[
+ {
+  "id": "f01",
+  "desc": "org keep：経団連の設問を org=keidanren で絞っても正解に届く",
+  "question": "HR部門におけるAI活用の大前提として、経団連はAIをどのように位置づけていますか？",
+  "expected_source": "keidanren_2026_016.pdf",
+  "filter": {
+   "orgs": [
+    "keidanren"
+   ]
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f02",
+  "desc": "org drop：同じ設問を org=gov で絞ると経団連の正解は除外される",
+  "question": "HR部門におけるAI活用の大前提として、経団連はAIをどのように位置づけていますか？",
+  "expected_source": "keidanren_2026_016.pdf",
+  "filter": {
+   "orgs": [
+    "gov"
+   ]
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f03",
+  "desc": "date keep：2026年の提言を 2025年以降フィルタで残す",
+  "question": "2024年度の全部門合計のCO2排出量と、2013年度比の削減率は？",
+  "expected_source": "keidanren_2025_087.pdf",
+  "filter": {
+   "date_from": 20250101
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f04",
+  "desc": "date drop：2026年の提言を 2019年以前フィルタで除外する",
+  "question": "2024年度の全部門合計のCO2排出量と、2013年度比の削減率は？",
+  "expected_source": "keidanren_2025_087.pdf",
+  "filter": {
+   "date_to": 20191231
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f05",
+  "desc": "field keep：分野タグ『環境エネルギー』を部分一致『環境』で残す",
+  "question": "経団連カーボンニュートラル行動計画の「４つの柱」とは何ですか？",
+  "expected_source": "keidanren_2025_087.pdf",
+  "filter": {
+   "field_tag": "環境"
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f06",
+  "desc": "field drop：環境エネルギー文書を分野タグ『労働』で除外する",
+  "question": "経団連カーボンニュートラル行動計画の「４つの柱」とは何ですか？",
+  "expected_source": "keidanren_2025_087.pdf",
+  "filter": {
+   "field_tag": "労働"
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f07",
+  "desc": "date keep：日付付与後の連合 teigen（2025-05）は date_from=2025 で実日付により残る（Phase 11 で undated 除外テストを日付フィルタ挙動に更新／f20 と同一境界で対）",
+  "question": "連合の税制改革の提言では、相続税の基礎控除をどのような水準に引き下げるべきと述べていますか？",
+  "expected_source": "rengo_teigen_03.txt",
+  "filter": {
+   "date_from": 20250101
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f09",
+  "desc": "combined keep：org＋日付＋分野を全て満たす正解は残る",
+  "question": "経団連カーボンニュートラル行動計画の「４つの柱」とは何ですか？",
+  "expected_source": "keidanren_2025_087.pdf",
+  "filter": {
+   "orgs": [
+    "keidanren"
+   ],
+   "date_from": 20250101,
+   "field_tag": "環境"
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f10",
+  "desc": "combined drop：org・日付は合うが分野タグが外れると除外される",
+  "question": "経団連カーボンニュートラル行動計画の「４つの柱」とは何ですか？",
+  "expected_source": "keidanren_2025_087.pdf",
+  "filter": {
+   "orgs": [
+    "keidanren"
+   ],
+   "date_from": 20250101,
+   "field_tag": "労働"
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f11",
+  "desc": "org keep：日商の設問を org=nissho で絞っても正解に届く",
+  "question": "雇用・労働政策に関する重点要望で、日商が深刻な人手不足を乗り越える打ち手として提案しているのは何ですか？",
+  "expected_source": "nissho_2025_0917140018.pdf",
+  "filter": {
+   "orgs": [
+    "nissho"
+   ]
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f12",
+  "desc": "org drop：同じ日商の設問を org=rengo で絞ると正解は除外される",
+  "question": "雇用・労働政策に関する重点要望で、日商が深刻な人手不足を乗り越える打ち手として提案しているのは何ですか？",
+  "expected_source": "nissho_2025_0917140018.pdf",
+  "filter": {
+   "orgs": [
+    "rengo"
+   ]
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f13",
+  "desc": "multi-org keep：orgs=[gov,keidanren] の $in で政府文書の正解が残る",
+  "question": "令和7年度予算の編成等に関する建議によれば、2024年の春季労使交渉における賃上げ率は何％でしたか？",
+  "expected_source": "gov_zaiseishin_20241129.pdf",
+  "filter": {
+   "orgs": [
+    "gov",
+    "keidanren"
+   ]
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f14",
+  "desc": "date keep：骨太2024（20240621）を 2024年内の範囲指定で残す",
+  "question": "骨太2024における最低賃金の目標について、2023年の全国加重平均額と、2030年代半ばの目標水準は？",
+  "expected_source": "gov_cefp_2024.pdf",
+  "filter": {
+   "date_from": 20240101,
+   "date_to": 20241231
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f15",
+  "desc": "date drop：骨太2024 を 2025年以降フィルタで除外する（年次シリーズの年違い排除）",
+  "question": "骨太2024における最低賃金の目標について、2023年の全国加重平均額と、2030年代半ばの目標水準は？",
+  "expected_source": "gov_cefp_2024.pdf",
+  "filter": {
+   "date_from": 20250101
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f16",
+  "desc": "field keep：連合の分野タグ『年金政策』を部分一致『年金』で残す",
+  "question": "連合の年金政策で示された2024年財政検証によれば、基礎年金の給付水準（所得代替率）はいつまで低下し続けますか？",
+  "expected_source": "rengo_teigen_13.txt",
+  "filter": {
+   "field_tag": "年金"
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f17",
+  "desc": "field drop：年金政策の文書を分野タグ『環境』で除外する",
+  "question": "連合の年金政策で示された2024年財政検証によれば、基礎年金の給付水準（所得代替率）はいつまで低下し続けますか？",
+  "expected_source": "rengo_teigen_13.txt",
+  "filter": {
+   "field_tag": "環境"
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f18",
+  "desc": "field keep：日商の分野タグ『観光振興・まちづくり』を部分一致『観光』で残す",
+  "question": "観光に関する提言について、日商がどの大臣に手交し、着実な推進を求めた観光政策の基本計画の名称は？",
+  "expected_source": "nissho_2026_0624171640.txt",
+  "filter": {
+   "field_tag": "観光"
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f19",
+  "desc": "combined keep：org=nissho＋2025年内の複合条件でも正解が残る",
+  "question": "2025年度の最低賃金について、地方最低賃金審議会を経た全国加重平均の引上げ額はいくらだったか？",
+  "expected_source": "nissho_2025_0917140018.pdf",
+  "filter": {
+   "orgs": [
+    "nissho"
+   ],
+   "date_from": 20250101,
+   "date_to": 20251231
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f20",
+  "desc": "date drop：日付付与後の連合 teigen（2024-07）は date_from=2025 では実日付により除外される（Phase 11 で undated 除外テストを日付フィルタ挙動に更新／f07 の keep と同一境界で対）",
+  "question": "連合のエネルギー政策では、原子炉を運転できる期間について現行制度をどう説明していますか？",
+  "expected_source": "rengo_teigen_06.txt",
+  "filter": {
+   "date_from": 20250101
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f21",
+  "desc": "org keep：同友会の設問を org=doyukai で絞っても正解に届く",
+  "question": "経済同友会の意見「エネルギー自立を国策の根幹へ」で、同時達成すべきとされる「S＋3E」とは具体的に何を指しますか？",
+  "expected_source": "doyukai_2026_260529.pdf",
+  "filter": {
+   "orgs": [
+    "doyukai"
+   ]
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f22",
+  "desc": "org drop：同じ設問を org=keidanren で絞ると同友会の正解は除外される",
+  "question": "経済同友会の意見「エネルギー自立を国策の根幹へ」で、同時達成すべきとされる「S＋3E」とは具体的に何を指しますか？",
+  "expected_source": "doyukai_2026_260529.pdf",
+  "filter": {
+   "orgs": [
+    "keidanren"
+   ]
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f23",
+  "desc": "field keep：同友会ふるさと納税緊急意見の分野タグ『税制』の部分一致で正解が残る",
+  "question": "ふるさと納税の控除額の上限設定に関する緊急意見では、返礼品を希望しない寄付の控除額をどう扱うべきと提言していますか？",
+  "expected_source": "doyukai_2025_251208.pdf",
+  "filter": {
+   "field_tag": "税制"
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f24",
+  "desc": "field drop：ふるさと納税の文書を無関係な分野タグ『医療』で除外する",
+  "question": "ふるさと納税の控除額の上限設定に関する緊急意見では、返礼品を希望しない寄付の控除額をどう扱うべきと提言していますか？",
+  "expected_source": "doyukai_2025_251208.pdf",
+  "filter": {
+   "field_tag": "医療"
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f25",
+  "desc": "combined keep：org=doyukai＋2025年内の日付範囲の複合条件でも正解が残る",
+  "question": "「外国人材の人口１割時代」を見据えた経済同友会の提言で、共生を推進する企業に対して創設を求めている国の認証制度は何ですか？",
+  "expected_source": "doyukai_2025_250508.pdf",
+  "filter": {
+   "orgs": [
+    "doyukai"
+   ],
+   "date_from": 20250101,
+   "date_to": 20251231
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f26",
+  "desc": "date drop：外国人材共生提言（20250508）を 2026年以降フィルタで除外する（年次の年違い排除）",
+  "question": "「外国人材の人口１割時代」を見据えた経済同友会の提言で、共生を推進する企業に対して創設を求めている国の認証制度は何ですか？",
+  "expected_source": "doyukai_2025_250508.pdf",
+  "filter": {
+   "date_from": 20260101
+  },
+  "mode": "drop"
+ },
+ {
+  "id": "f27",
+  "desc": "field keep（B22）：発行元タグを持たない gov でも統一 21 分類（税制・財政）で絞れる",
+  "question": "令和7年度予算の編成等に関する建議によれば、2024年の春季労使交渉における賃上げ率は何％でしたか？",
+  "expected_source": "gov_zaiseishin_20241129.pdf",
+  "filter": {
+   "orgs": [
+    "gov"
+   ],
+   "field_tag": "財政"
+  },
+  "mode": "keep"
+ },
+ {
+  "id": "f28",
+  "desc": "field drop（B22）：gov×分野=農林水産 では財政審の建議は除外される",
+  "question": "令和7年度予算の編成等に関する建議によれば、2024年の春季労使交渉における賃上げ率は何％でしたか？",
+  "expected_source": "gov_zaiseishin_20241129.pdf",
+  "filter": {
+   "orgs": [
+    "gov"
+   ],
+   "field_tag": "農林水産"
+  },
+  "mode": "drop"
+ }
+]

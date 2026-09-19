@@ -1,0 +1,12 @@
+Polyarchy
+Copyright 2026 Kenichi Okamura
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This license covers the software in this repository: source code,
+operational automation, evaluation assets, and design documents.
+
+It does not cover the collected data (published documents, statistical
+values, and indexes built from them). Such data are kept outside this
+repository and remain subject to the terms of their respective sources.
+See stats/docs/再配布条件.md and recommendations/docs/再配布条件.md.

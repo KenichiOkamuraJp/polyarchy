@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>stats（統計参照DB） — Polyarchy</title>
+<style>:root{--fg:#1e1e1e;--bg:#fff;--muted:#666;--line:#ddd;--accent:#1f4e79}
+@media(prefers-color-scheme:dark){:root{--fg:#e8e8e8;--bg:#151515;--muted:#aaa;--line:#333;--accent:#8fb8e8}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.7}
+main{max-width:820px;margin:0 auto;padding:2rem 1.2rem}
+h1{font-size:1.6rem;border-bottom:1px solid var(--line);padding-bottom:.4rem}
+h2{font-size:1.2rem;margin-top:2rem}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
+code{background:rgba(127,127,127,.15);padding:.1rem .3rem;border-radius:3px}
+pre{background:rgba(127,127,127,.12);padding:.8rem;overflow-x:auto}
+footer{max-width:820px;margin:2rem auto;padding:1rem 1.2rem;color:var(--muted);border-top:1px solid var(--line);font-size:.9rem}
+nav a{margin-right:1rem}
+a{color:var(--accent)}
+.note{border-left:4px solid var(--accent);padding:.4rem .8rem;background:rgba(127,127,127,.08)}
+</style></head><body>
+<main>
+<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
+
+<h1>stats — 統計参照DB（Polyarchy）</h1>
+<p>更新日：2026-08-19</p>
+<p>日本の公的統計と国際機関統計の値を、<strong>公表どおりの値・出典つき</strong>で Claude から参照するためのリモート MCP サーバです。
+「主張（政策提言）↔ 事実（統計）」の突き合わせのために作られており、<strong>該当するデータがなければ「ない」と返します</strong>（近い年・隣の指標・補間値を返しません）。</p>
+<p class="note">このサービスは、政府統計総合窓口(e-Stat)のAPI機能を使用していますが、サービスの内容は国によって保証されたものではありません。</p>
+
+<h2>接続</h2>
+<ol>
+<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy stats</code>、URL は利用者ごとに個別にご案内します（当面は招待制。利用希望は下記連絡先へ）。</li>
+<li>「Connect」→ ブラウザで開くログイン画面でサインイン（初回はアカウント登録）。許可された利用者のみ接続できます（利用希望は下記連絡先へ）。</li>
+<li>Claude Code：<code>claude mcp add --transport http polyarchy-stats &lt;URL&gt;</code>。</li>
+</ol>
+
+<h2>ツール（すべて読み取り専用）</h2>
+<table>
+<tr><th>ツール</th><th>何をするか</th><th>何を返さないか</th></tr>
+<tr><td><code>list_datasets</code></td><td>収録統計の目録（統計表の単位・調査主体・粒度・提供期間・license）</td><td>値</td></tr>
+<tr><td><code>find_statistics</code></td><td>系列の検索（統計名・分野タグ 21 分類・調査主体・部門・粒度で絞り込み）</td><td>値・推測による近い系列</td></tr>
+<tr><td><code>lookup_statistic</code></td><td>系列 ID＋期間（＋地域）を指定して値を厳密参照。出典（統計名・表・アクセサ・URL・取得日・引用 1 行）と license 付き</td><td>該当がなければ <code>found=false</code> と理由（unknown_series／period_format／out_of_range／not_published／no_values／guide_only 等）。近似値・補間値・派生計算値</td></tr>
+<tr><td><code>lookup_panel</code></td><td>複数の系列を 1 回で参照（系列 ID の一覧、または系列ファミリーの型＋次元を指定）。値・fail-closed の扱いは <code>lookup_statistic</code> と同じ</td><td>上限（系列 200・値 2,500）を超える範囲は <code>found=false</code>（黙って切らない）。近似値・補間値</td></tr>
+<tr><td><code>list_sources</code></td><td>調査主体コードと系列数</td><td>—</td></tr>
+</table>
+
+<h2>使ってみる（プロンプト例）</h2>
+<ol>
+<li>「日本の実質 GDP（年度・連鎖方式）の直近 5 年度の値を、出典つきで表にして」</li>
+<li>「2020 年基準の消費者物価指数（総合）の 2024 年 3 月の値は？ 原典の表も教えて」</li>
+<li>「法人企業統計で、資本金 10 億円以上の企業の付加価値と人件費は 2000 年度と 2023 年度でいくら？ 出典つきで（労働分配率は派生値なので stats は計算せず構成系列を返します）」</li>
+</ol>
+<p>収録されていない統計を聞くと <code>found=false</code> が返ります。これは誤りではなく仕様です（値を作りません）。「ない」が続く統計は収録候補として記録され、拡充の優先順位に使われます。</p>
+
+<h2>値の見方</h2>
+<ul>
+<li><code>value</code> は公表どおりの文字列です（単位は <code>unit</code>）。換算・丸め・季節調整・基準改定の接続はしていません。</li>
+<li><code>kind=projection</code> は推計・予測値（観測値ではありません）。<code>vintage</code> は公表時点、<code>retrieved_at</code> は取得日です。</li>
+<li><code>status=guide</code> の系列は再配布条件により<strong>値を保持しません</strong>。原典（URL・表・行・列）の読み方だけを返すので、値は原典で確認してください。</li>
+<li><code>license.grade</code>：◎＝出典明示で商用利用可（CC BY 互換）／○＝可だが条件あり／△＝商用利用は取得元への事前相談が必要。</li>
+</ul>
+
+<h2 id="sources">取得元と利用条件</h2>
+<table>
+<tr><th>取得元</th><th>統計</th><th>規約</th><th>区分</th></tr>
+<tr><td>政府統計の総合窓口 e-Stat（総務省統計局）</td><td>法人企業統計・消費者物価指数・労働力調査・人口推計・地方財政状況調査・毎月勤労統計調査・一般職業紹介状況・社会保障費用統計</td><td><a href="https://www.e-stat.go.jp/terms-of-use">利用規約</a>／<a href="https://www.e-stat.go.jp/api/agreement/">API 利用規約</a></td><td>◎</td></tr>
+<tr><td>内閣府（経済社会総合研究所ほか）</td><td>国民経済計算（年次推計・QE）・GDP ギャップと潜在成長率（月例経済報告 その他の資料）・政府経済見通し（閣議決定・年央試算＝見通し値）</td><td><a href="https://www.cao.go.jp/notice/rule.html">公共データ利用規約 1.0</a></td><td>◎</td></tr>
+<tr><td>財務省</td><td>国債金利情報・財政統計</td><td><a href="https://www.mof.go.jp/about_mof/notice/index.html">同上</a></td><td>◎</td></tr>
+<tr><td>総務省</td><td>地方財政計画（地方財政白書 資料編）</td><td><a href="https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html">同上</a></td><td>◎</td></tr>
+<tr><td>中小企業庁</td><td>中小企業白書 付属統計資料（開業率・廃業率。原資料は厚生労働省「雇用保険事業年報」）</td><td><a href="https://www.meti.go.jp/main/rules.html">経済産業省 ウェブサイト利用規約（PDL1.0 準拠）</a></td><td>◎</td></tr>
+<tr><td>国立社会保障・人口問題研究所</td><td>日本の将来推計人口</td><td><a href="https://www.ipss.go.jp/site-ad/">サイトのご利用にあたって（PDL1.0 準拠）</a></td><td>◎</td></tr>
+<tr><td>日本銀行</td><td>需給ギャップと潜在成長率・国際収支統計・本邦対外資産負債残高・資金循環統計・企業物価指数・外国為替相場・コールレートと基準貸付利率（主要時系列統計データ表）</td><td><a href="https://www.boj.or.jp/about/copyright.htm">著作権・免責事項</a>（出所明記で転載可・商用は事前相談）</td><td>△</td></tr>
+<tr><td>IMF</td><td>World Economic Outlook</td><td><a href="https://www.imf.org/en/about/copyright-and-terms#data">Copyright and Usage — Data</a>（再配布可・出典必須・商用は許諾申請）。IMF データは IMF から無償で入手できます</td><td>○</td></tr>
+<tr><td>OECD</td><td>Productivity database・Average annual wages・STAN（業種別）・Structural business statistics（規模階級別）</td><td><a href="https://www.oecd.org/en/about/terms-conditions.html">Terms and Conditions §3 Data</a></td><td>◎</td></tr>
+<tr><td>世界銀行</td><td>World Development Indicators</td><td><a href="https://datacatalog.worldbank.org/public-licenses">CC BY 4.0</a></td><td>◎</td></tr>
+<tr><td>米国 労働統計局（BLS）</td><td>消費者物価指数（CPI-U）・失業率</td><td><a href="https://www.bls.gov/opub/copyright-information.htm">Copyright Information</a>（パブリックドメイン・出典は BLS）／<a href="https://www.bls.gov/developers/termsOfService.htm">API Terms of Service</a>。BLS.gov cannot vouch for the data or analyses derived from these data after the data have been retrieved from BLS.gov.</td><td>◎</td></tr>
+<tr><td>Eurostat</td><td>HICP・失業率（EU 加盟国のデータのみ収録）</td><td><a href="https://ec.europa.eu/eurostat/help/copyright-notice">Copyright notice and free re-use of data</a>（出典明示で商用・非商用とも再利用可。EU・EFTA・加盟候補国以外の国のデータは商用不可＝本サービスでは収録していません）</td><td>◎</td></tr>
+<tr><td>日本経済団体連合会</td><td>春季労使交渉 妥結状況（値は保持せず案内のみ）</td><td><a href="https://www.keidanren.or.jp/about.html">著作権について</a></td><td>guide</td></tr>
+</table>
+<p>出典表示の例：「出典：政府統計の総合窓口(e-Stat)（https://www.e-stat.go.jp/）」「出典：「国民経済計算」（内閣府）（URL）、PDL1.0」「Source: International Monetary Fund, World Economic Outlook, &lt;URL&gt;」。応答の <code>source.citation</code> にそのまま使える 1 行が入っています。</p>
+
+<h2>収集する情報</h2>
+<p>ツール名・引数（検索語・系列 ID・期間等）・該当有無・時刻・利用者のメールアドレスのハッシュ値を 30 日間記録し、収録データの拡充と品質改善に使います。会話本文は取得しません。詳細は<a href="/privacy">プライバシーポリシー</a>。</p>
+
+<h2>制限</h2>
+<ul>
+<li>収録は約 10,000 系列・43 データセット（2026-09 時点）。都道府県粒度は一部、月次は CPI 等に限られます。</li>
+<li>値は月次で更新します。速報値の改定は <code>vintage</code> で区別し、最新の公表値を返します。</li>
+<li>レート制限があります（通常の対話利用では到達しません）。</li>
+</ul>
+
+<h2>サポート</h2>
+<p>kenichi.okamura.jp@gmail.com — 接続できない・値が原典と違う・収録の希望・脆弱性の報告。</p>
+</main>
+<footer>
+運営者：岡村 健一（個人運営）／サポート・脆弱性報告の連絡先：kenichi.okamura.jp@gmail.com<br>
+Polyarchy は Anthropic 社の製品ではありません。Claude は Anthropic PBC の商標です。
+</footer></body></html>

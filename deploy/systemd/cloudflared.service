@@ -1,0 +1,22 @@
+# Cloudflare Tunnel（入口）。config は /etc/cloudflared/config.yml（bootstrap が SSM 資格情報から生成）。
+# ★起動タイミングは手動（bootstrap は enable/start しない）＝アプリ面の健全を確認してから箱で start する。
+#   同じトンネルを 2 箇所で run しない（二重 origin を避ける＝README §7・PROD_MIGRATION §5.3）。
+# outbound のみ（7844/QUIC）で入口を張る＝インバウンドは一切開けない。root 実行（Cloudflare 既定同様）。
+[Unit]
+Description=Cloudflare Tunnel
+After=network-online.target polyarchy-mcp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# --no-autoupdate＝版を固定（不意の自動更新を避ける）。config.yml の tunnel/credentials を使う。
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/config.yml tunnel run
+Restart=always
+RestartSec=5
+# トンネルのグレースフル排出。
+KillMode=mixed
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

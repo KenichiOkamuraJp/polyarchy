@@ -1,0 +1,16 @@
+# データリリースの自動適用（運用設計 §2.4・2026-09-03）。
+# S3 release/data.json（release.sh がゲート全 PASS 時のみ書く）を検知して適用＝人手の箱操作ゼロ。
+# root 実行（systemctl のため）。対＝polyarchy-dataapply.timer。設置は bootstrap ⑪。
+# 2026-09-03 改訂＝コード自動反映＋smoke FAIL 時の自動切り戻し（apply_data_update.sh 冒頭）。
+[Unit]
+Description=Polyarchy data release auto-apply (S3 release/data.json -> sync/restart/smoke)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/polyarchy/deploy.env
+WorkingDirectory=/opt/polyarchy/polyarchy
+ExecStart=/usr/local/bin/polyarchy-data-apply
+StandardOutput=journal
+StandardError=journal
+# rsyslog がサービス別ファイル（/var/log/polyarchy/polyarchy-dataapply.log）へ振り分け→ CW Logs polyarchy/dataapply（監査線）。
+SyslogIdentifier=polyarchy-dataapply

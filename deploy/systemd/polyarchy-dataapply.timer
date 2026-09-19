@@ -1,0 +1,10 @@
+# 15 分毎（マニフェスト未変化なら即終了＝実質無負荷）。
+[Unit]
+Description=Run polyarchy-dataapply every 15 minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+.env
+data/chroma/
+data/pdfs/
+__pycache__/
+*.pyc
+*.egg-info/
+.ipynb_checkpoints/

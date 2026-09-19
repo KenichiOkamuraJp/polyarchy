@@ -1,0 +1,10 @@
+# 週次（月曜 00:20 UTC＝09:20 JST）。fuelsync（毎時）の後に走る位置づけ＝S3 の保護コピーとマージできる。
+[Unit]
+Description=Run polyarchy-usagereport weekly
+
+[Timer]
+OnCalendar=Mon *-*-* 00:20:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

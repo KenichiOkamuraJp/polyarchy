@@ -1,0 +1,14 @@
+# 捕捉ログの保持期間チェックを毎日実行（30日超過分を削除）。
+# 削除の直後に fuelsync が走ると S3 側にも削除後の版が上がる（S3 は別途ライフサイクルでも期限切れ）。
+[Unit]
+Description=Polyarchy 捕捉ログ削除の定期実行（毎日）
+
+[Timer]
+OnCalendar=daily
+# 起動直後にも1回（箱が長時間停止していた場合の取りこぼし防止）。
+OnBootSec=15min
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

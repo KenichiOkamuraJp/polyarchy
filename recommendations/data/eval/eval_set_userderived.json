@@ -1,0 +1,207 @@
+[
+ {
+  "id": "u001",
+  "question": "日本商工会議所は、中小企業が持続的な賃上げや成長投資の原資を確保するために何が不可欠だと述べているか",
+  "expected_keywords": [
+   "稼ぐ力",
+   "取引適正化",
+   "地域経済の好循環",
+   "付加価値の創出"
+  ],
+  "expected_source": "nissho_2026_0416140000.pdf",
+  "expected_org": "nissho",
+  "qtype": "coverage"
+ },
+ {
+  "id": "u002",
+  "question": "選択的夫婦別姓（夫婦別氏）制度の導入について、各団体はどのような主張をしているか",
+  "expected_keywords": [
+   "選択的夫婦別姓制度",
+   "旧姓の通称使用",
+   "選択的夫婦別氏制度"
+  ],
+  "expected_source": "keidanren_2024_044.txt",
+  "expected_sources": [
+   "keidanren_2024_044.txt",
+   "rengo_teigen_28.txt",
+   "doyukai_2024_241112.pdf"
+  ],
+  "expected_org": "keidanren",
+  "expected_orgs": [
+   "keidanren",
+   "rengo",
+   "doyukai"
+  ],
+  "min_coverage": 2,
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "u003",
+  "question": "経済同友会は独立財政機関（IFI）についてどのような提言をしているか",
+  "expected_keywords": [
+   "独立財政機関",
+   "EBPM",
+   "監視機能",
+   "将来世代"
+  ],
+  "expected_source": "doyukai_2023_240327.pdf",
+  "expected_org": "doyukai",
+  "qtype": "coverage"
+ },
+ {
+  "id": "u004",
+  "question": "エンターテインメント・コンテンツ産業の振興について、各団体・政府はどのような提言や方針を示しているか",
+  "expected_keywords": [
+   "コンテンツ産業",
+   "エンターテインメント",
+   "アニメ産業",
+   "クールジャパン"
+  ],
+  "expected_source": "keidanren_2025_067.pdf",
+  "expected_sources": [
+   "keidanren_2025_067.pdf",
+   "doyukai_2025_250414.pdf",
+   "gov_cefp_2023.pdf"
+  ],
+  "expected_org": "keidanren",
+  "expected_orgs": [
+   "keidanren",
+   "doyukai",
+   "gov"
+  ],
+  "min_coverage": 2,
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "u005",
+  "question": "経済同友会はセキュリティ・クリアランス法制についてどのような意見を表明しているか",
+  "expected_keywords": [
+   "セキュリティ・クリアランス",
+   "情報保全",
+   "民間事業者"
+  ],
+  "expected_source": "doyukai_2023_240222.pdf",
+  "expected_org": "doyukai",
+  "qtype": "coverage"
+ },
+ {
+  "id": "u006",
+  "question": "労働時間規制の見直し（デロゲーション・裁量労働制）について、経団連・連合など各団体はどのような立場か",
+  "expected_keywords": [
+   "デロゲーション",
+   "裁量労働制",
+   "労使自治",
+   "上限規制"
+  ],
+  "expected_source": "keidanren_2025_078.pdf",
+  "expected_sources": [
+   "keidanren_2025_078.pdf",
+   "keidanren_2024_007.pdf",
+   "gov_kisei_260629.pdf",
+   "rengo_teigen_28.txt"
+  ],
+  "expected_org": "keidanren",
+  "expected_orgs": [
+   "keidanren",
+   "gov",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "u007",
+  "question": "最低賃金の引上げ（全国加重平均1500円目標）について各団体・政府はどのような立場か",
+  "expected_keywords": [
+   "最低賃金",
+   "価格転嫁",
+   "全国加重平均",
+   "1,500円"
+  ],
+  "expected_source": "nissho_2025_0417170021.pdf",
+  "expected_sources": [
+   "nissho_2025_0417170021.pdf",
+   "gov_cefp_2024.pdf",
+   "rengo_202605_jyutenseisaku2026.pdf"
+  ],
+  "expected_org": "nissho",
+  "expected_orgs": [
+   "nissho",
+   "gov",
+   "rengo"
+  ],
+  "min_coverage": 2,
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "u008",
+  "question": "相続税・贈与税など資産課税のあり方について各団体はどのような主張をしているか",
+  "expected_keywords": [
+   "相続税",
+   "贈与税",
+   "資産課税",
+   "格差"
+  ],
+  "expected_source": "rengo_202005_06.pdf",
+  "expected_sources": [
+   "rengo_202005_06.pdf",
+   "keidanren_2018_073.pdf",
+   "keidanren_2022_079.pdf"
+  ],
+  "expected_org": "rengo",
+  "expected_orgs": [
+   "rengo",
+   "keidanren"
+  ],
+  "min_coverage": 2,
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "u009",
+  "question": "企業・団体献金（政治資金）のあり方について各団体はどのようなスタンスか",
+  "expected_keywords": [
+   "企業・団体献金",
+   "政治資金",
+   "透明化",
+   "政治寄附"
+  ],
+  "expected_source": "doyukai_2024_250311.pdf",
+  "expected_sources": [
+   "doyukai_2024_250311.pdf",
+   "keidanren_2025_065.pdf",
+   "keidanren_2024_065.pdf"
+  ],
+  "expected_org": "doyukai",
+  "expected_orgs": [
+   "doyukai",
+   "keidanren"
+  ],
+  "min_coverage": 2,
+  "qtype": "coverage_multi"
+ },
+ {
+  "id": "u010",
+  "question": "憲法改正・緊急事態条項について経済同友会は何を主張しているか",
+  "expected_keywords": [
+   "緊急事態条項",
+   "国会議員の任期延長",
+   "私権制限",
+   "緊急集会"
+  ],
+  "expected_source": "doyukai_2019_190418a.pdf",
+  "expected_org": "doyukai",
+  "qtype": "coverage"
+ },
+ {
+  "id": "u011",
+  "question": "経済同友会はMMT（現代貨幣理論）に基づく財政運営を主張しているか、その出典はあるか",
+  "expected_keywords": [],
+  "expected_source": null,
+  "expected_org": "doyukai",
+  "qtype": "abstention",
+  "trap_terms": [
+   "MMT",
+   "現代貨幣理論"
+  ]
+ }
+]

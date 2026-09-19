@@ -1,0 +1,37 @@
+{
+  "_comment": "データ更新用（日常）の権限＝release.sh が使う S3 操作だけ。箱・EC2・SSM・IAM には触れない（RUNBOOK §5・監査ガイド §4b の『権限 2 段』の下段）。<BUCKET> を対象環境のバケット名（terraform output s3_bucket）に置換して IAM ポリシー／SSO 権限セットのインラインに貼る。上段（障害対応・管理）は PowerUserAccess＋iam-operator-policy.json（PROD_MIGRATION §1.2）。",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListBucket",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": "arn:aws:s3:::<BUCKET>"
+    },
+    {
+      "Sid": "ReleaseWrite",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:DeleteObject", "s3:GetObject"],
+      "Resource": [
+        "arn:aws:s3:::<BUCKET>/data/*",
+        "arn:aws:s3:::<BUCKET>/release/*",
+        "arn:aws:s3:::<BUCKET>/code/*"
+      ]
+    },
+    {
+      "Sid": "OpsRead",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::<BUCKET>/ops/*"
+    },
+    {
+      "Sid": "NoQueryLogRead",
+      "Effect": "Deny",
+      "Action": ["s3:GetObject"],
+      "Resource": [
+        "arn:aws:s3:::<BUCKET>/data/query_log/*",
+        "arn:aws:s3:::<BUCKET>/data/stats/query_log/*"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+ "checked_at": "2026-09-03T15:44:02",
+ "orgs": {
+  "keidanren": {
+   "total_index": 127,
+   "new": 4,
+   "new_samples": [
+    "「企業結合審査に関する独占禁止法の運用指針」改定案に対する意見",
+    "2026年春季労使交渉・中小企業業種別妥結結果",
+    "「原油等の調達先や輸送経路の多角化に向けた構造的対応に関する論点整理（案）」に対する意見"
+   ],
+   "error": null
+  },
+  "rengo": {
+   "total_index": 34,
+   "new": 0,
+   "new_samples": [],
+   "error": null
+  },
+  "nissho": {
+   "total_index": 39,
+   "new": 0,
+   "new_samples": [],
+   "error": null
+  },
+  "doyukai": {
+   "total_index": 957,
+   "new": 6,
+   "new_samples": [
+    "経済施策を一体的に講ずることによる安全保障の確保の推進に関する基本的な方針案等への意見（パブリック・コメント）",
+    "人口減少時代の地方自治 ―単独・自前型から連携・分業型への転換―",
+    "第157 回景気定点観測アンケート調査結果"
+   ],
+   "error": null
+  },
+  "gov": {
+   "total_index": 28,
+   "new": 0,
+   "new_samples": [],
+   "error": null
+  }
+ }
+}

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Polyarchy — Polyarchy</title>
+<style>:root{--fg:#1e1e1e;--bg:#fff;--muted:#666;--line:#ddd;--accent:#1f4e79}
+@media(prefers-color-scheme:dark){:root{--fg:#e8e8e8;--bg:#151515;--muted:#aaa;--line:#333;--accent:#8fb8e8}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.7}
+main{max-width:820px;margin:0 auto;padding:2rem 1.2rem}
+h1{font-size:1.6rem;border-bottom:1px solid var(--line);padding-bottom:.4rem}
+h2{font-size:1.2rem;margin-top:2rem}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
+code{background:rgba(127,127,127,.15);padding:.1rem .3rem;border-radius:3px}
+pre{background:rgba(127,127,127,.12);padding:.8rem;overflow-x:auto}
+footer{max-width:820px;margin:2rem auto;padding:1rem 1.2rem;color:var(--muted);border-top:1px solid var(--line);font-size:.9rem}
+nav a{margin-right:1rem}
+a{color:var(--accent)}
+.note{border-left:4px solid var(--accent);padding:.4rem .8rem;background:rgba(127,127,127,.08)}
+</style></head><body>
+<main>
+<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
+
+<h1>Polyarchy — 政策言説と公的統計の参照サービス（Claude コネクタ）</h1>
+<p>Polyarchy は、日本の政策言説（経済団体・政府の公表資料）と公的統計を、<strong>出典つきで</strong> Claude から検索・参照するための
+リモート MCP サーバ群です。各サービスは読み取り専用で、公開データのみを扱います。文章の生成は利用者ご自身の Claude が行い、
+サーバ側では生成 AI を呼びません。</p>
+<table>
+<tr><th>サービス</th><th>中身</th><th>ドキュメント</th></tr>
+<tr><td><strong>stats</strong>（統計参照DB）</td><td>e-Stat・内閣府・財務省・総務省・日本銀行・社人研・IMF・OECD・世界銀行の統計値を「公表どおりの値」で厳密参照。該当がなければ「ない」と返す</td><td><a href="/stats">/stats</a></td></tr>
+<tr><td><strong>recommendations</strong>（政策主張DB）</td><td>経団連・経済同友会・日本商工会議所・連合・政府（骨太方針・規制改革・財政審）の公表提言を横断検索</td><td><a href="/recommendations">/recommendations</a></td></tr>
+</table>
+<h2>共通の約束</h2>
+<ul>
+<li><strong>検索・参照専用</strong>：メール送信・ファイル書き込み等の外部作用を持つツールはありません（全ツール <code>readOnlyHint</code>）。</li>
+<li><strong>公開データのみ</strong>：非公開データは構造的に返りません。</li>
+<li><strong>出典つき</strong>：返す内容には必ず出典（発行体・統計名・表・URL・取得日）が付きます。</li>
+<li><strong>保証しない</strong>：値・文書の正確性は原典で確認してください（<a href="/terms">利用規約</a>）。</li>
+<li><strong>収集するデータは最小限</strong>：会話本文は取得しません（<a href="/privacy">プライバシーポリシー</a>）。</li>
+</ul>
+<h2>接続のしかた（カスタムコネクタ）</h2>
+<ol>
+<li>claude.ai → <em>Customize → Connectors → Add custom connector</em>（Team/Enterprise は組織 Owner が <em>Organization settings → Connectors</em>）。</li>
+<li>各サービスのドキュメントに記載の URL を入力 → 「Connect」→ ブラウザで開くログイン画面でサインイン（初回はアカウント登録）。</li>
+<li>チャットの「＋」→ Connectors で有効化。</li>
+</ol>
+<p>Anthropic のコネクタ・ディレクトリへの掲載は準備中です。</p>
+</main>
+<footer>
+運営者：岡村 健一（個人運営）／サポート・脆弱性報告の連絡先：kenichi.okamura.jp@gmail.com<br>
+Polyarchy は Anthropic 社の製品ではありません。Claude は Anthropic PBC の商標です。
+</footer></body></html>

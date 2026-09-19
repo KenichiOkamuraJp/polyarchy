@@ -1,0 +1,14 @@
+# 運用ダッシュボード（運用設計 §1.3・2026-09-03）：毎時生成し S3 ops/dashboard/ へ保存。
+# 目的＝運用時に箱のシェルへ入らずに状態が見える（監査ガイド §4）。数字・状態のみ＝検索語を載せない。
+# 対＝polyarchy-dashboard.timer。設置は bootstrap ⑪。
+[Unit]
+Description=Polyarchy ops dashboard (generate -> S3 ops/dashboard/)
+
+[Service]
+Type=oneshot
+User=polyarchy
+Group=polyarchy
+EnvironmentFile=/etc/polyarchy/deploy.env
+WorkingDirectory=/opt/polyarchy/polyarchy
+Environment=PYTHONPATH=/opt/polyarchy/polyarchy
+ExecStart=/usr/local/bin/polyarchy-dashboard

@@ -1,0 +1,10 @@
+# /var/log/polyarchy/*.log のローテーション（CW Logs へ転送済みの分の箱側の掃除）。
+# copytruncate＝CW agent が同じ fd を読み続けても安全な方式。
+/var/log/polyarchy/*.log {
+    weekly
+    rotate 4
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

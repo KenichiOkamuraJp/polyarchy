@@ -1,0 +1,11 @@
+# 捕捉ログの定期 S3 バックアップ（毎時＋起動10分後）。燃料は週次トリアージの原資ゆえ守る。
+[Unit]
+Description=Polyarchy 捕捉ログ(燃料) S3 バックアップの定期実行
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

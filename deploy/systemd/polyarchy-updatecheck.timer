@@ -1,0 +1,10 @@
+# 毎日 21:10 UTC＝06:10 JST（公表サイトの負荷が低い時間帯・dashboard 毎時とは独立）。
+[Unit]
+Description=Run polyarchy-updatecheck daily
+
+[Timer]
+OnCalendar=*-*-* 21:10:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+# 毎分の生き死に送信（運用設計 §1.1）。アラーム側は「3 分連続 0 または missing」で発報。
+[Unit]
+Description=Run polyarchy-health every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60
+AccuracySec=10
+
+[Install]
+WantedBy=timers.target

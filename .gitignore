@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# polyarchy .gitignore（リポジトリ root）
+# 方針：コード・ドキュメント・deploy 資産・小さな正典データ(eval/catalog)だけを追跡し、
+#       秘密・Terraform state・大容量/実行時データ・生成物は除外する。
+# 注意1：gitignore はインラインコメント不可。# は必ず行頭に書く（末尾 # はパターンの一部になる）。
+# 注意2：中間に "/" を含むパターンは .gitignore の位置(=root)に固定される。recommendations/ を明示する。
+#       （"/" を含まないパターン＝例 *.env / __pycache__/ はどの階層にも一致する）
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── ★秘密（絶対にコミットしない）─────────────────────────────────────────────
+# recommendations/.env(API鍵) と deploy/env/*.env(プロファイル/トンネル) を除外。*.example は追跡。
+*.env
+!*.env.example
+web.env
+*.pem
+*.key
+id_rsa*
+*credential*
+.cloudflared/
+secrets.*
+
+# ── Terraform（state は秘密を含み得る・巨大・環境固有）───────────────────────
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+
+# ── 大容量・実行時データ（S3 で管理・git には載せない）───────────────────────
+# 正典の小データは追跡する：recommendations/data/eval/*.json ・ recommendations/data/catalog.csv
+recommendations/data/chroma/
+recommendations/data/qdrant/
+recommendations/data/bm25/
+recommendations/data/pdfs/
+recommendations/data/eval/doctext/
+recommendations/data/eval/results/
+recommendations/data/query_log/
+recommendations/data/perf/
+stats/data/query_log/
+# 週次利用レポートの HTML は生成物（ops/usage/weekly.jsonl から再生成可）
+ops/usage/*.html
+# ローカル専用の作業資料＝git にも tar にも載せない
+work_history/
+stats/data/raw/
+stats/data/cache/
+stats/data/values/
+models/
+*.tar.gz
+*.zip
+
+# ── ★社内向け開発ノート（共有リポジトリに含めないため除外）────────────────────────────
+# 引き継ぎ/ロードマップ/設計メモはローカル専用の開発記録。
+# 共有リポジトリでは deploy/README.md（構成と手順）と deploy/PROD_MIGRATION.md で足りる。
+# ※ "/" を含まない＝どの階層でも一致（コピーが増えても守られる）。
+# 社内ノートはディレクトリごと非共有（新規ノートも自動で保護される）。
+# tar（deploy/scripts/upload_to_s3.sh）にも同じ除外を置くこと＝gitignore は tar に効かない。
+社内ノート/
+
+# ── バックアップ ─────────────────────────────────────────────────────────────
+*.bak
+*.bak[0-9]
+*.phase11*.bak
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# ── スクラッチ / 一時 / ログ ─────────────────────────────────────────────────
+scratchpad/
+*.log
+
+# ── Claude Code（ローカル個人設定＝マシン固有パス・許可リスト）────────────────
+.claude/settings.local.json
+
+# ── OS / エディタ ────────────────────────────────────────────────────────────
+.DS_Store
+._*
+*.swp
+.vscode/
+.idea/
+stats/data/values_archive/
+
+# Cloudflare Pages（deploy/pages の wrangler deploy が生成する作業ディレクトリ）
+.wrangler/
+VERSION
+ops/dashboard/
+# 週次トリアージの草稿（燃料由来・採用したものだけが評価セットへ入る）
+ops/triage/
+
+# ── ローカル固有（絶対パスを含む）＝*.example を自分の環境に合わせて複製する ─────────────────
+.mcp.json
+stats/.mcp.json
+.claude/
+
+# 週次利用レポートの集計（実利用の数字）＝公開リポジトリには含めない
+ops/usage/weekly.jsonl

@@ -1,0 +1,19 @@
+# Terraform（state は秘密を含み得る＝絶対にコミットしない。ロードマップ§8.1）
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfvars            # 実プロファイル名等。
+terraform/crash.log
+terraform/override.tf
+terraform/override.tf.json
+
+# 環境パラメータ（実ファイル。example のみ追跡）
+env/*.env
+!env/*.env.example
+
+# 生成物・秘密
+*.tar.gz
+web.env
+*.json.cred
+.DS_Store

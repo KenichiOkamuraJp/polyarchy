@@ -1,0 +1,19 @@
+# 捕捉ログ（＝「燃料」・実運用の実質問）を S3 へバックアップ。S3 versioning ON で誤削除/上書きから
+# 保護（仕様§4.1）。oneshot＝timer から定期起動。EBS が主・S3 は保護コピー（--delete は付けない）。
+[Unit]
+Description=Polyarchy 捕捉ログ(燃料)の S3 バックアップ
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=polyarchy
+Group=polyarchy
+# S3_BUCKET/DATA_S3_PREFIX/AWS_REGION は user_data 生成の deploy.env から。
+EnvironmentFile=/etc/polyarchy/deploy.env
+ExecStart=/usr/local/bin/aws s3 sync /opt/polyarchy/polyarchy/recommendations/data/query_log s3://${S3_BUCKET}/${DATA_S3_PREFIX}/query_log --region ${AWS_REGION} --exclude "s3_mirror/*"
+# stats（統計参照DB）の捕捉ログ（user_hash 入り）も同じ保護コピー。ディレクトリが無ければ aws が警告して終わる（-ExecStart＝失敗を無視）。
+ExecStart=-/usr/local/bin/aws s3 sync /opt/polyarchy/polyarchy/stats/data/query_log s3://${S3_BUCKET}/${DATA_S3_PREFIX}/stats/query_log --region ${AWS_REGION} --exclude "s3_mirror/*"
+# ★--exclude s3_mirror/*＝手元の usage_report --s3-bucket が作るミラーを S3 へ戻さない（再帰と 30 日超の残留を防ぐ・2026-09-03）。
+StandardOutput=journal
+StandardError=journal

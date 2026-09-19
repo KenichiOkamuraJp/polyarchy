@@ -1,0 +1,14 @@
+# 更新チェック（運用設計 §1.4・2026-09-03）：stats freshness＋提言の新着チェック→ダッシュボード反映。
+# チェックのみ＝取込は実行しない（RUNBOOK §5 が唯一の取込経路）。対＝polyarchy-updatecheck.timer。
+# 手動キック＝SSM ドキュメント polyarchy-<env>-check-updates（AWS コンソールの Run Command から・監査ガイド）。
+[Unit]
+Description=Polyarchy update check (freshness + new-docs -> dashboard)
+
+[Service]
+Type=oneshot
+User=polyarchy
+Group=polyarchy
+EnvironmentFile=/etc/polyarchy/deploy.env
+WorkingDirectory=/opt/polyarchy/polyarchy
+Environment=PYTHONPATH=/opt/polyarchy/polyarchy
+ExecStart=/usr/local/bin/polyarchy-update-check

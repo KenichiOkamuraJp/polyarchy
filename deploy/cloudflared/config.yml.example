@@ -1,0 +1,23 @@
+# cloudflared 設定の参考形（実体は bootstrap.sh ⑦ が SSM の資格情報から自動生成＝手で置かない）。
+# DNS は UUID 向き（<UUID>.cfargotunnel.com）＝ホスト名の追加は Cloudflare 側の CNAME（cloudflared tunnel route dns）。
+#
+# ─ staging（自分 AWS・MCP 2 サービス・web 無し〔2026-09-02 廃止〕）────────────────────────
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+ingress:
+  - hostname: recommendations.polyarchy.net              # → 政策主張DB（:8765・個人認証 案 B＝Bearer 必須）
+    service: http://localhost:8765
+  - hostname: stats.polyarchy.net                        # → 統計参照DB（:8766・同上）
+    service: http://localhost:8766
+  - service: http_status:404
+
+# ─ prod（導入団体 AWS）＝導入団体ゾーンの新トンネル・命名は stats./recommendations.（mcp. は 2026-09-02 廃止）──
+# tunnel: <導入団体ゾーンで作る新トンネルの UUID>
+# credentials-file: /etc/cloudflared/<新UUID>.json
+# ingress:
+#   - hostname: recommendations.<導入団体ドメイン>
+#     service: http://localhost:8765
+#   - hostname: stats.<導入団体ドメイン>
+#     service: http://localhost:8766
+#   - service: http_status:404
+# 入口の守り＝秘密パス（SSM）＋レート制限（cloudflare-guard.sh・IP 許可は 2026-08-28 廃止）＋外部 IdP 認証（案 B）。

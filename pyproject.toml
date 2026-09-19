@@ -1,0 +1,54 @@
+[project]
+name = "polyarchy"
+version = "0.2.0"
+description = "Polyarchy — 政策言説の横断検索インフラ（recommendations / stats / … の兄弟サービス＋共通契約 polyarchy_common）"
+requires-python = ">=3.10"
+# 依存は 3 層：共通（polyarchy_common＋MCP 配信）／recommendations（検索スタック＝重い）／stats（取込のみ軽量）。
+# ローカル（1 env に全部）＝ `pip install -e ".[recommendations,stats]"`。stats だけの箱＝ `pip install -e ".[stats]"`（torch を引かない）。
+dependencies = [
+    "mcp>=1.2.0,<2",                # MCP サーバ（recommendations/stats とも）。★2.x は FastMCP 削除（MCPServer へ改名）＝2026-08-28 箱の新規構築で実測。移行するまで <2 に固定
+    "PyJWT[crypto]>=2.8",           # polyarchy_common.access: Cloudflare Access JWT 検証（RS256）
+    "uvicorn>=0.30",                # polyarchy_common.mcp_http: Access 有効時の ASGI 起動
+    "anyio>=4.0",                   # MCP の stdio サーバ（mcp の推移依存だが直接 import している）
+]
+
+[project.optional-dependencies]
+# ★配信されるサーバ（recommendations/serving/mcp_server.py・stats/serving/mcp_server.py）は生成 AI の API を呼ばない。
+#   下の anthropic／llms-anthropic／embeddings-openai／streamlit は、取込時の補助（チャンク境界検出・分野タグ判定）、
+#   回答まで含む評価（eval/full.py）、廃止済みの参照用 Web UI（serving/app.py・chat_app.py）だけが使う。
+#   1 つの環境に全部入れる構成のため extra は分けていない（分けるとロックの再生成が要る＝deploy/RUNBOOK_OPS.md §7）。
+recommendations = [
+    "llama-index>=0.11.0",
+    "llama-index-readers-file>=0.2.0",
+    "llama-index-embeddings-openai>=0.2.0",       # 取込時のみ（ingest/chunking.py のチャンク境界検出）。検索の埋め込みはローカルモデル
+    "llama-index-embeddings-huggingface>=0.3.0",  # Phase 3: 日本語特化/多言語のローカル埋め込み比較用
+    "llama-index-llms-anthropic>=0.3.0",          # 回答まで含む評価（eval/full.py）と旧 CLI のみ。サーバは使わない
+    "pymupdf>=1.24.0",
+    "python-dotenv>=1.0.0",
+    "sentence-transformers>=3.0.0",  # Phase 5: リランカー（ローカル日本語クロスエンコーダ）
+    "rank-bm25>=0.2.2",              # Phase 5: ハイブリッド検索の BM25 語彙スコア
+    "fugashi>=1.3.0",               # Phase 5: 日本語形態素（BM25/リランカーの MeCab トークナイズ）
+    "unidic-lite>=1.0.8",           # Phase 5: fugashi 用の軽量辞書
+    "streamlit>=1.40",              # Phase 8: 参照用 Web UI（app.py / chat_app.py＝2026-09-02 廃止・コードは残置）
+    "qdrant-client>=1.12.0",        # Phase B: ベクトルDB（VECTOR_BACKEND=qdrant・既定）
+    "anthropic>=0.40",              # 取込時の分野タグ判定（ingest/policy_tagger.py）と廃止済み chat_app.py。サーバは使わない
+    "requests>=2.31",               # recommendations/ingest/collect.py（収集）
+    "beautifulsoup4>=4.12",         # recommendations/ingest/collect.py（HTML 本文抽出）
+]
+stats = [
+    "openpyxl>=3.1",                # ESRI 国民経済計算など xlsx 原典の取込（取込時のみ）
+    "xlrd>=2.0",                    # 旧基準（68SNA/93SNA）年次推計の .xls 原典の取込（取込時のみ）
+    "pymupdf>=1.24.0",              # 経団連 妥結 PDF（stats/ingest/pdf_shunto・現在は guide＝通常は未使用）
+]
+all = ["polyarchy[recommendations,stats]"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# リポジトリ root が Python の root：polyarchy_common/（共通契約）と各サービス。
+# サービスは1フォルダ=1パッケージ（フォルダ名＝コーパスID）：recommendations / stats / …
+where = ["."]
+include = ["polyarchy_common*", "recommendations*", "stats*"]
+exclude = ["*.data*", "*.notebooks*", "*.scratchpad*", "*.archive*", "*.tests*"]

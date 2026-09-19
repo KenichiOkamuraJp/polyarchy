@@ -1,0 +1,31 @@
+# Polyarchy 統計参照DB（stats）の MCP サーバ——recommendations とは別プロセス・別ホスト名（B6 案 B）。
+#   python -m stats.serving.mcp_server --http --host 127.0.0.1 --port 8766
+# 層＝公開固定・fail-closed（該当なしは「ない」と返す）。モデル不要・軽量。127.0.0.1 バインドで直露出しない。
+# 設置は bootstrap ⑧（ENABLE_STATS_APP=true のとき）。入口は cloudflared ingress の stats.<domain> → :8766。
+[Unit]
+Description=Polyarchy stats MCP server (Streamable HTTP :8766, layer=public fixed, fail-closed)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polyarchy
+Group=polyarchy
+WorkingDirectory=/opt/polyarchy/polyarchy
+EnvironmentFile=-/etc/polyarchy/deploy.env
+# 秘密パス（MCP_HTTP_PATH=/mcp-<乱数>）＋ Access Managed OAuth（MCP_ACCESS_TEAM_DOMAIN/MCP_ACCESS_AUD）。
+# bootstrap が SSM stats_http_path / access_team_domain / access_aud_stats から生成（無ければ既定 /mcp・認証なし）。
+EnvironmentFile=-/etc/polyarchy/stats.env
+Environment=PYTHONPATH=/opt/polyarchy/polyarchy
+Environment=STATS_QUERY_LOG=/opt/polyarchy/polyarchy/stats/data/query_log/queries.jsonl
+# Environment=MCP_ALLOWED_HOSTS=stats.<domain>,127.0.0.1:8766
+ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m stats.serving.mcp_server --http --host 127.0.0.1 --port 8766
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# rsyslog がサービス別ファイル（/var/log/polyarchy/<identifier>.log）へ振り分ける鍵（運用設計 §1.2・CW Logs 転送）。
+SyslogIdentifier=polyarchy-stats
+
+[Install]
+WantedBy=multi-user.target

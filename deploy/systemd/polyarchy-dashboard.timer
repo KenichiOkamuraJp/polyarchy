@@ -1,0 +1,10 @@
+# 毎時 05 分（health/fuelsync と時刻をずらす）。
+[Unit]
+Description=Run polyarchy-dashboard hourly
+
+[Timer]
+OnCalendar=*-*-* *:05:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
