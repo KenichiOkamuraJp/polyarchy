@@ -38,6 +38,9 @@
 ```bash
 python -m companies.ingest.verify_xbrl --from 2025-06-20 --to 2025-06-30 --n 10   # 着手前検証（被覆率・未採用要素・容量の見立て）
 python -m companies.ingest.verify_xbrl --docids S100XXXX,S100YYYY               # 書類を指定（銀行・証券・保険・IFRS・連結なしを含める）
+python -m companies.eval.make_candidates    # 評価問の素材づくり（★上書きする＝人手で直した行があるときは実行しない）
+python -m companies.eval.test_core          # 語彙と評価問の整合（ネットワーク不要）
+python -m companies.eval.exact_match        # 原典完全一致（参照層が未実装のあいだは全問 FAIL）
 ```
 
 出力＝`companies/data/verify/<実行日時>/coverage.md`。サーバ・ゲートは第 1 便の実装で足す（足したらここと ルート README「品質の担保」に登録）。
