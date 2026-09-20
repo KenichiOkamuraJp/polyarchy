@@ -60,7 +60,7 @@ polyarchy/
 
 | 候補 | 内容 | 位置づけ |
 |---|---|---|
-| **企業情報サービス（EDINET）** | 有価証券報告書等の企業開示（EDINET API・PDL 1.0 で商用可）を「主張↔事実」の企業側の事実として参照 | 別アプリとして着手済（`edinet/`・パーサ検証済） |
+| **企業情報サービス（`companies/`）** | 有価証券報告書等の企業開示を「主張↔事実」の企業側の事実として参照。最初の取得元＝EDINET（API・PDL 1.0 で商用可） | 着手済（パーサ検証済・計画＝[companies/docs/開発計画.md](companies/docs/開発計画.md)） |
 | **政府系の詳細情報サービス** | 審議会・検討会の議事録／論点（`deliberations/`）・国会（`diet/`）・地方議会（`assemblies/`）・外国政府（`foreign/`） | recommendations が「結論（提言・方針）」を扱うのに対し「議論の過程」を扱う兄弟 |
 
 いずれも同じ規律で足す＝評価セットと回帰ゲートを先に立て（fail-closed）、`release.sh` の同じ出口から配布し、
@@ -78,11 +78,11 @@ polyarchy/
 | 話題 | 正典 | 設計 | 記録 |
 |---|---|---|---|
 | **総論**（何を・なぜ・次に何を） | [用語と役割](docs/用語と役割.md)＝文書共通の定義（役割・段階・用語はここだけ）／[残タスク](docs/残タスク.md)＝これからやることと対応履歴 | [長期開発計画](docs/長期開発計画.md)＝コーパス連邦・分割原理・拡張順序／[開発環境方針](docs/開発環境方針.md)＝PoC 維持と並行開発の規約／[文書管理ルール](docs/文書管理ルール.md)＝4 分類・地図・正典 1 箇所の規則（他プロジェクトへ持ち出し可） | [リファクタリング所見 2026-08-19](docs/リファクタリング所見_2026-08-19.md)＝配置の読み替え表 |
-| **開発計画・評価**（品質をどう測り育てるか） | [評価設計と改善計画](docs/評価設計と改善計画.md)＝何をなぜ測るか（合格基準は本 README「品質の担保」） | [stats データ拡充計画](stats/docs/データ拡充計画.md)・[第7弾](stats/docs/第7弾_ドッグフーディング反映計画.md)・[第9弾](stats/docs/第9弾_マクロ速報ドッグフーディング反映計画.md)＝弾ごとの計画／[実利用ログの提供](docs/実利用ログの提供_同意書ひな型と共有経路.md)＝燃料確保の同意書と共有経路 | [stats 開発経緯と設計判断 2026-08-25](stats/docs/記録/開発経緯と設計判断_2026-08-25.md)（**新しいセッションはまずこれ**） |
+| **開発計画・評価**（品質をどう測り育てるか） | [評価設計と改善計画](docs/評価設計と改善計画.md)＝何をなぜ測るか（合格基準は本 README「品質の担保」） | [stats データ拡充計画](stats/docs/データ拡充計画.md)・[第7弾](stats/docs/第7弾_ドッグフーディング反映計画.md)・[第9弾](stats/docs/第9弾_マクロ速報ドッグフーディング反映計画.md)＝弾ごとの計画／[companies 開発計画](companies/docs/開発計画.md)＝企業情報サービスの便の段組み・契約案・容量の見立て／[実利用ログの提供](docs/実利用ログの提供_同意書ひな型と共有経路.md)＝燃料確保の同意書と共有経路 | [stats 開発経緯と設計判断 2026-08-25](stats/docs/記録/開発経緯と設計判断_2026-08-25.md)（**新しいセッションはまずこれ**）／[companies（EDINET）正規化検証 2026-08-22](companies/docs/正規化検証.md)・[実データ検証 2026-09-20](companies/docs/記録/実データ検証_2026-09-20.md) |
 | **サービス**（各 DB の入口と契約） | [recommendations/README](recommendations/README.md)／[stats/README](stats/README.md)／[polyarchy_common/README](polyarchy_common/README.md)＝**共通契約の正典**／各論＝[stats 共通契約](stats/docs/共通契約.md)・[recommendations 共通契約](recommendations/docs/共通契約.md)／[deploy/pages/README](deploy/pages/README.md)＝公開ページ | stats 設計 5 本（[指標棚卸し](stats/docs/指標棚卸し.md)・[データソース選定](stats/docs/データソース選定.md)・[参照粒度設計](stats/docs/参照粒度設計.md)・[再配布条件](stats/docs/再配布条件.md)・[業種分類対応表](stats/docs/業種分類対応表.md)）／recommendations（[コーパス収録範囲の明示](recommendations/docs/コーパス収録範囲の明示.md)・[再配布条件](recommendations/docs/再配布条件.md)）／[polyarchy_common/](polyarchy_common/__init__.py)＝共通契約パッケージ本体（docstring が詳細仕様） | [公式コネクタ要件](docs/公式コネクタ要件.md)（2026-08-18 調査） |
 | **運用**（動かし続ける） | [運用設計](docs/運用設計.md)＝監視・更新・ロールの設計と実施状況／[deploy/README](deploy/README.md)＝AWS runbook（§9.5 が入口ガード/ログ保持の正典）／[deploy/RUNBOOK_OPS](deploy/RUNBOOK_OPS.md)＝障害対応・データ更新・切り戻し | [個人認証_案B設計](docs/個人認証_案B設計.md)＝外部 IdP・②名簿限定→③個人向け提供の段組み | — |
 | **導入団体向け**（移行・合意・監査・対外説明） | [監査ガイド](docs/導入団体側_監査ガイド.md)＝公開リポジトリと CI で誰でも再現できる独立監査の仕組み | [PROD_MIGRATION](deploy/PROD_MIGRATION.md)＝導入団体 AWS への転写手順／[運用モデルと事業継続性](docs/運用モデルと事業継続性.md)＝なぜ依存しなくて済むか（対外説明）／[非公開コーパスの参照設計](docs/非公開コーパスの参照設計.md)＝導入団体が内部文書の検索を**別リポジトリで**作るときの型（不変条件・認可関門・検査。本リポジトリでは実装しない） | — |
-| **規約**（セッション作業規約＝新しい開発者・AI が最初に読む） | [CLAUDE.md](CLAUDE.md)＝**リポジトリ root の規約（記憶ゼロのセッションはまずこれ**・読む順・性格・運用地雷）／[stats/CLAUDE.md](stats/CLAUDE.md)／[recommendations/CLAUDE.md](recommendations/CLAUDE.md) | — | — |
+| **規約**（セッション作業規約＝新しい開発者・AI が最初に読む） | [CLAUDE.md](CLAUDE.md)＝**リポジトリ root の規約（記憶ゼロのセッションはまずこれ**・読む順・性格・運用地雷）／[stats/CLAUDE.md](stats/CLAUDE.md)／[recommendations/CLAUDE.md](recommendations/CLAUDE.md)／[companies/CLAUDE.md](companies/CLAUDE.md) | — | — |
 
 ## 運用（人手の箱操作ゼロ・2026-09-03〜）
 

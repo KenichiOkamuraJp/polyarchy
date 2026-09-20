@@ -1,7 +1,7 @@
 # Polyarchy — リポジトリ root の作業規約
 
 > **状態：規約（セッション作業規約）。** 起案 2026-09-17。**新しい開発者・AI セッション（記憶ゼロ）が最初に読む 1 枚**。
-> フォルダ単位の規約＝[stats/CLAUDE.md](stats/CLAUDE.md)・[recommendations/CLAUDE.md](recommendations/CLAUDE.md)（そのフォルダで閉じて作業するときはそちらが優先）。
+> フォルダ単位の規約＝[stats/CLAUDE.md](stats/CLAUDE.md)・[recommendations/CLAUDE.md](recommendations/CLAUDE.md)・[companies/CLAUDE.md](companies/CLAUDE.md)（そのフォルダで閉じて作業するときはそちらが優先）。
 > 本書は地図と地雷だけを持つ。定義・数値・タスク・手順は写さず、下の入口へリンクする。
 
 ## 1. 最初に読む順（30 分）

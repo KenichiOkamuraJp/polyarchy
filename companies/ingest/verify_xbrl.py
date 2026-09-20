@@ -5,24 +5,26 @@ EDINET XBRL 正規化検証（企業情報アプリの着手前検証・使い�
 （jpcrp_cor:*SummaryOfBusinessResults）と従業員情報、ならびに定性開示のテキストブロック（事業等のリスク・MD&A・
 サステナビリティ）を、N 社ぶん取り出して**被覆率**（どの社で何が取れ、何が取れないか）を数える。
 
-前提：EDINET API v2（Subscription-Key 必須）。キーは環境変数 EDINET_API_KEY（edinet/.env も読む・git 外）。
+前提：EDINET API v2（Subscription-Key 必須）。キーは環境変数 EDINET_API_KEY（companies/.env も読む・git 外）。
 利用規約：PDL1.0（商用可・出典明記・加工明記）／API 利用はスクレイピング禁止の例外。短時間大量アクセスは禁止＝
 1 リクエストごとに待つ。
 
 使い方：
-  python -m edinet.verify_xbrl --from 2025-06-20 --to 2025-06-30 --n 10
-  python -m edinet.verify_xbrl --docids S100XXXX,S100YYYY
-出力：edinet/data/verify/<実行日>/ に 社別 JSON・coverage.md（被覆表）・summary_elements.csv（全社の Summary 要素一覧）。
+  python -m companies.ingest.verify_xbrl --from 2025-06-20 --to 2025-06-30 --n 10
+  python -m companies.ingest.verify_xbrl --docids S100XXXX,S100YYYY
+出力：companies/data/verify/<実行日時>/ に 社別 JSON・coverage.md（被覆表）・summary_elements.csv（全社の Summary 要素一覧）。
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import datetime as dt
+import html
 import io
 import json
 import os
 import re
+import statistics
 import sys
 import time
 import urllib.error
@@ -34,7 +36,7 @@ from pathlib import Path
 
 from lxml import etree
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent   # companies/（.env・data/ の置き場）
 DATA = HERE / "data"
 CACHE = DATA / "cache"
 API = "https://api.edinet-fsa.go.jp/api/v2"
@@ -76,6 +78,15 @@ TARGET_TEXT = {
 CTX_CUR = "CurrentYearDuration"
 CTX_CUR_I = "CurrentYearInstant"
 CTX_FILING = "FilingDateInstant"  # 第一部の定性開示（事業等のリスク等）は提出日時点の context
+# 容量の見立て（開発計画 §5）の対象＝検索に載せる候補の 5 ブロック（大株主・役員は表＝検索の対象外）
+SEARCH_BLOCKS = ("事業の内容", "経営方針・経営環境・対処すべき課題", "サステナビリティ", "事業等のリスク", "MD&A")
+N_FILERS = 3900  # 有報提出会社の概数（外挿の母数）
+
+
+def text_chars(html_text: str) -> int:
+    """TextBlock（HTML）の正味の字数＝タグを除き、実体参照を戻し、空白を畳んだ長さ。"""
+    t = html.unescape(re.sub(r"<[^>]+>", " ", html_text))
+    return len(re.sub(r"\s+", "", t))
 
 
 # ---------------------------------------------------------------- API
@@ -89,7 +100,7 @@ def _key() -> str:
                 if line.startswith("EDINET_API_KEY="):
                     k = line.split("=", 1)[1].strip().strip('"')
     if not k:
-        sys.exit("EDINET_API_KEY が未設定（環境変数か edinet/.env）。キーは EDINET API 利用申請で発行（無料・本人登録）。")
+        sys.exit("EDINET_API_KEY が未設定（環境変数か companies/.env）。キーは EDINET API 利用申請で発行（無料・本人登録）。")
     return k
 
 
@@ -183,7 +194,8 @@ def analyze(doc: dict, inst: dict) -> dict:
     facts = inst["facts"]
     dei = {f["name"]: f["value"] for f in facts if f["prefix"] == "jpdei_cor"}
     out = {
-        "docID": doc["docID"], "filerName": doc.get("filerName"), "edinetCode": doc.get("edinetCode"),
+        "docID": doc["docID"], "filerName": doc.get("filerName") or dei.get("FilerNameInJapaneseDEI"),
+        "edinetCode": doc.get("edinetCode") or dei.get("EDINETCodeDEI"),
         "secCode": doc.get("secCode"), "periodEnd": doc.get("periodEnd"), "submit": doc.get("submitDateTime"),
         "accounting_standard": dei.get("AccountingStandardsDEI"),
         "consolidated": dei.get("WhetherConsolidatedFinancialStatementsArePreparedDEI"),
@@ -201,13 +213,38 @@ def analyze(doc: dict, inst: dict) -> dict:
                                                          "unit": f["unit"], "decimals": f["decimals"], "context": f["context"]}
     for label, names in TARGET_TEXT.items():
         f = pick(facts, names, (CTX_FILING,))
-        out["text"][label] = None if f is None else {"element": f["name"], "chars": len(re.sub(r"<[^>]+>", "", f["value"]))}
+        out["text"][label] = None if f is None else {"element": f["name"], "chars": text_chars(f["value"])}
     # 発見用：この社が持つ Summary 要素と TextBlock の全名
+    # 連結を作成していない社は単体の context にしか値が無い（2026-09-20 実測＝見落とすと「当期純利益」が候補に出ない）
+    cur = (CTX_CUR, CTX_CUR_I) if out["consolidated"] == "true" else (
+        CTX_CUR, CTX_CUR_I, f"{CTX_CUR}_NonConsolidatedMember", f"{CTX_CUR_I}_NonConsolidatedMember")
     out["all_summary_elements"] = sorted({f["name"] for f in facts if "SummaryOfBusinessResults" in f["name"]
-                                          and f["context"] in (CTX_CUR, CTX_CUR_I) and not f["nil"]})
+                                          and f["context"] in cur and not f["nil"]})
     out["all_textblocks"] = sorted({f["name"] for f in facts if f["name"].endswith("TextBlock")
                                     and f["prefix"] == "jpcrp_cor" and f["context"] == CTX_FILING and not f["nil"]})
     return out
+
+
+def capacity_lines(ok: list[dict], chars_per_chunk: int) -> list[str]:
+    """定性開示の字数の実測と、全社への外挿（開発計画 §5 の判断材料）。外挿は標本が小さいので桁の見立てに限る。"""
+    if not ok:
+        return []
+    lines = ["", "## 容量の見立て（定性開示・字数は正味＝タグと空白を除く）", "",
+             "| ブロック | 社数 | 平均 | 中央値 | 最大 |", "|---|---|---|---|---|"]
+    for label in TARGET_TEXT:
+        cs = [r["text"][label]["chars"] for r in ok if r["text"].get(label)]
+        if cs:
+            lines.append(f"| {label} | {len(cs)} | {statistics.mean(cs):,.0f} | {statistics.median(cs):,.0f} | {max(cs):,} |")
+    per = [sum(r["text"][b]["chars"] for b in SEARCH_BLOCKS if r["text"].get(b)) for r in ok]
+    mean, med = statistics.mean(per), statistics.median(per)
+    zips = [r["zip_bytes"] for r in ok if r.get("zip_bytes")]
+    lines += ["", f"- 検索候補 5 ブロックの合計（1 社）：平均 {mean:,.0f} 字・中央値 {med:,.0f} 字・最大 {max(per):,} 字",
+              f"- 外挿（{N_FILERS:,} 社・1 期分）：約 {mean * N_FILERS / 1e6:,.0f} 百万字"
+              f" ≒ {mean * N_FILERS / chars_per_chunk / 1e4:,.0f} 万チャンク（1 チャンク {chars_per_chunk} 字と仮定）",
+              f"- 標本 {len(ok)} 社＝大企業に偏ると過大になる（中央値での外挿：約 {med * N_FILERS / chars_per_chunk / 1e4:,.0f} 万チャンク）"]
+    if zips:
+        lines.append(f"- 原本 zip：平均 {statistics.mean(zips) / 1e6:.1f}MB／社 → 全社 約 {statistics.mean(zips) * N_FILERS / 1e9:.0f}GB（S3 に置く分）")
+    return lines
 
 
 # ---------------------------------------------------------------- 実行
@@ -218,6 +255,7 @@ def main() -> int:
     ap.add_argument("--to", dest="d_to", help="提出日 範囲 終")
     ap.add_argument("--n", type=int, default=10, help="採る社数（範囲内の先頭から）")
     ap.add_argument("--docids", help="docID をカンマ区切りで直接指定")
+    ap.add_argument("--chars-per-chunk", type=int, default=500, help="容量の外挿に使う 1 チャンクの字数（仮定）")
     a = ap.parse_args()
 
     docs: list[dict] = []
@@ -236,7 +274,7 @@ def main() -> int:
             day += dt.timedelta(days=1)
     print(f"対象 {len(docs)} 社", file=sys.stderr)
 
-    outdir = DATA / "verify" / dt.date.today().isoformat()
+    outdir = DATA / "verify" / dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")  # 実行ごとに分ける（同日の再実行で上書きしない）
     outdir.mkdir(parents=True, exist_ok=True)
     results = []
     for d in docs:
@@ -245,6 +283,7 @@ def main() -> int:
             r = analyze(d, parse_instance(zp))
         except Exception as e:  # 1 社の失敗で全体を止めない（何が失敗したかは残す）
             r = {"docID": d["docID"], "filerName": d.get("filerName"), "error": repr(e)}
+        r["zip_bytes"] = zp.stat().st_size
         results.append(r)
         (outdir / f"{d['docID']}.json").write_text(json.dumps(r, ensure_ascii=False, indent=1))
         print(f"  {d['docID']} {r.get('filerName')} {'ERROR ' + r['error'] if 'error' in r else ''}", file=sys.stderr)
@@ -268,6 +307,7 @@ def main() -> int:
     for r in ok:
         extra.update(n for n in r["all_summary_elements"] if n not in known)
     lines += [f"- {n}: {c}" for n, c in extra.most_common()]
+    lines += capacity_lines(ok, a.chars_per_chunk)
     (outdir / "coverage.md").write_text("\n".join(lines))
     with (outdir / "summary_elements.csv").open("w", newline="") as f:
         w = csv.writer(f)
