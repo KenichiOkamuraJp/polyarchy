@@ -101,7 +101,12 @@ echo "[upload] stats データ同期 → s3://$BUCKET/$DATA_PREFIX/stats/ （reg
 "${AWS[@]}" s3 sync "$REPO_DIR/stats/data/" "s3://$BUCKET/$DATA_PREFIX/stats/" --region "$REGION" \
   --exclude "cache/*" --exclude "values_archive/*" --exclude "query_log/*" --exclude "*.bak"
 
-echo "[upload] 完了。EC2 起動（user_data）または SSM で bootstrap.sh 再走行すれば取り込まれる。"
+# ★ここで「bootstrap 再走行で取り込まれる」と案内しない：bootstrap の再走行はコードを更新しない（RUNBOOK §5）。
+#   稼働中の箱への反映は release.sh が最後に書くマニフェスト→自動適用（tar 再展開）だけが正規経路。
+echo "[upload] 完了（S3 へ置いただけ＝箱への反映はこのスクリプトの仕事ではない）。"
+echo "[upload]   release.sh 経由＝続けてマニフェストが書かれ、箱が 15 分以内に自動適用する（人手の箱操作は不要）。"
+echo "[upload]   新規の箱＝EC2 初回起動（user_data）が S3 から取得する。"
+echo "[upload]   単体実行＝稼働中の箱には反映されない（bootstrap の再走行はコードを更新しない）。反映は release.sh で。"
 echo "[upload] 正典 eval の sha256（バイト不変の確認用・期待 4a51f5f5…）:"
 shasum -a 256 "$REPO_DIR/recommendations/data/eval/eval_set.json" 2>/dev/null || \
   echo "  （shasum 不可の環境。recommendations/eval/phase12_pipeline.py の CANONICAL_SHA256 を参照）"
