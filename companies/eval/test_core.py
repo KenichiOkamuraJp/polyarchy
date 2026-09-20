@@ -11,9 +11,9 @@ import sys
 from companies.core.items import BASES, ELEMENT_TO_KEY, ITEMS
 from companies.eval.exact_match import EVAL
 
-MIN_POS, MIN_NEG = 120, 20  # 問は減らさない（足したら上げる）
+MIN_POS, MIN_NEG = 120, 21  # 問は減らさない（足したら上げる）
 REASONS = {"item_not_disclosed", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_item",
-           "unknown_company", "ambiguous_company"}
+           "unknown_company", "ambiguous_company", "ambiguous_item"}
 
 
 def main() -> int:

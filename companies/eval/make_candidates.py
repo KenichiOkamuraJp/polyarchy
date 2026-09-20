@@ -67,6 +67,8 @@ def positive(c: dict, el: str, ctx: str, *, by_element: bool = False) -> dict | 
             print(f"  2 経路の不一致＝捨てる: {c['name']} {el} {ctx}: csv={row['value']!r} xbrl={c['mine'].get((el, ctx))!r}", file=sys.stderr)
         return None
     key = ELEMENT_TO_KEY.get(el.split(":")[1])
+    if key and not by_element and len(rivals(c, el, ctx)) > 1:
+        by_element = True  # 同じ決算期に同じキーの要素が複数（会計基準の移行年）＝キーでは引けない契約＝要素 ID で引く問にする
     basis = "non_consolidated" if ctx.endswith(NONCON) else "consolidated"
     q = {"id": f"{c['edinet_code']}-{(el.split(':')[1] if by_element else key)[:40]}-{basis[:3]}-{period_of(c, ctx)}",
          "company": {"edinet_code": c["edinet_code"], "name": c["name"]},
@@ -76,6 +78,13 @@ def positive(c: dict, el: str, ctx: str, *, by_element: bool = False) -> dict | 
          "source": {"doc_id": c["doc_id"], "context": ctx},
          "checked_by": "edinet_csv+xbrl（2 経路一致・人手の目視は未）", "checked_at": TODAY}
     return q
+
+
+def rivals(c: dict, el: str, ctx: str) -> list[str]:
+    """同じ context に値を持つ、同じキーの標準要素。"""
+    key = ELEMENT_TO_KEY.get(el.split(":")[1])
+    return sorted(e for (e, x) in c["rows"] if x == ctx and e.startswith("jpcrp_cor:") and ELEMENT_TO_KEY.get(e.split(":")[1]) == key
+                  and c["rows"][(e, x)]["value"] not in ("", "－"))
 
 
 def positives(c: dict) -> list[dict]:
@@ -149,6 +158,14 @@ def negatives(cs: list[dict]) -> list[dict]:
                 out.append({"id": f"{c['edinet_code']}-salary-none", "company": who, "item": "average_annual_salary",
                             "basis": "non_consolidated", "period": per, "expect": "not_found", "reason": "item_not_disclosed",
                             "note": "平均年間給与の開示が無い提出会社"})
+    for c in cs:  # 会計基準の移行年＝同じキーに 2 つの値が並ぶ決算期は、片方を黙って選ばない
+        amb = sorted({(ELEMENT_TO_KEY[e.split(":")[1]], x) for (e, x) in c["rows"] if e.startswith("jpcrp_cor:")
+                      and e.split(":")[1] in ELEMENT_TO_KEY and plain(x) and len(rivals(c, e, x)) > 1})
+        for key, ctx in amb[:1]:
+            out.append({"id": f"{c['edinet_code']}-{key}-two-standards", "company": {"edinet_code": c["edinet_code"], "name": c["name"]},
+                        "item": key, "basis": "non_consolidated" if ctx.endswith(NONCON) else "consolidated", "period": period_of(c, ctx),
+                        "expect": "not_found", "reason": "ambiguous_item", "expect_competing": True,
+                        "note": "同じ決算期に会計基準の違う値が並ぶ（IFRS への移行年）＝両方を示し、要素 ID の指定で引き直させる"})
     first = cs[0]
     who = {"edinet_code": first["edinet_code"], "name": first["name"]}
     out += [

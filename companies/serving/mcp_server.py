@@ -1,0 +1,122 @@
+"""Polyarchy 企業情報DB（companies）の MCP サーバ。読み取り専用・公開データのみ・層は公開固定（layer 引数なし）。
+
+  python -m companies.serving.mcp_server                       # stdio
+  python -m companies.serving.mcp_server --http --port 8767    # Streamable HTTP（配信形）
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+from polyarchy_common.logsetup import configure_quiet_logging, get_logger, guard_stdout_for_stdio
+
+_REAL_STDOUT = guard_stdout_for_stdio() if "--http" not in sys.argv else None  # stdio では stdout がプロトコル線
+
+import anyio  # noqa: E402
+from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.types import ToolAnnotations  # noqa: E402
+
+from companies.core import lookup, store  # noqa: E402
+from companies.core.items import ITEMS  # noqa: E402
+from polyarchy_common.capture import append_record  # noqa: E402
+
+configure_quiet_logging()
+log = get_logger("polyarchy.companies")
+QUERY_LOG = Path(os.getenv("COMPANIES_QUERY_LOG") or Path(__file__).resolve().parent.parent / "data" / "query_log" / "queries.jsonl")
+READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+
+SERVER_INSTRUCTIONS = (
+    "Polyarchy 企業情報DB(companies)。日本の有価証券報告書(EDINET・金融庁)の「主要な経営指標等の推移」と従業員の状況を、"
+    "公表どおりの値で厳密参照する読み取り専用サービス(公開データのみ)。2層構造:発見層(find_company=企業の同定/list_items=項目の語彙)と"
+    "参照層(lookup_company_facts=値の完全一致参照)。値は XBRL に書かれた文字列のまま返す(換算・丸め・補完なし。比率は 0.444 の形・金額は円)。"
+    "連結と単体(提出会社)は別の系列で、どちらの値かを必ず返す。該当が無ければ found=false と理由を返し、別の連結/単体の別・隣の項目・近い決算期の値では埋めない"
+    "(例=持株会社や IFRS の大企業は連結に標準の「売上高」が無く、「営業収益」「経常収益」や会社が独自に定義した項目で開示している="
+    "found=false のとき alternatives に、その会社が開示している項目の一覧が返るので、そこから選んで引き直す)。"
+    "各値には出典(書類管理番号・提出日・要素・context・URL・引用1行)が付く。派生値(利益率・前年比 等)は計算しない。"
+    "値そのものは各提出会社の開示に帰属し、本サービスは値を保証しない(原典で確認すること)。"
+)
+mcp = FastMCP("polyarchy-companies", instructions=SERVER_INSTRUCTIONS)
+
+
+def _capture(tool: str, args: dict, r: dict) -> None:
+    append_record(QUERY_LOG, {"tool": tool, "args": args, "found": r.get("found"), "reason": r.get("reason")})
+
+
+@mcp.tool(title="企業を同定する", annotations=READ_ONLY)
+def find_company(query: str) -> dict:
+    """社名(一部でも可)・証券コード(4桁)・EDINET コード(E+5桁)から、有価証券報告書の提出会社を同定する。
+
+    1 社に定まれば company(EDINET コード・証券コード・社名・会計基準・連結の有無・決算期末)を返す。
+    候補が複数なら found=false・reason=ambiguous_company と candidates を返す(推測で 1 社に決めない=候補から EDINET コードで引き直す)。
+    該当なしは reason=unknown_company。収録は有価証券報告書の提出会社のみ(非上場でも提出会社なら収録・提出していない会社は無い)。
+    """
+    r = lookup.find_company(query)
+    _capture("find_company", {"query": query}, r)
+    return r
+
+
+@mcp.tool(title="企業の開示値を参照する", annotations=READ_ONLY)
+def lookup_company_facts(company: str, period: str, item: str | None = None, element: str | None = None,
+                         basis: str | None = None) -> dict:
+    """企業×項目×決算期の値を、有価証券報告書に書かれたとおりに返す(完全一致参照)。
+
+    company=EDINET コード・証券コード・社名。period=決算期末の YYYY-MM(例 2025-03。年度表記は不可)。
+    item=項目のキー(list_items の語彙。例 net_sales, total_assets, average_annual_salary)。
+    element=要素 ID(会社が独自に定義した項目や、同じ決算期に会計基準の違う値が並ぶときに指定。alternatives/competing に出る)。item と element はどちらか一方。
+    basis=consolidated(連結)/non_consolidated(単体=提出会社)。省くと、連結を作成している会社は連結・していない会社は単体。
+    平均年間給与・平均年齢・平均勤続年数・資本金・配当などは単体にだけある=basis=non_consolidated を指定する。
+    返り値=value(文字列のまま)・unit・decimals・basis・element・label・period_end・source(書類・提出日・引用)・license。
+    無ければ found=false と reason(item_not_disclosed / no_consolidated_statements / out_of_range / bad_period / unknown_item /
+    unknown_company / ambiguous_company / ambiguous_item)。item_not_disclosed では alternatives(その会社がその決算期に開示している項目の一覧・値なし)が返る。
+    """
+    r = lookup.lookup_company_facts(company, item=item, element=element, period=period, basis=basis)
+    _capture("lookup_company_facts", {"company": company, "period": period, "item": item, "element": element, "basis": basis}, r)
+    return r
+
+
+@mcp.tool(title="項目の語彙を見る", annotations=READ_ONLY)
+def list_items() -> dict:
+    """lookup_company_facts の item に使えるキーの一覧(キー・日本語の呼び名・対応する標準タクソノミの要素)。
+
+    1 つのキーに束ねているのは同じ概念の会計基準違い(日本基準/IFRS/米国基準)だけ。売上高/営業収益/経常収益、経常利益/税引前利益は別のキー。
+    """
+    return {"items": [{"item": k, "label": label, "elements": [f"jpcrp_cor:{e}" for e in els]} for k, (label, els) in ITEMS.items()],
+            "n_companies": len(store.registry()), "source": "EDINET 有価証券報告書(金融庁)", "license": "公共データ利用規約(PDL1.0)"}
+
+
+def _health() -> dict:
+    n = len(store.registry())
+    return {"ok": n > 0, "companies": n}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--http", action="store_true")
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=int, default=8767)
+    a = ap.parse_args()
+    if a.http:
+        from polyarchy_common.mcp_http import serve_streamable_http
+        serve_streamable_http(mcp, host=a.host, port=a.port, path=os.getenv("MCP_HTTP_PATH", "/mcp"),
+                              tools_desc="find_company / lookup_company_facts / list_items", logger_name="polyarchy.companies",
+                              health_check=_health)
+        return 0
+    log.info("companies MCP（stdio）起動＝収録 %d 社", len(store.registry()))
+    anyio.run(_run_stdio)
+    return 0
+
+
+async def _run_stdio() -> None:
+    """プロトコルは確保しておいた実 stdout へ（sys.stdout は stderr に差し替え済み＝ライブラリの print が伝送路を汚さない）。"""
+    from io import TextIOWrapper
+
+    from mcp.server.stdio import stdio_server
+    out = anyio.wrap_file(TextIOWrapper(_REAL_STDOUT.buffer, encoding="utf-8"))
+    async with stdio_server(stdout=out) as (r, w):
+        await mcp._mcp_server.run(r, w, mcp._mcp_server.create_initialization_options())
+
+
+if __name__ == "__main__":
+    sys.exit(main())

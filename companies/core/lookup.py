@@ -1,0 +1,111 @@
+"""発見層（企業の同定）と参照層（値の完全一致参照）。DB は事実を返すことに徹する。
+
+fail-closed：
+- 企業が同定できない・候補が複数 → 値を返さない（候補が複数なら候補を返す＝推測で 1 社に決めない）。
+- その会社・その連結／単体の別・その決算期に項目が無い → found=false。**隣の項目・別の basis・近い期で埋めない**。
+  代わりに、その会社が開示している項目の一覧（値なし）を返す＝選ぶのは利用側。
+"""
+from __future__ import annotations
+
+import re
+import unicodedata
+
+from companies.core import store
+from companies.core.items import BASES, ITEMS
+
+PERIOD = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
+MAX_CANDIDATES = 20
+
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFKC", s or "")
+    return re.sub(r"\s+|株式会社|\(株\)|㈱", "", s).lower()
+
+
+def _brief(c: dict) -> dict:
+    return {k: c.get(k) for k in ("edinet_code", "sec_code", "name", "accounting_standard", "consolidated", "fiscal_year_end")}
+
+
+def find_company(query: str) -> dict:
+    reg, q = store.registry(), (query or "").strip()
+    if not q:
+        return {"found": False, "company": None, "candidates": [], "reason": "unknown_company"}
+    if re.fullmatch(r"[Ee]\d{5}", q):
+        hits = [c for k, c in reg.items() if k == q.upper()]
+    elif re.fullmatch(r"\d{4}0?", q):
+        hits = [c for c in reg.values() if c.get("sec_code") == q[:4]]
+    else:
+        n = _norm(q)
+        exact = [c for c in reg.values() if n in (_norm(c["name"]), _norm(c.get("name_en") or ""))]
+        hits = exact or [c for c in reg.values() if n and (n in _norm(c["name"]) or n in _norm(c.get("name_en") or ""))]
+    if len(hits) == 1:
+        return {"found": True, "company": _brief(hits[0]), "candidates": [], "reason": None}
+    if not hits:
+        return {"found": False, "company": None, "candidates": [], "reason": "unknown_company",
+                "hint": f"収録は有価証券報告書の提出会社 {len(reg)} 社。EDINET コード・証券コード・社名で指定する"}
+    return {"found": False, "company": None, "reason": "ambiguous_company", "n_candidates": len(hits),
+            "candidates": [_brief(c) for c in sorted(hits, key=lambda c: c["edinet_code"])[:MAX_CANDIDATES]]}
+
+
+def _miss(reason: str, **extra) -> dict:
+    return {"found": False, "reason": reason, **extra}
+
+
+def _disclosed(facts, basis: str, period: str) -> list[dict]:
+    """その会社がその連結／単体の別・その決算期に開示している項目（値は含めない）。"""
+    el_key = {f"jpcrp_cor:{el}": k for k, (_, els) in ITEMS.items() for el in els}
+    seen = {}
+    for f in facts:
+        if f["basis"] == basis and f["period"] == period and not f["dims"]:
+            seen[f["element"]] = {"item": el_key.get(f["element"]), "element": f["element"], "label": f["label"], "basis": basis}
+    return sorted(seen.values(), key=lambda d: (d["item"] is None, d["item"] or d["element"]))
+
+
+def lookup_company_facts(company: str, *, item: str | None = None, element: str | None = None,
+                         period: str, basis: str | None = None) -> dict:
+    if (item is None) == (element is None):
+        return _miss("bad_request", hint="item（語彙のキー）か element（要素 ID＝会社が定義した項目）のどちらか一方を指定する")
+    if item is not None and item not in ITEMS:
+        return _miss("unknown_item", hint="語彙に無い項目。派生値は計算しない＝構成する項目を引いて利用側で計算する",
+                     items={k: label for k, (label, _) in ITEMS.items()})
+    if basis is not None and basis not in BASES:
+        return _miss("bad_request", hint=f"basis は {BASES} のいずれか（省くと、連結を作成している会社は連結・していない会社は単体）")
+    if not PERIOD.fullmatch(period or ""):
+        return _miss("bad_period", hint="period は決算期末の YYYY-MM（例＝2025-03）。年度表記は読み替えない")
+    found = find_company(company)
+    if not found["found"]:
+        return _miss(found["reason"], candidates=found["candidates"], **({"hint": found["hint"]} if "hint" in found else {}))
+    co = found["company"]
+    if basis == "consolidated" and not co["consolidated"]:
+        return _miss("no_consolidated_statements", company=co, hint="連結財務諸表を作成していない会社。basis=non_consolidated で引く")
+    basis = basis or ("consolidated" if co["consolidated"] else "non_consolidated")
+    facts = store.facts_of(co["edinet_code"])
+    periods = sorted({f["period"] for f in facts})
+    if period not in periods:
+        return _miss("out_of_range", company=co, available_periods=periods, hint="収録の無い決算期。近い期の値は返さない")
+    wanted = {f"jpcrp_cor:{el}" for el in ITEMS[item][1]} if item else {element}
+    hits = [f for f in facts if f["element"] in wanted and f["basis"] == basis and f["period"] == period and not f["dims"]]
+    if not hits:
+        other = "non_consolidated" if basis == "consolidated" else "consolidated"
+        return _miss("item_not_disclosed", company=co, basis=basis, period=period,
+                     disclosed_in_other_basis=any(f["element"] in wanted and f["basis"] == other and f["period"] == period for f in facts),
+                     alternatives=_disclosed(facts, basis, period),
+                     hint="この会社はこの項目をこの連結／単体の別では開示していない。別の basis や隣の項目の値では埋めない＝"
+                          "alternatives（開示されている項目の一覧）から選んで引き直す")
+    if len({f["element"] for f in hits}) > 1:
+        # 同じ決算期に会計基準の違う値が並ぶ（例＝IFRS へ移行した会社の移行年は US GAAP と IFRS の両方が 5 期推移に載る）。
+        # どちらも事実＝片方を黙って選ばない。両方を要素・ラベルつきで示し、element 指定で引き直させる。
+        latest = {}
+        for f in sorted(hits, key=lambda f: (f["submitted"], f["doc_id"])):
+            latest[f["element"]] = {"element": f["element"], "label": f["label"], "value": f["value"], "unit": f["unit"], "doc_id": f["doc_id"]}
+        return _miss("ambiguous_item", company=co, basis=basis, period=period, competing=list(latest.values()),
+                     hint="この決算期には、同じ項目に当たる要素が複数ある（会計基準の違い等）。どちらも開示された値＝element を指定して引き直す")
+    f = max(hits, key=lambda f: (f["submitted"], f["doc_id"]))  # 提出日が最新の書類の値
+    return {"found": True, "company": co, "item": item, "item_label": ITEMS[item][0] if item else None,
+            "element": f["element"], "label": f["label"], "basis": f["basis"], "period": f["period"], "period_end": f["period_end"],
+            "value": f["value"], "unit": f["unit"], "decimals": f["decimals"],
+            "source": {"provider": "EDINET", "doc_type": "有価証券報告書", "doc_id": f["doc_id"], "submitted": f["submitted"],
+                       "context": f["context"], "n_documents_with_this_value_point": len(hits),
+                       "url": f"https://disclosure2.edinet-fsa.go.jp/WZEK0040.aspx?{f['doc_id']}",
+                       "citation": f"出典：EDINET 有価証券報告書（{co['name']}・{f['submitted']} 提出・書類管理番号 {f['doc_id']}）／XBRL から抽出"},
+            "license": {"grade": "○", "terms": "公共データ利用規約（PDL1.0）＝出典の明記と加工の明記"}}

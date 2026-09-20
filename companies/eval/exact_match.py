@@ -52,6 +52,8 @@ def check_negative(q: dict, lookup) -> str | None:
         return f"禁止値が応答に含まれる: {leaked}"
     if q.get("expect_alternatives") and not r.get("alternatives"):
         return "代わりに開示されている項目の一覧（alternatives）が無い"
+    if q.get("expect_competing") and len(r.get("competing") or []) < 2:
+        return "並んでいる要素（competing）が 2 つ以上示されていない"
     if q.get("expect_candidates") and not r.get("candidates"):
         return "候補（candidates）が無い"
     return None

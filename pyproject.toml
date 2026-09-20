@@ -40,6 +40,10 @@ stats = [
     "xlrd>=2.0",                    # 旧基準（68SNA/93SNA）年次推計の .xls 原典の取込（取込時のみ）
     "pymupdf>=1.24.0",              # 経団連 妥結 PDF（stats/ingest/pdf_shunto・現在は guide＝通常は未使用）
 ]
+# companies＝取込（作業用 PC）だけが lxml を使う。配信（companies/serving・core）は共通の依存だけで動く＝箱のロックには入れない。
+companies = [
+    "lxml>=5.0",                    # companies/ingest（XBRL インスタンスの読み取り）
+]
 all = ["polyarchy[recommendations,stats]"]
 
 [build-system]
@@ -50,5 +54,5 @@ build-backend = "setuptools.build_meta"
 # リポジトリ root が Python の root：polyarchy_common/（共通契約）と各サービス。
 # サービスは1フォルダ=1パッケージ（フォルダ名＝コーパスID）：recommendations / stats / …
 where = ["."]
-include = ["polyarchy_common*", "recommendations*", "stats*"]
+include = ["polyarchy_common*", "recommendations*", "stats*", "companies*"]
 exclude = ["*.data*", "*.notebooks*", "*.scratchpad*", "*.archive*", "*.tests*"]

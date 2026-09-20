@@ -114,6 +114,14 @@ Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃＝v5 データは S3 `d
 | `python -m recommendations.eval.multistage_eval` | 網羅 100% / 集約棄却 12/12 |
 | `python -m recommendations.eval.mcp_smoke` | MCP 疎通・層公開固定・stdout クリーン |
 
+### companies（2026-09-20〜・配布の配線は未＝`release.sh` にはまだ入っていない）
+
+| ゲート | 基準 |
+|---|---|
+| `python -m companies.eval.exact_match` | **原典完全一致**（`companies/data/eval/*.jsonl`）＝正例・負例とも全件 PASS（2026-09-20 時点 正例 120／負例 21。期待値は EDINET の公式 CSV と自前パーサの 2 経路一致） |
+| `python -m companies.eval.test_core` | 語彙と評価問の整合・問数の下限（ネットワーク不要） |
+| `python -m companies.eval.mcp_smoke` | MCP 疎通・層公開固定・fail-closed・stdout クリーン |
+
 ### stats
 
 | ゲート | 基準 |
