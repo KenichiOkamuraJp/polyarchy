@@ -11,7 +11,7 @@ import re
 import unicodedata
 
 from companies.core import store
-from companies.core.items import BASES, ITEMS
+from companies.core.items import BASES, COMPANION, ITEMS, STANDARDS, standard_of
 
 PERIOD = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 MAX_CANDIDATES = 20
@@ -23,7 +23,13 @@ def _norm(s: str) -> str:
 
 
 def _brief(c: dict) -> dict:
-    return {k: c.get(k) for k in ("edinet_code", "sec_code", "name", "accounting_standard", "consolidated", "fiscal_year_end")}
+    out = {k: c.get(k) for k in ("edinet_code", "sec_code", "name", "accounting_standard", "consolidated", "fiscal_year_end")}
+    former = [n for n in c.get("names", []) if n != c.get("name")]
+    return {**out, "former_names": former} if former else out
+
+
+def _names(c: dict) -> list[str]:
+    return [_norm(n) for n in [*c.get("names", []), c.get("name"), c.get("name_en")] if n]
 
 
 def find_company(query: str) -> dict:
@@ -36,8 +42,8 @@ def find_company(query: str) -> dict:
         hits = [c for c in reg.values() if c.get("sec_code") == q[:4]]
     else:
         n = _norm(q)
-        exact = [c for c in reg.values() if n in (_norm(c["name"]), _norm(c.get("name_en") or ""))]
-        hits = exact or [c for c in reg.values() if n and (n in _norm(c["name"]) or n in _norm(c.get("name_en") or ""))]
+        exact = [c for c in reg.values() if n in _names(c)]
+        hits = exact or [c for c in reg.values() if n and any(n in x for x in _names(c))]
     if len(hits) == 1:
         return {"found": True, "company": _brief(hits[0]), "candidates": [], "reason": None}
     if not hits:
@@ -62,7 +68,9 @@ def _disclosed(facts, basis: str, period: str) -> list[dict]:
 
 
 def lookup_company_facts(company: str, *, item: str | None = None, element: str | None = None,
-                         period: str, basis: str | None = None) -> dict:
+                         period: str, basis: str | None = None, doc_id: str | None = None,
+                         accounting_standard: str | None = None) -> dict:
+    """doc_id を省くと提出日が最新の書類の値。同じ決算期の値は後年の書類に再掲され、遡及修正で変わり得る＝書類を指定すればその書類の値。"""
     if (item is None) == (element is None):
         return _miss("bad_request", hint="item（語彙のキー）か element（要素 ID＝会社が定義した項目）のどちらか一方を指定する")
     if item is not None and item not in ITEMS:
@@ -70,6 +78,8 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
                      items={k: label for k, (label, _) in ITEMS.items()})
     if basis is not None and basis not in BASES:
         return _miss("bad_request", hint=f"basis は {BASES} のいずれか（省くと、連結を作成している会社は連結・していない会社は単体）")
+    if accounting_standard is not None and accounting_standard not in STANDARDS:
+        return _miss("bad_request", hint=f"accounting_standard は {STANDARDS} のいずれか")
     if not PERIOD.fullmatch(period or ""):
         return _miss("bad_period", hint="period は決算期末の YYYY-MM（例＝2025-03）。年度表記は読み替えない")
     found = find_company(company)
@@ -80,11 +90,18 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
         return _miss("no_consolidated_statements", company=co, hint="連結財務諸表を作成していない会社。basis=non_consolidated で引く")
     basis = basis or ("consolidated" if co["consolidated"] else "non_consolidated")
     facts = store.facts_of(co["edinet_code"])
+    if doc_id is not None:
+        facts = tuple(f for f in facts if f["doc_id"] == doc_id)
+        if not facts:
+            return _miss("unknown_document", company=co, hint="この会社の収録書類に無い書類管理番号",
+                         documents=sorted({(f["submitted"], f["doc_id"]) for f in store.facts_of(co["edinet_code"])}))
     periods = sorted({f["period"] for f in facts})
     if period not in periods:
         return _miss("out_of_range", company=co, available_periods=periods, hint="収録の無い決算期。近い期の値は返さない")
     wanted = {f"jpcrp_cor:{el}" for el in ITEMS[item][1]} if item else {element}
     hits = [f for f in facts if f["element"] in wanted and f["basis"] == basis and f["period"] == period and not f["dims"]]
+    if accounting_standard is not None and item:
+        hits = [f for f in hits if standard_of(f["element"]) == accounting_standard]
     if not hits:
         other = "non_consolidated" if basis == "consolidated" else "consolidated"
         return _miss("item_not_disclosed", company=co, basis=basis, period=period,
@@ -93,19 +110,29 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
                      hint="この会社はこの項目をこの連結／単体の別では開示していない。別の basis や隣の項目の値では埋めない＝"
                           "alternatives（開示されている項目の一覧）から選んで引き直す")
     if len({f["element"] for f in hits}) > 1:
-        # 同じ決算期に会計基準の違う値が並ぶ（例＝IFRS へ移行した会社の移行年は US GAAP と IFRS の両方が 5 期推移に載る）。
-        # どちらも事実＝片方を黙って選ばない。両方を要素・ラベルつきで示し、element 指定で引き直させる。
+        # 同じ決算期に会計基準の違う値が並ぶ。IFRS へ移行した会社の移行年（US GAAP と IFRS）のほか、IFRS の表と日本基準の表を
+        # 併記する会社がある（2026-09-21 実測＝約 2%）。どちらも事実＝片方を黙って選ばない。両方を会計基準つきで示し、
+        # accounting_standard（または element）の指定で引き直させる。
         latest = {}
         for f in sorted(hits, key=lambda f: (f["submitted"], f["doc_id"])):
-            latest[f["element"]] = {"element": f["element"], "label": f["label"], "value": f["value"], "unit": f["unit"], "doc_id": f["doc_id"]}
+            latest[f["element"]] = {"accounting_standard": standard_of(f["element"]), "element": f["element"], "label": f["label"],
+                                    "value": f["value"], "unit": f["unit"], "doc_id": f["doc_id"]}
         return _miss("ambiguous_item", company=co, basis=basis, period=period, competing=list(latest.values()),
-                     hint="この決算期には、同じ項目に当たる要素が複数ある（会計基準の違い等）。どちらも開示された値＝element を指定して引き直す")
+                     hint="この決算期には、同じ項目の値が会計基準ごとに複数開示されている。どちらも開示された値＝"
+                          "accounting_standard（Japan GAAP／IFRS／US GAAP）か element を指定して引き直す")
     f = max(hits, key=lambda f: (f["submitted"], f["doc_id"]))  # 提出日が最新の書類の値
-    return {"found": True, "company": co, "item": item, "item_label": ITEMS[item][0] if item else None,
+    extra = {}
+    if item in COMPANION:  # 年と月の 2 要素で開示する会社＝対の値を必ず添える（無ければ無いと書く）
+        els = {f"jpcrp_cor:{el}" for el in ITEMS[COMPANION[item]][1]}
+        pair = [g for g in facts if g["element"] in els and g["basis"] == basis and g["period"] == period and g["doc_id"] == f["doc_id"]]
+        extra["companion"] = {"item": COMPANION[item], "label": ITEMS[COMPANION[item]][0], "value": pair[0]["value"] if pair else None,
+                              "note": "年と月に分けて開示する会社がある＝両方で 1 つの値（例＝40 年と 5 月＝40 歳 5 か月）。value が null なら月の開示は無い"}
+    return {"found": True, **extra, "accounting_standard": standard_of(f["element"]) if f["element"].startswith("jpcrp_cor:") else co["accounting_standard"], "company": co, "item": item, "item_label": ITEMS[item][0] if item else None,
             "element": f["element"], "label": f["label"], "basis": f["basis"], "period": f["period"], "period_end": f["period_end"],
             "value": f["value"], "unit": f["unit"], "decimals": f["decimals"],
             "source": {"provider": "EDINET", "doc_type": "有価証券報告書", "doc_id": f["doc_id"], "submitted": f["submitted"],
-                       "context": f["context"], "n_documents_with_this_value_point": len(hits),
+                       "context": f["context"],
+                       "other_documents": sorted({(g["submitted"], g["doc_id"], g["value"]) for g in hits if g["doc_id"] != f["doc_id"]}),
                        "url": f"https://disclosure2.edinet-fsa.go.jp/WZEK0040.aspx?{f['doc_id']}",
                        "citation": f"出典：EDINET 有価証券報告書（{co['name']}・{f['submitted']} 提出・書類管理番号 {f['doc_id']}）／XBRL から抽出"},
             "license": {"grade": "○", "terms": "公共データ利用規約（PDL1.0）＝出典の明記と加工の明記"}}

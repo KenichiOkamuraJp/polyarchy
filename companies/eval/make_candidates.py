@@ -4,7 +4,7 @@
 独立の経路。同じ点を自前のパーサでも読み、**2 経路が一致した点だけ**を正例にする（不一致は標準エラーに出して捨てる）。
 期間（決算期末）と連結の有無は XBRL インスタンスの context／DEI から取る（値ではなく構造）。
 
-  python -m companies.eval.make_candidates            # キャッシュ済みの書類（companies/data/cache/xbrl/*.zip）を対象
+  python -m companies.eval.make_candidates            # 既存の問の書類を対象（--docids=S100XXXX,… で足す）
 出力：companies/data/eval/exact_match.jsonl（正例）・fail_closed.jsonl（負例）。**上書きする**＝人手で直した行があるときは実行しない。
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import json
 import sys
 import zipfile
 
-from companies.core.items import ELEMENT_TO_KEY
+from companies.core.items import COMPANION, ELEMENT_TO_KEY, ITEMS, standard_of
 from companies.ingest import verify_xbrl as v
 
 EVAL = v.DATA / "eval"
@@ -67,16 +67,23 @@ def positive(c: dict, el: str, ctx: str, *, by_element: bool = False) -> dict | 
             print(f"  2 経路の不一致＝捨てる: {c['name']} {el} {ctx}: csv={row['value']!r} xbrl={c['mine'].get((el, ctx))!r}", file=sys.stderr)
         return None
     key = ELEMENT_TO_KEY.get(el.split(":")[1])
+    std = None
     if key and not by_element and len(rivals(c, el, ctx)) > 1:
-        by_element = True  # 同じ決算期に同じキーの要素が複数（会計基準の移行年）＝キーでは引けない契約＝要素 ID で引く問にする
+        std = standard_of(el)  # 同じ決算期に会計基準の違う値が並ぶ（移行年・日本基準の表の併記）＝会計基準を指定して引く問にする
     basis = "non_consolidated" if ctx.endswith(NONCON) else "consolidated"
-    q = {"id": f"{c['edinet_code']}-{(el.split(':')[1] if by_element else key)[:40]}-{basis[:3]}-{period_of(c, ctx)}",
+    q = {"id": f"{c['edinet_code']}-{(el.split(':')[1] if by_element else key)[:40]}{'-' + std.replace(' ', '') if std else ''}"
+               f"-{basis[:3]}-{period_of(c, ctx)}-{c['doc_id']}",
          "company": {"edinet_code": c["edinet_code"], "name": c["name"]},
          "item": None if by_element else key, "element": el if by_element else None,
          "basis": basis, "period": period_of(c, ctx),
          "expected_value": row["value"], "unit": row["unit"], "expected_element": el,
          "source": {"doc_id": c["doc_id"], "context": ctx},
          "checked_by": "edinet_csv+xbrl（2 経路一致・人手の目視は未）", "checked_at": TODAY}
+    if std:
+        q["accounting_standard"] = std
+    if key in COMPANION and not by_element:  # 年と月に分けて開示する会社＝対の値が必ず添えられること（無ければ null）
+        pair = [c["rows"][(f"jpcrp_cor:{e}", ctx)]["value"] for e in ITEMS[COMPANION[key]][1] if (f"jpcrp_cor:{e}", ctx) in c["rows"]]
+        q["expected_companion"] = next((x for x in pair if x not in ("", "－")), None)
     return q
 
 
@@ -120,13 +127,51 @@ def positives(c: dict) -> list[dict]:
         q = positive(c, *sal)
         if q:
             out.append(q)
+    emp = f"CurrentYearInstant{NONCON}"
+    for e in ("AverageAgeYears", "AverageAgeMonths", "AverageLengthOfServiceMonths"):
+        t = (f"jpcrp_cor:{e}InformationAboutReportingCompanyInformationAboutEmployees", emp)
+        if t in c["rows"]:
+            q = positive(c, *t)
+            if q:
+                out.append(q)
     # 会社が定義した項目（拡張要素）＝要素 ID を指定して引く
-    ext = [(el, ctx) for (el, ctx) in c["rows"] if el.startswith("jpcrp030000-asr_") and el.endswith("KeyFinancialData")
+    ext = [(el, ctx) for (el, ctx) in c["rows"] if el.startswith("jpcrp030000-asr_")
+           and (el.endswith("KeyFinancialData") or "SummaryOfBusinessResults" in el)
            and ctx in ("CurrentYearDuration", "Prior4YearDuration")]
     for el, ctx in sorted(ext, key=order)[:2]:
         q = positive(c, el, ctx, by_element=True)
         if q:
             out.append(q)
+    return out
+
+
+def latest_default(cs: list[dict]) -> list[dict]:
+    """書類を指定しない参照＝提出日が最新の書類の値（遡及修正があれば新しい値）＋他の書類の値が並ぶこと。"""
+    out, by = [], {}
+    for c in cs:
+        by.setdefault(c["edinet_code"], []).append(c)
+    for code, group in by.items():
+        if len(group) < 2:
+            continue
+        old, new = sorted(group, key=lambda c: c["doc_id"])[0], sorted(group, key=lambda c: c["doc_id"])[-1]
+        own = NONCON if not new["consolidated"] else ""
+        n = 0
+        for (el, ctx) in sorted(new["rows"]):
+            if n >= 2 or not el.startswith("jpcrp_cor:") or el.split(":")[1] not in ELEMENT_TO_KEY or not ctx.startswith("Prior1Year"):
+                continue
+            if ctx.endswith(NONCON) != bool(own) or not plain(ctx) or len(rivals(new, el, ctx)) > 1:
+                continue
+            cur = ctx.replace("Prior1Year", "CurrentYear")
+            if (el, cur) not in old["rows"] or period_of(old, cur) != period_of(new, ctx):
+                continue
+            q = positive(new, el, ctx)
+            if not q or ELEMENT_TO_KEY[el.split(":")[1]] in COMPANION:
+                continue
+            restated = old["rows"][(el, cur)]["value"] != q["expected_value"]
+            if n == 0 or restated:
+                q.update(id=q["id"] + "-latest", pin=False, expect_other_documents=True,
+                         note=("遡及修正あり＝" if restated else "") + "書類を指定しない参照は提出日が最新の書類の値。古い書類の値は other_documents に並ぶ")
+                out.append(q); n += 1
     return out
 
 
@@ -190,10 +235,15 @@ def negatives(cs: list[dict]) -> list[dict]:
 
 
 def main() -> int:
-    docs = sorted(p.stem for p in (v.CACHE / "xbrl").glob("*.zip"))
+    # 対象の書類は既存の問から取る（取込でキャッシュが増えても問の母集団が動かない）。増やすときは --docids で足す
+    have = EVAL / "exact_match.jsonl"
+    docs = sorted({json.loads(l)["source"]["doc_id"] for l in have.read_text().splitlines() if l.strip()} if have.exists() else set())
+    docs = sorted(set(docs) | {d.strip() for a in sys.argv[1:] if a.startswith("--docids=") for d in a.split("=", 1)[1].split(",")})
+    if not docs:
+        sys.exit("対象の書類が無い＝--docids=S100XXXX,… を指定")
     cs = [load(d) for d in docs]
-    pos = [q for c in cs for q in positives(c)]
-    neg = negatives(cs)
+    pos = [q for c in cs for q in positives(c)] + latest_default(cs)
+    neg = list({q["id"]: q for q in negatives(cs)}.values())  # 2 書類ある会社は同じ負例が 2 回できる＝id で 1 つに
     assert len({q["id"] for q in pos}) == len(pos) and len({q["id"] for q in neg}) == len(neg), "id の重複"
     EVAL.mkdir(parents=True, exist_ok=True)
     for name, qs in (("exact_match.jsonl", pos), ("fail_closed.jsonl", neg)):

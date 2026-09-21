@@ -58,7 +58,9 @@ ITEMS: dict[str, tuple[str, list[str]]] = {
     "employees": ("従業員数", ["NumberOfEmployees"]),
     "average_annual_salary": ("平均年間給与", [f"AverageAnnualSalary{_EMP}"]),
     "average_age_years": ("平均年齢（年）", [f"AverageAgeYears{_EMP}"]),
+    "average_age_months": ("平均年齢（月）", [f"AverageAgeMonths{_EMP}"]),
     "average_service_years": ("平均勤続年数（年）", [f"AverageLengthOfServiceYears{_EMP}"]),
+    "average_service_months": ("平均勤続年数（月）", [f"AverageLengthOfServiceMonths{_EMP}"]),
     # 銀行（提出会社）
     "deposits": ("預金残高", [f"Deposits{S}"]),
     "loans": ("貸出金残高", [f"LoansAndBillsDiscounted{S}"]),
@@ -69,3 +71,14 @@ ELEMENT_TO_KEY: dict[str, str] = {el: k for k, (_, els) in ITEMS.items() for el 
 assert len(ELEMENT_TO_KEY) == sum(len(els) for _, els in ITEMS.values()), "同じ要素が 2 つのキーに載っている"
 
 BASES = ("consolidated", "non_consolidated")
+
+# 「40 歳 5 か月」を年と月の 2 要素で開示する会社がある（2026-09-21 実測＝約 8%）。年だけ返すと端数が黙って落ちる＝対の項目を必ず添える。
+COMPANION = {"average_age_years": "average_age_months", "average_age_months": "average_age_years",
+             "average_service_years": "average_service_months", "average_service_months": "average_service_years"}
+STANDARDS = ("Japan GAAP", "IFRS", "US GAAP")
+
+
+def standard_of(element: str) -> str:
+    """標準要素がどの会計基準の表のものか（要素名の接尾＝タクソノミの命名規約）。"""
+    local = element.split(":")[-1]
+    return "IFRS" if "IFRS" in local else "US GAAP" if "USGAAP" in local else "Japan GAAP"

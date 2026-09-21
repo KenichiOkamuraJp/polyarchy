@@ -6,6 +6,7 @@
 判定に使う参照層の契約（実装は `companies.core.lookup`・未実装のあいだは全問 FAIL）：
   find_company(query: str) -> {"found": bool, "company": {...}|None, "candidates": [...], "reason": str|None}
   lookup_company_facts(company: str, *, item: str|None, element: str|None, period: str, basis: str|None)
+    （doc_id: str|None を付けると、その書類の値。省くと提出日が最新の書類の値）
     -> {"found": bool, "value": str, "basis": str, "element": str, "source": {"doc_id": ...},
         "reason": str|None, "alternatives": [...], "candidates": [...]}
   company は EDINET コードか社名。basis を省いたときは、連結を作成している会社は連結・作成していない会社は単体（どちらかを必ず返す）。
@@ -24,7 +25,9 @@ def _load(name: str) -> list[dict]:
 
 
 def check_positive(q: dict, lookup) -> str | None:
-    r = lookup(q["company"]["edinet_code"], item=q["item"], element=q["element"], period=q["period"], basis=q["basis"])
+    # 書類を固定して引く＝新しい書類を取り込んでも問が動かない（同じ決算期の値は後年の書類に再掲・遡及修正され得る）
+    r = lookup(q["company"]["edinet_code"], item=q["item"], element=q["element"], period=q["period"], basis=q["basis"],
+               doc_id=q["source"]["doc_id"] if q.get("pin", True) else None, accounting_standard=q.get("accounting_standard"))
     if not r.get("found"):
         return f"found=false（reason={r.get('reason')}）"
     if r.get("value") != q["expected_value"]:
@@ -35,6 +38,10 @@ def check_positive(q: dict, lookup) -> str | None:
         return f"要素が不一致: {r.get('element')!r}"
     if (r.get("source") or {}).get("doc_id") != q["source"]["doc_id"]:
         return f"出所の書類が不一致: {(r.get('source') or {}).get('doc_id')!r}"
+    if "expected_companion" in q and (r.get("companion") or {}).get("value", "（欄なし）") != q["expected_companion"]:
+        return f"対の値（年／月）が不一致: {r.get('companion')!r} ≠ {q['expected_companion']!r}"
+    if q.get("expect_other_documents") and not r["source"].get("other_documents"):
+        return "他の書類の値（other_documents）が並んでいない"
     return None
 
 

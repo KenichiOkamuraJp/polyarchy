@@ -1,0 +1,20 @@
+{"id": "find-01", "query": "第一生命ホールディングス", "expect": "found", "edinet_code": "E06141", "note": "旧社名（2026 年の書類では第一ライフグループ）"}
+{"id": "find-02", "query": "第一ライフグループ", "expect": "found", "edinet_code": "E06141", "note": "現社名"}
+{"id": "find-03", "query": "7203", "expect": "found", "edinet_code": "E02144", "note": "証券コード"}
+{"id": "find-04", "query": "8306", "expect": "found", "edinet_code": "E03606", "note": "証券コード"}
+{"id": "find-05", "query": "E01777", "expect": "found", "edinet_code": "E01777", "note": "EDINET コード"}
+{"id": "find-06", "query": "e01777", "expect": "found", "edinet_code": "E01777", "note": "EDINET コード（小文字）"}
+{"id": "find-07", "query": "トヨタ自動車", "expect": "found", "edinet_code": "E02144", "note": "株式会社を省いた社名"}
+{"id": "find-08", "query": "トヨタ自動車株式会社", "expect": "found", "edinet_code": "E02144", "note": "正式な社名"}
+{"id": "find-09", "query": "ｿﾆｰｸﾞﾙｰﾌﾟ", "expect": "found", "edinet_code": "E01777", "note": "半角カナ"}
+{"id": "find-10", "query": "Toyota Motor Corporation", "expect": "found", "edinet_code": "E02144", "note": "英文社名"}
+{"id": "find-11", "query": "sony group corporation", "expect": "found", "edinet_code": "E01777", "note": "英文社名（小文字）"}
+{"id": "find-12", "query": "㈱湖池屋", "expect": "found", "edinet_code": "E00389", "note": "㈱の表記"}
+{"id": "find-13", "query": "湖池屋", "expect": "found", "edinet_code": "E00389", "note": "社名の一部が 1 社に定まる"}
+{"id": "find-14", "query": "ＥＮＥＣＨＡＮＧＥ", "expect": "found", "edinet_code": "E36130", "note": "全角英字"}
+{"id": "find-15", "query": "enechange", "expect": "found", "edinet_code": "E36130", "note": "半角小文字"}
+{"id": "find-amb-01", "query": "トヨタ", "expect": "ambiguous_company", "must_include": "E02144", "note": "候補が複数＝1 社に決めない（候補に本命が含まれる）"}
+{"id": "find-amb-02", "query": "銀行", "expect": "ambiguous_company", "note": "候補が多数＝上限つきで返し、件数を示す"}
+{"id": "find-none-01", "query": "存在しない商事", "expect": "unknown_company", "note": "該当なし"}
+{"id": "find-none-02", "query": "", "expect": "unknown_company", "note": "空の問い合わせ"}
+{"id": "find-none-03", "query": "E99999", "expect": "unknown_company", "note": "存在しない EDINET コード"}

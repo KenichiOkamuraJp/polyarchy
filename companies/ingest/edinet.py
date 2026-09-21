@@ -6,7 +6,7 @@
 
 取り込むもの＝次元が「連結・個別」だけの context（当期〜四期前）にある、
   ①標準要素の `…SummaryOfBusinessResults`（語彙に無いものも持つ＝「代わりに何が開示されているか」の一覧に使う）
-  ②各社の拡張要素の `…KeyFinancialData`（会社が定義した項目＝zip 内のラベルつき）
+  ②各社の拡張要素の `…KeyFinancialData`／会社の名前空間の `…SummaryOfBusinessResults`（会社が定義した項目＝zip 内のラベルつき）
   ③従業員の状況（従業員数・平均年間給与・平均年齢・平均勤続年数）
 値は公表どおりの文字列。連結と単体は別の系列（basis）。項目単位で単体へ落とす処理は**しない**（実データ検証 2026-09-20 §2）。
 """
@@ -32,7 +32,9 @@ _EMP = "InformationAboutReportingCompanyInformationAboutEmployees"
 def wanted(prefix: str, name: str) -> bool:
     if prefix == "jpcrp_cor":
         return "SummaryOfBusinessResults" in name or name == "NumberOfEmployees" or name.endswith(_EMP)
-    return prefix.startswith("jpcrp030000-asr_") and name.endswith("KeyFinancialData")
+    # 各社の拡張要素＝経営指標の表に置く名前は 2 通りある（2026-09-21 実測）：…KeyFinancialData（トヨタの営業収益 等）と、
+    # 会社の名前空間に置いた …SummaryOfBusinessResults（建設業の完成工事高・IFRS の会社の売上高 等）
+    return prefix.startswith("jpcrp030000-asr_") and (name.endswith("KeyFinancialData") or "SummaryOfBusinessResults" in name)
 
 
 def extension_labels(zip_path: Path) -> dict[str, str]:

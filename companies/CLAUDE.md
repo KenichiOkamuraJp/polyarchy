@@ -38,16 +38,19 @@
 ```bash
 python -m companies.ingest.verify_xbrl --from 2025-06-20 --to 2025-06-30 --n 10   # 着手前検証（被覆率・未採用要素・容量の見立て）
 python -m companies.ingest.verify_xbrl --docids S100XXXX,S100YYYY               # 書類を指定（銀行・証券・保険・IFRS・連結なしを含める）
-python -m companies.eval.make_candidates    # 評価問の素材づくり（★上書きする＝人手で直した行があるときは実行しない）
+python -m companies.eval.make_candidates    # 評価問の素材づくり（既存の問の書類が対象・--docids=… で足す。★exact_match／fail_closed を上書きする）
 python -m companies.eval.test_core          # 語彙と評価問の整合（ネットワーク不要）
 python -m companies.ingest.edinet --cached   # 取得済みの書類を値の置き場（data/store/）へ取り込む（--docids／--from --to もある）
 python -m companies.eval.exact_match        # 原典完全一致＝正例・負例とも全問 PASS
+python -m companies.eval.find_quality       # 発見層（企業の同定）＝全問 PASS
+python -m companies.ops.population_report   # 母集団の棚卸し（取込のあとに回す＝語彙・契約が標本の外でも成り立つか）
 python -m companies.eval.mcp_smoke          # MCP 疎通・ツール定義・fail-closed・stdout クリーン
 python -m companies.serving.mcp_server      # stdio（--http --port 8767 で配信形）
 ```
 
 出力＝`companies/data/verify/<実行日時>/coverage.md`。ゲートの基準はルート README「品質の担保」。
 
+- ★ **標本で決めた語彙・契約は、取込のあとに母集団で洗う**（`population_report`）。20 社では見えなかった型が 2,400 社で 6 つ出た＝[母集団の棚卸し](docs/記録/母集団の棚卸し_2026-09-21.md)。
 - ★ **配信側（`core/`・`serving/`）に lxml など取込用の依存を import しない**＝箱のロックに入っていない（取込は作業用 PC だけ・`pip install -e ".[companies]"`）。
 - ★ **stdio では `guard_stdout_for_stdio()` が返す実 stdout を `stdio_server(stdout=…)` に渡す**（`mcp.run()` をそのまま呼ぶと、差し替え後の stdout＝stderr にプロトコルが流れてクライアントが無応答で止まる＝2026-09-20 に実際に踏んだ）。
 

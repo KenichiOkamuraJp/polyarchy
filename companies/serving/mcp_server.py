@@ -59,20 +59,28 @@ def find_company(query: str) -> dict:
 
 @mcp.tool(title="企業の開示値を参照する", annotations=READ_ONLY)
 def lookup_company_facts(company: str, period: str, item: str | None = None, element: str | None = None,
-                         basis: str | None = None) -> dict:
+                         basis: str | None = None, doc_id: str | None = None,
+                         accounting_standard: str | None = None) -> dict:
     """企業×項目×決算期の値を、有価証券報告書に書かれたとおりに返す(完全一致参照)。
 
     company=EDINET コード・証券コード・社名。period=決算期末の YYYY-MM(例 2025-03。年度表記は不可)。
     item=項目のキー(list_items の語彙。例 net_sales, total_assets, average_annual_salary)。
     element=要素 ID(会社が独自に定義した項目や、同じ決算期に会計基準の違う値が並ぶときに指定。alternatives/competing に出る)。item と element はどちらか一方。
     basis=consolidated(連結)/non_consolidated(単体=提出会社)。省くと、連結を作成している会社は連結・していない会社は単体。
+    accounting_standard=Japan GAAP/IFRS/US GAAP。IFRS の会社には日本基準の表を併記する会社や、移行年に 2 つの基準の値が並ぶ会社がある=
+    そのとき reason=ambiguous_item と competing(基準ごとの値)が返るので、基準を指定して引き直す。
+    平均年齢・平均勤続年数は「年」と「月」に分けて開示する会社がある=companion に対の値が付く(40 年と 5 月=40 歳 5 か月)。
+    doc_id=書類管理番号。省くと提出日が最新の書類の値(同じ決算期の値は後年の書類に再掲され、遡及修正で変わり得る=
+    source.other_documents に他の書類の値が並ぶ。特定の書類の値が要るときに指定)。
     平均年間給与・平均年齢・平均勤続年数・資本金・配当などは単体にだけある=basis=non_consolidated を指定する。
     返り値=value(文字列のまま)・unit・decimals・basis・element・label・period_end・source(書類・提出日・引用)・license。
     無ければ found=false と reason(item_not_disclosed / no_consolidated_statements / out_of_range / bad_period / unknown_item /
     unknown_company / ambiguous_company / ambiguous_item)。item_not_disclosed では alternatives(その会社がその決算期に開示している項目の一覧・値なし)が返る。
     """
-    r = lookup.lookup_company_facts(company, item=item, element=element, period=period, basis=basis)
-    _capture("lookup_company_facts", {"company": company, "period": period, "item": item, "element": element, "basis": basis}, r)
+    r = lookup.lookup_company_facts(company, item=item, element=element, period=period, basis=basis, doc_id=doc_id,
+                                    accounting_standard=accounting_standard)
+    _capture("lookup_company_facts", {"company": company, "period": period, "item": item, "element": element, "basis": basis, "doc_id": doc_id,
+                                      "accounting_standard": accounting_standard}, r)
     return r
 
 
