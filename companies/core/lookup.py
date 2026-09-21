@@ -11,8 +11,9 @@ import re
 import unicodedata
 
 from companies.core import store
-from companies.core.items import BASES, COMPANION, ITEMS, STANDARDS, standard_of
+from companies.core.items import BASES, COMPANION, ITEMS, STANDARDS, TOP_LINE, TOP_LINE_LABEL, standard_of
 
+ELEMENT_KEY = {f"jpcrp_cor:{el}": k for k, (_, els) in ITEMS.items() for el in els}  # ラベルは読むときに語彙から引く（語彙を足しても取り込み直さない）
 PERIOD = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 MAX_CANDIDATES = 20
 
@@ -63,7 +64,8 @@ def _disclosed(facts, basis: str, period: str) -> list[dict]:
     seen = {}
     for f in facts:
         if f["basis"] == basis and f["period"] == period and not f["dims"]:
-            seen[f["element"]] = {"item": el_key.get(f["element"]), "element": f["element"], "label": f["label"], "basis": basis}
+            k = el_key.get(f["element"])
+            seen[f["element"]] = {"item": k, "element": f["element"], "label": ITEMS[k][0] if k else f["label"], "basis": basis}
     return sorted(seen.values(), key=lambda d: (d["item"] is None, d["item"] or d["element"]))
 
 
@@ -104,11 +106,36 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
         hits = [f for f in hits if standard_of(f["element"]) == accounting_standard]
     if not hits:
         other = "non_consolidated" if basis == "consolidated" else "consolidated"
-        return _miss("item_not_disclosed", company=co, basis=basis, period=period,
+        alts, guide = _disclosed(facts, basis, period), {}
+        if item in TOP_LINE:  # 最上段の収益＝この会社が代わりに開示している仲間の項目を名指しで案内する（値は返さない）
+            sug = [a for a in alts if a["item"] in TOP_LINE] + [
+                a for a in alts if a["item"] is None and a["label"] and any(w in a["label"] for w in TOP_LINE_LABEL)
+                and not any(x in a["label"] for x in ("利益", "損失", "率", "１株", "1株"))]
+            if sug:
+                why = ("IFRS の会社は「売上高」ではなく「売上収益」で開示することが多い。" if co["accounting_standard"] == "IFRS" else
+                       "持株会社・金融・建設・小売などは「売上高」ではなく営業収益・経常収益・完成工事高・各社が定義した項目で開示する。")
+                guide = {"suggest": [{**a, "how": (f"item={a['item']}" if a["item"] else f"element={a['element']}") + " で引き直す"} for a in sug],
+                         "suggest_note": why + "この会社が最上段の収益として開示しているのは suggest の項目（別の概念＝「売上高」として扱わない）"}
+        return _miss("item_not_disclosed", company=co, basis=basis, period=period, **guide,
                      disclosed_in_other_basis=any(f["element"] in wanted and f["basis"] == other and f["period"] == period for f in facts),
-                     alternatives=_disclosed(facts, basis, period),
+                     alternatives=alts,
                      hint="この会社はこの項目をこの連結／単体の別では開示していない。別の basis や隣の項目の値では埋めない＝"
                           "alternatives（開示されている項目の一覧）から選んで引き直す")
+    others = []
+    if len({f["element"] for f in hits}) > 1 and item:
+        # 同じ決算期に会計基準の違う値が並ぶ（移行年・日本基準の表の併記）。既定は**その書類が宣言する会計基準**の値を返し、
+        # もう一方の基準の値を other_standards に必ず添える（2026-09-21 決定＝利便のため既定を置くが、もう一方を隠さない）。
+        newest = max(hits, key=lambda f: (f["submitted"], f["doc_id"]))["doc_id"]
+        declared = (store.registry()[co["edinet_code"]].get("documents", {}).get(newest) or {}).get("accounting_standard")
+        mine = [f for f in hits if f["doc_id"] == newest and standard_of(f["element"]) == declared]
+        if len({f["element"] for f in mine}) == 1:
+            seen = {}
+            for g in sorted(hits, key=lambda f: (f["submitted"], f["doc_id"])):
+                if g["element"] != mine[0]["element"]:
+                    seen[g["element"]] = {"accounting_standard": standard_of(g["element"]), "element": g["element"], "value": g["value"],
+                                          "unit": g["unit"], "doc_id": g["doc_id"]}
+            others = list(seen.values())
+            hits = [f for f in hits if f["element"] == mine[0]["element"]]
     if len({f["element"] for f in hits}) > 1:
         # 同じ決算期に会計基準の違う値が並ぶ。IFRS へ移行した会社の移行年（US GAAP と IFRS）のほか、IFRS の表と日本基準の表を
         # 併記する会社がある（2026-09-21 実測＝約 2%）。どちらも事実＝片方を黙って選ばない。両方を会計基準つきで示し、
@@ -127,8 +154,13 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
         pair = [g for g in facts if g["element"] in els and g["basis"] == basis and g["period"] == period and g["doc_id"] == f["doc_id"]]
         extra["companion"] = {"item": COMPANION[item], "label": ITEMS[COMPANION[item]][0], "value": pair[0]["value"] if pair else None,
                               "note": "年と月に分けて開示する会社がある＝両方で 1 つの値（例＝40 年と 5 月＝40 歳 5 か月）。value が null なら月の開示は無い"}
+    if others:
+        extra["other_standards"] = others
+        extra["note"] = ("この決算期には会計基準ごとに複数の値が開示されている。返したのは書類が宣言する会計基準の値＝"
+                         "other_standards にもう一方の値がある（accounting_standard を指定すればその基準の値を返す）")
+    label = ITEMS[ELEMENT_KEY[f["element"]]][0] if f["element"] in ELEMENT_KEY else f["label"]
     return {"found": True, **extra, "accounting_standard": standard_of(f["element"]) if f["element"].startswith("jpcrp_cor:") else co["accounting_standard"], "company": co, "item": item, "item_label": ITEMS[item][0] if item else None,
-            "element": f["element"], "label": f["label"], "basis": f["basis"], "period": f["period"], "period_end": f["period_end"],
+            "element": f["element"], "label": label, "basis": f["basis"], "period": f["period"], "period_end": f["period_end"],
             "value": f["value"], "unit": f["unit"], "decimals": f["decimals"],
             "source": {"provider": "EDINET", "doc_type": "有価証券報告書", "doc_id": f["doc_id"], "submitted": f["submitted"],
                        "context": f["context"],

@@ -40,6 +40,8 @@ def check_positive(q: dict, lookup) -> str | None:
         return f"出所の書類が不一致: {(r.get('source') or {}).get('doc_id')!r}"
     if "expected_companion" in q and (r.get("companion") or {}).get("value", "（欄なし）") != q["expected_companion"]:
         return f"対の値（年／月）が不一致: {r.get('companion')!r} ≠ {q['expected_companion']!r}"
+    if q.get("expect_other_standards") and not r.get("other_standards"):
+        return "もう一方の会計基準の値（other_standards）が添えられていない"
     if q.get("expect_other_documents") and not r["source"].get("other_documents"):
         return "他の書類の値（other_documents）が並んでいない"
     return None
@@ -57,6 +59,9 @@ def check_negative(q: dict, lookup) -> str | None:
     leaked = [x for x in q.get("must_not_value", []) if x in json.dumps(r, ensure_ascii=False)]
     if leaked:
         return f"禁止値が応答に含まれる: {leaked}"
+    missing = [k for k in q.get("expect_suggest", []) if k not in {s.get("item") for s in r.get("suggest", [])}]
+    if missing:
+        return f"引き直し先の案内（suggest）に {missing} が無い"
     if q.get("expect_alternatives") and not r.get("alternatives"):
         return "代わりに開示されている項目の一覧（alternatives）が無い"
     if q.get("expect_competing") and len(r.get("competing") or []) < 2:

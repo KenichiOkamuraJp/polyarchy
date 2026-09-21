@@ -13,7 +13,7 @@ from companies.core import store
 from companies.core.items import ELEMENT_TO_KEY
 from companies.core.lookup import _norm
 
-TOP = ("net_sales", "operating_revenue", "ordinary_revenue", "net_premiums_written")
+TOP = ("net_sales", "revenue", "operating_revenue", "operating_receipts", "gross_operating_revenue", "ordinary_revenue", "net_premiums_written")
 
 
 def main() -> int:

@@ -50,7 +50,7 @@ python -m companies.serving.mcp_server      # stdio（--http --port 8767 で配�
 
 出力＝`companies/data/verify/<実行日時>/coverage.md`。ゲートの基準はルート README「品質の担保」。
 
-- ★ **標本で決めた語彙・契約は、取込のあとに母集団で洗う**（`population_report`）。20 社では見えなかった型が 2,400 社で 6 つ出た＝[母集団の棚卸し](docs/記録/母集団の棚卸し_2026-09-21.md)。
+- ★ **標本で決めた語彙・契約は、取込のあとに母集団で洗う**（`population_report`）。20 社では見えなかった型が 2,400 社で 6 つ、4,100 社でさらに 2 つ出た＝[母集団の棚卸し](docs/記録/母集団の棚卸し_2026-09-21.md)・[全社の取込と棚卸し](docs/記録/全社の取込と棚卸し_2026-09-22.md)。取込の漏れは「最上段の収益が見当たらない会社」の一覧で見つかる。
 - ★ **配信側（`core/`・`serving/`）に lxml など取込用の依存を import しない**＝箱のロックに入っていない（取込は作業用 PC だけ・`pip install -e ".[companies]"`）。
 - ★ **stdio では `guard_stdout_for_stdio()` が返す実 stdout を `stdio_server(stdout=…)` に渡す**（`mcp.run()` をそのまま呼ぶと、差し替え後の stdout＝stderr にプロトコルが流れてクライアントが無応答で止まる＝2026-09-20 に実際に踏んだ）。
 

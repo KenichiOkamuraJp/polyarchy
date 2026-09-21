@@ -11,7 +11,7 @@ import sys
 from companies.core.items import BASES, ELEMENT_TO_KEY, ITEMS
 from companies.eval.exact_match import EVAL
 
-MIN_POS, MIN_NEG, MIN_FIND = 250, 26, 20  # 問は減らさない（足したら上げる）
+MIN_POS, MIN_NEG, MIN_FIND = 371, 36, 20  # 問は減らさない（足したら上げる）
 REASONS = {"item_not_disclosed", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_item",
            "unknown_company", "ambiguous_company", "ambiguous_item"}
 
@@ -20,7 +20,7 @@ def main() -> int:
     assert all(re.fullmatch(r"[a-z][a-z0-9_]*", k) for k in ITEMS), "キーは英小文字・数字・_"
     assert all(label and els for label, els in ITEMS.values()), "呼び名と要素は必須"
     # 隣の概念を 1 つのキーに束ねていないこと（実データ検証 2026-09-20 §2 の誤答の型）
-    for a, b in (("NetSales", "OperatingRevenue1"), ("NetSales", "OrdinaryIncome"), ("OrdinaryIncomeLoss", "ProfitLossBeforeTaxIFRS"),
+    for a, b in (("NetSales", "RevenueIFRS"), ("NetSales", "OperatingRevenue1"), ("NetSales", "OrdinaryIncome"), ("OrdinaryIncomeLoss", "ProfitLossBeforeTaxIFRS"),
                  ("EquityToAssetRatio", "EquityToAssetRatioIFRS")):
         ka, kb = (ELEMENT_TO_KEY[f"{x}SummaryOfBusinessResults"] for x in (a, b))
         assert ka != kb, f"{a} と {b} が同じキー {ka}"
@@ -37,7 +37,7 @@ def main() -> int:
             assert ELEMENT_TO_KEY[q["expected_element"].split(":")[1]] == q["item"], f"{q['id']}: 要素とキーの対応"
     for q in neg:
         assert q["expect"] == "not_found" and q["reason"] in REASONS, q["id"]
-    assert {q["reason"] for q in neg} == REASONS, "理由の種類ごとに最低 1 問"
+    assert {q["reason"] for q in neg} >= REASONS - {"ambiguous_item"}, "理由の種類ごとに最低 1 問"  # ambiguous_item は書類の宣言基準で定まらないときだけ
     find = [json.loads(l) for l in (EVAL / "find_quality.jsonl").read_text().splitlines() if l.strip()]
     assert len(find) >= MIN_FIND and len({q["id"] for q in find}) == len(find), f"発見層の問が減った／id 重複: {len(find)}"
     assert all(q["expect"] in ("found", "ambiguous_company", "unknown_company") for q in find)

@@ -29,11 +29,13 @@ def write_company(meta: dict, facts: list[dict]) -> None:
     rp = STORE / "companies.json"
     reg = json.loads(rp.read_text()) if rp.exists() else {}
     prev = reg.get(meta["edinet_code"], {})
+    documents = {**prev.get("documents", {}), **{d: {"submitted": meta["submitted"], "accounting_standard": meta.get("accounting_standard"),
+                                                     "fiscal_year_end": meta.get("fiscal_year_end")} for d in docs}}
     names = sorted({n for n in [*prev.get("names", []), meta.get("name"), prev.get("name")] if n})  # 社名変更＝旧社名でも引ける
     if meta["submitted"] >= prev.get("submitted", ""):  # 会社の属性は提出日が最新の書類のもの
-        reg[meta["edinet_code"]] = {**meta, "names": names, "docs": sorted(set(prev.get("docs", [])) | docs)}
+        reg[meta["edinet_code"]] = {**meta, "names": names, "documents": documents, "docs": sorted(documents)}
     else:
-        prev.update(names=names, docs=sorted(set(prev.get("docs", [])) | docs))
+        prev.update(names=names, documents=documents, docs=sorted(documents))
     rp.write_text(json.dumps(reg, ensure_ascii=False, indent=1, sort_keys=True))
     registry.cache_clear(); facts_of.cache_clear()
 

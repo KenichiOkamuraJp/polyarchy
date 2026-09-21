@@ -32,8 +32,9 @@ SERVER_INSTRUCTIONS = (
     "公表どおりの値で厳密参照する読み取り専用サービス(公開データのみ)。2層構造:発見層(find_company=企業の同定/list_items=項目の語彙)と"
     "参照層(lookup_company_facts=値の完全一致参照)。値は XBRL に書かれた文字列のまま返す(換算・丸め・補完なし。比率は 0.444 の形・金額は円)。"
     "連結と単体(提出会社)は別の系列で、どちらの値かを必ず返す。該当が無ければ found=false と理由を返し、別の連結/単体の別・隣の項目・近い決算期の値では埋めない"
-    "(例=持株会社や IFRS の大企業は連結に標準の「売上高」が無く、「営業収益」「経常収益」や会社が独自に定義した項目で開示している="
-    "found=false のとき alternatives に、その会社が開示している項目の一覧が返るので、そこから選んで引き直す)。"
+    "(例=IFRS の会社は「売上高」ではなく「売上収益」(item=revenue)、持株会社・金融・建設などは「営業収益」「経常収益」「完成工事高」や"
+    "会社が独自に定義した項目で開示している=net_sales が found=false のとき suggest に、その会社が最上段の収益として開示している項目と"
+    "引き直し方が返る。alternatives にはその決算期に開示している全項目の一覧が返る)。"
     "各値には出典(書類管理番号・提出日・要素・context・URL・引用1行)が付く。派生値(利益率・前年比 等)は計算しない。"
     "値そのものは各提出会社の開示に帰属し、本サービスは値を保証しない(原典で確認すること)。"
 )
@@ -68,7 +69,7 @@ def lookup_company_facts(company: str, period: str, item: str | None = None, ele
     element=要素 ID(会社が独自に定義した項目や、同じ決算期に会計基準の違う値が並ぶときに指定。alternatives/competing に出る)。item と element はどちらか一方。
     basis=consolidated(連結)/non_consolidated(単体=提出会社)。省くと、連結を作成している会社は連結・していない会社は単体。
     accounting_standard=Japan GAAP/IFRS/US GAAP。IFRS の会社には日本基準の表を併記する会社や、移行年に 2 つの基準の値が並ぶ会社がある=
-    そのとき reason=ambiguous_item と competing(基準ごとの値)が返るので、基準を指定して引き直す。
+    指定が無ければ書類が宣言する会計基準の値を返し、もう一方の基準の値を other_standards に必ず添える(指定すればその基準の値)。
     平均年齢・平均勤続年数は「年」と「月」に分けて開示する会社がある=companion に対の値が付く(40 年と 5 月=40 歳 5 か月)。
     doc_id=書類管理番号。省くと提出日が最新の書類の値(同じ決算期の値は後年の書類に再掲され、遡及修正で変わり得る=
     source.other_documents に他の書類の値が並ぶ。特定の書類の値が要るときに指定)。
@@ -76,6 +77,8 @@ def lookup_company_facts(company: str, period: str, item: str | None = None, ele
     返り値=value(文字列のまま)・unit・decimals・basis・element・label・period_end・source(書類・提出日・引用)・license。
     無ければ found=false と reason(item_not_disclosed / no_consolidated_statements / out_of_range / bad_period / unknown_item /
     unknown_company / ambiguous_company / ambiguous_item)。item_not_disclosed では alternatives(その会社がその決算期に開示している項目の一覧・値なし)が返る。
+    売上高(net_sales)などの最上段の収益が無いときは suggest に、代わりに開示している項目(IFRS の売上収益=revenue・営業収益・経常収益・
+    各社が定義した項目)と引き直し方が返る=それは「売上高」とは別の概念なので、返ってきたラベルのまま扱う。
     """
     r = lookup.lookup_company_facts(company, item=item, element=element, period=period, basis=basis, doc_id=doc_id,
                                     accounting_standard=accounting_standard)
@@ -88,7 +91,7 @@ def lookup_company_facts(company: str, period: str, item: str | None = None, ele
 def list_items() -> dict:
     """lookup_company_facts の item に使えるキーの一覧(キー・日本語の呼び名・対応する標準タクソノミの要素)。
 
-    1 つのキーに束ねているのは同じ概念の会計基準違い(日本基準/IFRS/米国基準)だけ。売上高/営業収益/経常収益、経常利益/税引前利益は別のキー。
+    1 つのキーに束ねているのは同じ概念の会計基準違い(日本基準/IFRS/米国基準)だけ。売上高/売上収益/営業収益/経常収益、経常利益/税引前利益は別のキー。
     """
     return {"items": [{"item": k, "label": label, "elements": [f"jpcrp_cor:{e}" for e in els]} for k, (label, els) in ITEMS.items()],
             "n_companies": len(store.registry()), "source": "EDINET 有価証券報告書(金融庁)", "license": "公共データ利用規約(PDL1.0)"}

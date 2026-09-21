@@ -31,7 +31,9 @@ _EMP = "InformationAboutReportingCompanyInformationAboutEmployees"
 
 def wanted(prefix: str, name: str) -> bool:
     if prefix == "jpcrp_cor":
-        return "SummaryOfBusinessResults" in name or name == "NumberOfEmployees" or name.endswith(_EMP)
+        # 標準要素にも …KeyFinancialData がある（2026-09-22 実測＝「収益」RevenueKeyFinancialData を最上段に置く会社）
+        return ("SummaryOfBusinessResults" in name or name.endswith("KeyFinancialData") or name == "NumberOfEmployees"
+                or name.endswith(_EMP))
     # 各社の拡張要素＝経営指標の表に置く名前は 2 通りある（2026-09-21 実測）：…KeyFinancialData（トヨタの営業収益 等）と、
     # 会社の名前空間に置いた …SummaryOfBusinessResults（建設業の完成工事高・IFRS の会社の売上高 等）
     return prefix.startswith("jpcrp030000-asr_") and (name.endswith("KeyFinancialData") or "SummaryOfBusinessResults" in name)

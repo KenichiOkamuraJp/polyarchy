@@ -17,7 +17,7 @@ import json
 import sys
 import zipfile
 
-from companies.core.items import COMPANION, ELEMENT_TO_KEY, ITEMS, standard_of
+from companies.core.items import COMPANION, ELEMENT_TO_KEY, ITEMS, TOP_LINE, standard_of
 from companies.ingest import verify_xbrl as v
 
 EVAL = v.DATA / "eval"
@@ -127,6 +127,16 @@ def positives(c: dict) -> list[dict]:
         q = positive(c, *sal)
         if q:
             out.append(q)
+    got = set()  # 母集団で足した項目＝持っている会社では、いちばん新しい決算期の 1 点を必ず問にする（移行前の基準の項目は古い期にしか無い）
+    for (el, ctx) in sorted(c["rows"], key=lambda t: (t[1].replace("CurrentYear", "0"), t[0])):
+        key = ELEMENT_TO_KEY.get(el.split(":")[1]) if el.startswith("jpcrp_cor:") else None
+        if key in ALWAYS and key not in got and plain(ctx):
+            q = positive(c, el, ctx)
+            if q:
+                got.add(key)
+                if q["id"] not in {x["id"] for x in out}:
+                    out.append(q)
+    out += [q for q in two_standards(c) if q["id"] not in {x["id"] for x in out}]
     emp = f"CurrentYearInstant{NONCON}"
     for e in ("AverageAgeYears", "AverageAgeMonths", "AverageLengthOfServiceMonths"):
         t = (f"jpcrp_cor:{e}InformationAboutReportingCompanyInformationAboutEmployees", emp)
@@ -142,6 +152,34 @@ def positives(c: dict) -> list[dict]:
         q = positive(c, el, ctx, by_element=True)
         if q:
             out.append(q)
+    return out
+
+
+# 母集団で足した項目（2026-09-21）＝無作為の 4 点に入らなくても、持っている会社では必ず 1 点を問にする
+ALWAYS = {"revenue", "operating_receipts", "gross_operating_revenue", "operating_profit", "profit", "equity_method_income_if_applied",
+          "capital_adequacy_ratio_domestic", "net_loss_ratio", "net_operating_expense_ratio", "interest_and_dividend_income",
+          "investment_yield_income", "investment_yield_realized"}
+
+
+def two_standards(c: dict) -> list[dict]:
+    """同じ決算期に会計基準の違う値が並ぶ点＝①基準を指定すればその値 ②指定が無ければ書類が宣言する基準の値＋もう一方が必ず添えられる。"""
+    out, done = [], set()
+    for (el, ctx) in sorted(c["rows"]):
+        if not el.startswith("jpcrp_cor:") or el.split(":")[1] not in ELEMENT_TO_KEY or not plain(ctx) or len(rivals(c, el, ctx)) < 2:
+            continue
+        key = ELEMENT_TO_KEY[el.split(":")[1]]
+        if (key, standard_of(el)) in done or len(done) >= 4:
+            continue
+        q = positive(c, el, ctx)
+        if not q:
+            continue
+        done.add((key, standard_of(el)))
+        out.append(q)
+        if standard_of(el) == c["standard"]:
+            d = {k: v for k, v in q.items() if k != "accounting_standard"}
+            d.update(id=q["id"] + "-default", expect_other_standards=True,
+                     note="基準の指定が無いとき＝書類が宣言する会計基準の値を返し、もう一方の基準の値を other_standards に必ず添える")
+            out.append(d)
     return out
 
 
@@ -183,7 +221,9 @@ def negatives(cs: list[dict]) -> list[dict]:
         who = {"edinet_code": c["edinet_code"], "name": c["name"]}
         per = period_of(c, cur)
         con_sales = any((f"jpcrp_cor:{e}", cur) in c["rows"] and c["rows"][(f"jpcrp_cor:{e}", cur)]["value"] not in ("", "－")
-                        for e in ("NetSalesSummaryOfBusinessResults", "RevenueIFRSSummaryOfBusinessResults", "RevenuesUSGAAPSummaryOfBusinessResults"))
+                        for e in ITEMS["net_sales"][1])
+        fam = sorted({ELEMENT_TO_KEY[e.split(":")[1]] for (e, x) in c["rows"] if x == cur and e.startswith("jpcrp_cor:")
+                      and ELEMENT_TO_KEY.get(e.split(":")[1]) in TOP_LINE and c["rows"][(e, x)]["value"] not in ("", "－")})
         if c["consolidated"] and not con_sales:
             # 連結に「売上高」が無い会社＝単体の売上高・営業収益で埋めてはならない
             forbid = [c["rows"][(f"jpcrp_cor:{e}", cur + NONCON)]["value"]
@@ -192,8 +232,14 @@ def negatives(cs: list[dict]) -> list[dict]:
             out.append({"id": f"{c['edinet_code']}-net_sales-con-none", "company": who, "item": "net_sales", "basis": "consolidated",
                         "period": per, "expect": "not_found", "reason": "item_not_disclosed",
                         "must_not_value": [x for x in forbid if x not in ("", "－")],
-                        "expect_alternatives": True,
+                        "expect_alternatives": True, "expect_suggest": fam,
                         "note": "連結の経営指標に標準の『売上高』が無い（営業収益・経常収益・保険料・各社の拡張要素で開示）。単体の値や隣の項目で埋めない＝代わりに開示されている収益項目の一覧を返す"})
+        own_sales = any((f"jpcrp_cor:{e}", cur + NONCON) in c["rows"] and c["rows"][(f"jpcrp_cor:{e}", cur + NONCON)]["value"] not in ("", "－")
+                        for e in ("NetSalesSummaryOfBusinessResults",))
+        if not c["consolidated"] and not own_sales:
+            out.append({"id": f"{c['edinet_code']}-net_sales-non-none", "company": who, "item": "net_sales", "basis": "non_consolidated",
+                        "period": per, "expect": "not_found", "reason": "item_not_disclosed",
+                        "note": "売上高の開示が無い会社（売上がまだ無い創薬ベンチャー 等＝事業収益などで開示）。0 や隣の項目で埋めない"})
         if not c["consolidated"]:
             out.append({"id": f"{c['edinet_code']}-net_sales-con-nocons", "company": who, "item": "net_sales", "basis": "consolidated",
                         "period": per, "expect": "not_found", "reason": "no_consolidated_statements",
@@ -203,14 +249,6 @@ def negatives(cs: list[dict]) -> list[dict]:
                 out.append({"id": f"{c['edinet_code']}-salary-none", "company": who, "item": "average_annual_salary",
                             "basis": "non_consolidated", "period": per, "expect": "not_found", "reason": "item_not_disclosed",
                             "note": "平均年間給与の開示が無い提出会社"})
-    for c in cs:  # 会計基準の移行年＝同じキーに 2 つの値が並ぶ決算期は、片方を黙って選ばない
-        amb = sorted({(ELEMENT_TO_KEY[e.split(":")[1]], x) for (e, x) in c["rows"] if e.startswith("jpcrp_cor:")
-                      and e.split(":")[1] in ELEMENT_TO_KEY and plain(x) and len(rivals(c, e, x)) > 1})
-        for key, ctx in amb[:1]:
-            out.append({"id": f"{c['edinet_code']}-{key}-two-standards", "company": {"edinet_code": c["edinet_code"], "name": c["name"]},
-                        "item": key, "basis": "non_consolidated" if ctx.endswith(NONCON) else "consolidated", "period": period_of(c, ctx),
-                        "expect": "not_found", "reason": "ambiguous_item", "expect_competing": True,
-                        "note": "同じ決算期に会計基準の違う値が並ぶ（IFRS への移行年）＝両方を示し、要素 ID の指定で引き直させる"})
     first = cs[0]
     who = {"edinet_code": first["edinet_code"], "name": first["name"]}
     out += [
