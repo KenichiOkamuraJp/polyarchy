@@ -128,6 +128,7 @@ python -m companies.eval.exact_match && python -m companies.eval.find_quality &&
 bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_APP=true の env ならゲート 13 本→配布→自動適用
 ```
 - 6 月（3 月決算の提出集中期）は約 2,400 書類＝約 2 時間。他の月は数十〜数百。
+- ★上流の運営者（開発と運用を 1 人が兼ねる）は、取込を開発用フォルダで行い、値の置き場だけを配布用のクローンへ写してから release する（`data/` は git 外＝pull では届かない）：`rsync -a --delete <開発>/companies/data/store/ <クローン>/companies/data/store/`＋`eval/` も同様。原本の zip（cache/）は写さない。
 - 語彙に無い標準要素が出たら、公式 CSV（API type=5）でラベルを確かめてから `companies/core/items.py` に足し、`make_candidates --docids=` で問を足す（companies/CLAUDE.md）。
 
 ### サービスを足す（companies を有効にする・2026-09-22）
