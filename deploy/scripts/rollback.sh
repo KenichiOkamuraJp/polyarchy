@@ -24,6 +24,7 @@ MAC_LOG_DIR="${MAC_LOG_DIR:-/tmp/polyarchy-mac}"
 # web(chat_app) は 2026-09-02 廃止＝Mac 復帰は MCP のみ。ホストは 2026-09-02 ドメイン移行後の現行。
 MCP_HOST="${MCP_HOST:-recommendations.polyarchy.net}"
 STATS_HOST="${STATS_HOST:-stats.polyarchy.net}"
+COMPANIES_HOST="${COMPANIES_HOST:-}"   # companies を有効にした環境だけ指定（例 companies.polyarchy.net）
 
 # ── SSM でコマンド（★ダブルクオートを含めない単一文字列・; 連結可）を実行し stdout を返す ──
 ssm_run() { # $1=instance-id  $2=command
@@ -78,6 +79,10 @@ verify_public() { # /healthz は認証不要（WAF 除外）＝origin 生存の�
   m=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$MCP_HOST/healthz" 2>/dev/null || echo ERR)
   s=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$STATS_HOST/healthz" 2>/dev/null || echo ERR)
   log "公開URL: recommendations($MCP_HOST)/healthz=$m  stats($STATS_HOST)/healthz=$s  （200=疎通OK）"
+  if [[ -n "$COMPANIES_HOST" ]]; then
+    c=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$COMPANIES_HOST/healthz" 2>/dev/null || echo ERR)
+    log "公開URL: companies($COMPANIES_HOST)/healthz=$c"
+  fi
 }
 
 # ── サブコマンド ───────────────────────────────────────────────────────────────
@@ -90,7 +95,7 @@ cmd_status() {
   echo "── EC2($name) iid=${iid:-なし} ──"
   if [[ -n "$iid" ]]; then
     echo -n "  instance state: "; aws ec2 describe-instances --instance-ids "$iid" --query 'Reservations[].Instances[].State.Name' --output text
-    ssm_run "$iid" 'for s in qdrant polyarchy-mcp polyarchy-stats cloudflared; do echo $s=$(systemctl is-active $s); done' 2>/dev/null | sed 's/^/  service /' || echo "  (SSM 取得失敗)"
+    ssm_run "$iid" 'for s in qdrant polyarchy-mcp polyarchy-stats polyarchy-companies cloudflared; do echo $s=$(systemctl is-active $s); done' 2>/dev/null | sed 's/^/  service /' || echo "  (SSM 取得失敗)"
   fi
   verify_public
 }

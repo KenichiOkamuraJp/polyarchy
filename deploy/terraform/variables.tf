@@ -82,10 +82,22 @@ variable "tunnel_hostname_stats" {
   default     = ""
 }
 
+variable "enable_companies_app" {
+  description = "企業情報DB（companies）の MCP サーバ(:8767)を常駐させるか（別プロセス・モデル不要・ランタイム秘密なし）。既定 false。"
+  type        = bool
+  default     = false
+}
+
+variable "tunnel_hostname_companies" {
+  description = "companies MCP を出す公開ホスト名（enable_companies_app=true のとき ingress に追加）。"
+  type        = string
+  default     = ""
+}
+
 variable "tunnel_hostname_web" {
   description = "Web(chat_app) を出す公開ホスト名。enable_web_app=false の prod では未使用。"
   type        = string
-  default     = ""   # web 廃止（2026-09-02）＝旧既定のホスト名は撤去
+  default     = "" # web 廃止（2026-09-02）＝旧既定のホスト名は撤去
 }
 
 # ── S3（コード配布・データ・燃料ログ・snapshot）─────────────────────────────

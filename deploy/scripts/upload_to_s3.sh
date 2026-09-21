@@ -93,13 +93,22 @@ echo "[upload] データ同期 → s3://$BUCKET/$DATA_PREFIX/ （Qdrant/BM25語�
     --exclude "qdrant/*" \
   --exclude "*.bak" --exclude "*.bak[0-9]" \
   --exclude "*.phase11*.bak" \
-  --exclude "eval/results/*" --exclude "stats/*" --exclude "query_log/*"
+  --exclude "eval/results/*" --exclude "stats/*" --exclude "companies/*" --exclude "query_log/*"
 
 # stats（統計参照DB）のデータ＝S3 `data/stats/`（共通契約 §4）。registry（git 追跡・2MB）＋values（88MB）＋eval を運ぶ。
 # cache/（原本 1.2GB・取込時のみ使用）・values_archive/・query_log/（箱で生成する燃料）は運ばない。
 echo "[upload] stats データ同期 → s3://$BUCKET/$DATA_PREFIX/stats/ （registry/values/eval）"
 "${AWS[@]}" s3 sync "$REPO_DIR/stats/data/" "s3://$BUCKET/$DATA_PREFIX/stats/" --region "$REGION" \
   --exclude "cache/*" --exclude "values_archive/*" --exclude "query_log/*" --exclude "*.bak"
+
+# companies（企業情報DB）のデータ＝S3 `data/companies/`。値の置き場 store/（約 200MB）＋評価問 eval/ を運ぶ（tar は */data を除外するため
+# git 追跡の eval/ も S3 経由）。cache/（原本 zip 約 3GB・取込時のみ使用）・verify/・logs/・query_log/（箱で生成する燃料）は運ばない。
+# 値の置き場が無い環境（companies を使わない導入団体）では何もしない＝S3 側を空にしない（--delete も付けない）。
+if [[ -f "$REPO_DIR/companies/data/store/companies.json" ]]; then
+  echo "[upload] companies データ同期 → s3://$BUCKET/$DATA_PREFIX/companies/ （store/eval）"
+  "${AWS[@]}" s3 sync "$REPO_DIR/companies/data/" "s3://$BUCKET/$DATA_PREFIX/companies/" --region "$REGION" \
+    --exclude "cache/*" --exclude "verify/*" --exclude "logs/*" --exclude "query_log/*" --exclude "*.bak"
+fi
 
 # ★ここで「bootstrap 再走行で取り込まれる」と案内しない：bootstrap の再走行はコードを更新しない（RUNBOOK §5）。
 #   稼働中の箱への反映は release.sh が最後に書くマニフェスト→自動適用（tar 再展開）だけが正規経路。

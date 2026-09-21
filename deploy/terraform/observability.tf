@@ -1,6 +1,6 @@
 # ── 運用（監視・アラーム）＝運用設計 §1.1/§1.2（A1 で導入・2026-08-28）─────────
 # メトリクスは箱の health スクリプト（bootstrap ⑪・毎分）が namespace=polyarchy へ送る：
-#   health{service=mcp|stats}＝1/0・disk_used_percent{service=box}。
+#   health{service=mcp|stats|companies}＝1/0・disk_used_percent{service=box}。
 # ログは CW agent が polyarchy/mcp・polyarchy/stats へ転送（保持 30 日＝プライバシーポリシーと一致）。
 # 通知は SNS → メール（var.alert_email。購読はメール側の Confirm リンクで有効化される）。
 
@@ -26,6 +26,13 @@ resource "aws_cloudwatch_log_group" "mcp" {
 resource "aws_cloudwatch_log_group" "stats" {
   count             = var.enable_stats_app ? 1 : 0
   name              = "polyarchy/stats"
+  retention_in_days = 30
+  tags              = var.extra_tags
+}
+
+resource "aws_cloudwatch_log_group" "companies" {
+  count             = var.enable_companies_app ? 1 : 0
+  name              = "polyarchy/companies"
   retention_in_days = 30
   tags              = var.extra_tags
 }
@@ -92,6 +99,24 @@ resource "aws_cloudwatch_metric_alarm" "health_stats" {
   tags                = var.extra_tags
 }
 
+resource "aws_cloudwatch_metric_alarm" "health_companies" {
+  count               = var.enable_companies_app ? 1 : 0
+  alarm_name          = "${var.project}-${var.environment}-health-companies"
+  alarm_description   = "companies(:8767) の /healthz が 3 分連続で失敗（または無応答）"
+  namespace           = "polyarchy"
+  metric_name         = "health"
+  dimensions          = { service = "companies" }
+  statistic           = "Minimum"
+  period              = 60
+  evaluation_periods  = 3
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+  tags                = var.extra_tags
+}
+
 resource "aws_cloudwatch_metric_alarm" "ec2_status" {
   alarm_name          = "${var.project}-${var.environment}-ec2-status"
   alarm_description   = "EC2 StatusCheckFailed（ハード/OS 異常）"
@@ -133,7 +158,8 @@ locals {
   # 5xx はアプリ異常・401 急増は Access 検証失敗（攻撃 or 設定壊れ）のシグナル。
   log_filter_groups = merge(
     { mcp = aws_cloudwatch_log_group.mcp.name },
-    var.enable_stats_app ? { stats = aws_cloudwatch_log_group.stats[0].name } : {}
+    var.enable_stats_app ? { stats = aws_cloudwatch_log_group.stats[0].name } : {},
+    var.enable_companies_app ? { companies = aws_cloudwatch_log_group.companies[0].name } : {}
   )
 }
 

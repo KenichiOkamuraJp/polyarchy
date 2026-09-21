@@ -17,7 +17,7 @@ a{color:var(--accent)}
 .note{border-left:4px solid var(--accent);padding:.4rem .8rem;background:rgba(127,127,127,.08)}
 </style></head><body>
 <main>
-<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
+<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/companies">companies（企業情報DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
 
 <h1>Polyarchy — 政策言説と公的統計の参照サービス（Claude コネクタ）</h1>
 <p>Polyarchy は、日本の政策言説（経済団体・政府の公表資料）と公的統計を、<strong>出典つきで</strong> Claude から検索・参照するための
@@ -27,6 +27,7 @@ a{color:var(--accent)}
 <tr><th>サービス</th><th>中身</th><th>ドキュメント</th></tr>
 <tr><td><strong>stats</strong>（統計参照DB）</td><td>e-Stat・内閣府・財務省・総務省・日本銀行・社人研・IMF・OECD・世界銀行の統計値を「公表どおりの値」で厳密参照。該当がなければ「ない」と返す</td><td><a href="/stats">/stats</a></td></tr>
 <tr><td><strong>recommendations</strong>（政策主張DB）</td><td>経団連・経済同友会・日本商工会議所・連合・政府（骨太方針・規制改革・財政審）の公表提言を横断検索</td><td><a href="/recommendations">/recommendations</a></td></tr>
+<tr><td><strong>companies</strong>（企業情報DB）</td><td>有価証券報告書（EDINET・金融庁）の経営指標・従業員の状況を「公表どおりの値」で厳密参照。連結と単体を混ぜず、該当がなければ「ない」と返す</td><td><a href="/companies">/companies</a></td></tr>
 </table>
 <h2>共通の約束</h2>
 <ul>

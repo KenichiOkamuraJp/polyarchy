@@ -14,5 +14,6 @@ Environment=LOG_RETENTION_DAYS=30
 ExecStart=/opt/miniconda/envs/polyarchy/bin/python /opt/polyarchy/polyarchy/deploy/scripts/prune_query_log.py
 # stats（統計参照DB）の捕捉ログも同じ保持日数で削除（プライバシーポリシー「30 日で自動削除」を両サービスで担保）。
 ExecStart=-/usr/bin/env POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/stats/data/query_log/queries.jsonl /opt/miniconda/envs/polyarchy/bin/python /opt/polyarchy/polyarchy/deploy/scripts/prune_query_log.py
+ExecStart=-/usr/bin/env POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/companies/data/query_log/queries.jsonl /opt/miniconda/envs/polyarchy/bin/python /opt/polyarchy/polyarchy/deploy/scripts/prune_query_log.py
 StandardOutput=journal
 StandardError=journal

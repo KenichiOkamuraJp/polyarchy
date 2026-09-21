@@ -3,13 +3,13 @@
 > **状態：正典（本書が文書の地図・分類の凡例は下記「ドキュメント」節）。** ライセンス＝Apache-2.0（[LICENSE](LICENSE)・[NOTICE](NOTICE)・下記「ライセンス」節）。
 
 日本の政策言説（経済団体・政府審議会の**公表資料**）と公的統計（**公開データ**）を、利用者の Claude／ChatGPT から
-ツールとして参照できるようにする MCP サーバ群。現行 2 サービス＝**政策主張DB `recommendations`**（主張）と
-**統計参照DB `stats`**（事実）。「主張↔事実の突き合わせ」が両者を並べる理由。扱うのは**すべて公開資料・公開データ**。
+ツールとして参照できるようにする MCP サーバ群。現行 3 サービス＝**政策主張DB `recommendations`**（主張）と
+**統計参照DB `stats`**（事実）、**企業情報DB `companies`**（企業側の事実・2026-09 追加）。「主張↔事実の突き合わせ」が並べる理由。扱うのは**すべて公開資料・公開データ**。
 
 Polyarchy はサービス全体の名前。実体は**コーパス（文書ジャンル）ごとに独立したサービス**の集まりで、
 各サービスは自分の MCP サーバ（別プロセス・別ホスト名）を持ち、共通契約 `polyarchy_common` だけを共有する。
 
-## できること（現行 2 サービス・いずれも MCP サーバとして公開・利用者は自分の Claude／ChatGPT から呼ぶ）
+## できること（現行 3 サービス・いずれも MCP サーバとして公開・利用者は自分の Claude／ChatGPT から呼ぶ）
 
 **政策主張DB `recommendations`**（[recommendations/README.md](recommendations/README.md)・公開 `https://docs.polyarchy.net/recommendations`）
 - 経団連 / 政府（骨太方針・規制改革・財政審 等）/ 連合 / 日本商工会議所 / 経済同友会 の公表資料を横断検索
@@ -22,10 +22,15 @@ Polyarchy はサービス全体の名前。実体は**コーパス（文書ジ�
 - 2 層＝発見層（`list_datasets`／`find_statistics`／`list_sources`）と参照層（`lookup_statistic`／`lookup_panel`）＝ツール 5 本
 - 各値に再配布・商用利用条件（◎／○／△・`status=guide`）を付す（[stats/docs/再配布条件.md](stats/docs/再配布条件.md)）
 
+**企業情報DB `companies`**（[companies/CLAUDE.md](companies/CLAUDE.md)・[計画](companies/docs/開発計画.md)・公開 `https://docs.polyarchy.net/companies`〔箱で有効化後〕）
+- 有価証券報告書（EDINET・金融庁・PDL1.0）の「主要な経営指標等の推移」と従業員の状況を、提出会社 約 4,100 社×5 期で**値の厳密参照**＝XBRL の文字列のまま出典付きで返す
+- 連結と単体は別の系列・「売上高」が無い会社（IFRS＝売上収益・銀行＝経常収益 等）には代わりに開示している項目と引き直し方を返す・遡及修正と会計基準の併記はもう一方の値を必ず添える
+- 2 層＝発見層（`find_company`／`list_items`）と参照層（`lookup_company_facts`）＝ツール 3 本・モデル不要・ランタイム秘密なし（EDINET の API キーは取込側だけ）
+
 ## 設計上の性質（セキュリティ）
 
-- **参照専用**：サーバはメール送信・ファイル書き込み等の外部作用を持たない（読み取りツールのみ＝recommendations 3・stats 5）
-- **サーバ側で生成 AI を呼ばない**：意味検索はローカルモデル（`cl-nagoya/ruri-v3-310m`）で完結・stats はモデル不要。文章生成は各利用者の Claude／ChatGPT 側（ランタイム秘密ゼロ）
+- **参照専用**：サーバはメール送信・ファイル書き込み等の外部作用を持たない（読み取りツールのみ＝recommendations 3・stats 5・companies 3）
+- **サーバ側で生成 AI を呼ばない**：意味検索はローカルモデル（`cl-nagoya/ruri-v3-310m`）で完結・stats／companies はモデル不要。文章生成は各利用者の Claude／ChatGPT 側（ランタイム秘密ゼロ）
 - **データ層は公開固定＋フェイルクローズ**：検索経路は公開層に固定され、非公開データは構造的に返らない（`recommendations/core/search_api.py`・不変条件の定義は `polyarchy_common/metadata_core.py`）
 - **受信ポートを開けない**：公開は Cloudflare Tunnel 経由（サーバから外向き接続のみ）。管理は AWS Session Manager
 - **利用者はログイン必須**（外部 IdP＝WorkOS AuthKit・案 B・2026-09-02〜）＋秘密パス＋レート制限。IP 許可は使えない（コネクタは Anthropic／OpenAI 側から接続）
@@ -114,7 +119,7 @@ Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃＝v5 データは S3 `d
 | `python -m recommendations.eval.multistage_eval` | 網羅 100% / 集約棄却 12/12 |
 | `python -m recommendations.eval.mcp_smoke` | MCP 疎通・層公開固定・stdout クリーン |
 
-### companies（2026-09-20〜・配布の配線は未＝`release.sh` にはまだ入っていない）
+### companies（2026-09-20〜。`release.sh` は env の `ENABLE_COMPANIES_APP=true` のとき 4 本を足して 13 本＝2026-09-22 配線）
 
 | ゲート | 基準 |
 |---|---|

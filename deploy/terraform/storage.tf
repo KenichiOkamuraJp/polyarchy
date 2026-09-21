@@ -84,4 +84,18 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
       noncurrent_days = 30
     }
   }
+  # companies（企業情報DB）の捕捉ログも同じ 30 日（polyarchy-logprune.service の companies 行と揃える）。
+  rule {
+    id     = "companies-query-log-retention-30d"
+    status = "Enabled"
+    filter {
+      prefix = "${var.data_s3_prefix}/companies/query_log/"
+    }
+    expiration {
+      days = 30
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
 }

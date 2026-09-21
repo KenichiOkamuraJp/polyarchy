@@ -5,7 +5,7 @@
 #   使い方: bash deploy/scripts/release.sh <staging|prod>
 #
 # 工程（一気通貫＝手順を飛ばす余地を作らない・運用設計 §2.4／RUNBOOK §5）:
-#   ① 品質ゲート実行（recommendations 4種＋stats 4種＋共通テスト。qdrant-dev 起動が前提）
+#   ① 品質ゲート実行（recommendations 4種＋stats 4種＋共通テスト＝9 本。ENABLE_COMPANIES_APP=true なら companies 4種を足して 13 本。qdrant-dev 起動が前提）
 #   ② 全 PASS を機械判定（1つでも FAIL なら upload せず終了＝箱には何も起きない）
 #   ③ qdrant-dev を止めて upload_to_s3.sh（データ転送。転送失敗でもマニフェストは書かれない）
 #   ④ リリースマニフェスト release/data.json を最後に書く（→ 箱の polyarchy-dataapply.timer が
@@ -64,6 +64,20 @@ python -m stats.eval.find_quality  >>"$GATE_LOG" 2>&1 || fail "stats find_qualit
 
 say "  [9/9] 共通契約テスト"
 python -m polyarchy_common.tests.test_common >>"$GATE_LOG" 2>&1 || fail "polyarchy_common tests FAIL"
+
+# companies（企業情報DB）は opt-in＝env の ENABLE_COMPANIES_APP=true のときだけゲートに入る（使わない導入団体は 9 本のまま）。
+# 有効なのに値の置き場が無ければ中止する（黙って省かない＝箱の companies が空になる配布を出さない）。
+COMPANIES_GATES="対象外"; COMPANIES_N=0
+if [[ "${ENABLE_COMPANIES_APP:-false}" == "true" ]]; then
+  [[ -f companies/data/store/companies.json ]] || fail "ENABLE_COMPANIES_APP=true だが companies/data/store が無い（取込 or S3 から復元＝RUNBOOK §3）"
+  say "  [10-13/13] companies 4 ゲート（exit code が合否）"
+  python -m companies.eval.mcp_smoke    >>"$GATE_LOG" 2>&1 || fail "companies mcp_smoke FAIL"
+  python -m companies.eval.exact_match  >>"$GATE_LOG" 2>&1 || fail "companies exact_match FAIL"
+  python -m companies.eval.test_core    >>"$GATE_LOG" 2>&1 || fail "companies test_core FAIL"
+  python -m companies.eval.find_quality >>"$GATE_LOG" 2>&1 || fail "companies find_quality FAIL"
+  COMPANIES_GATES="4/4 PASS"
+  COMPANIES_N="$(python3 -c "import json; print(len(json.load(open('companies/data/store/companies.json'))))")"
+fi
 echo "② 全ゲート PASS ✅"
 
 say "③ 配布（qdrant-dev 停止 → upload → 再開）"
@@ -92,8 +106,8 @@ json.dump({
   "code_version": "$GITV",
   "gates": {"hit5_pct": float("$HIT5"), "mrr": float("$MRR"),
              "filter": "27/27", "multistage": "12/12", "smoke": "PASS",
-             "stats": "4/4 PASS", "common": "PASS"},
-  "scale": {"stats_series": int("$SERIES_N"), "recommendations_docs": int("$DOCS_N")},
+             "stats": "4/4 PASS", "common": "PASS", "companies": "$COMPANIES_GATES"},
+  "scale": {"stats_series": int("$SERIES_N"), "recommendations_docs": int("$DOCS_N"), "companies": int("$COMPANIES_N")},
   "released_by": "release.sh（ゲート全 PASS 時のみ本ファイルが書かれる）",
 }, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 PYEOF

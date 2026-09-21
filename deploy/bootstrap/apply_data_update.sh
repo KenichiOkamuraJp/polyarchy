@@ -3,11 +3,11 @@
 # トリガ＝S3 release/data.json（release.sh がゲート全 PASS 時にのみ書く）。前回適用と同じなら何もしない。
 #
 # 工程（2026-09-03 改訂＝コード自動反映＋自動切り戻し・残タスク B15 論点1）:
-#   ① 退避   ＝現行のデータ（qdrant・catalog/bm25/eval・stats registry/values）を $RB_DIR へ rsync
+#   ① 退避   ＝現行のデータ（qdrant・catalog/bm25/eval・stats registry/values・companies store）を $RB_DIR へ rsync
 #              （稼働中に 1 回目→停止後に差分の 2 回目＝停止時間を伸ばさず整合コピー）。現行の code tar も prev として保持。
 #   ② 反映   ＝サービス停止 → code tar 再展開（★bootstrap はコードを更新しないため apply が行う＝旧地雷の解消）
 #              → qdrant ミラー同期（--delete）→ bootstrap 再走行（データ差分 sync・pip 再解決・ユニット設置）→ 再起動
-#   ③ 検証   ＝qdrant 応答待ち → 箱上 smoke（recommendations＋stats）
+#   ③ 検証   ＝qdrant 応答待ち → 箱上 smoke（recommendations＋stats＋companies〔有効時〕）
 #   ④ 判定   ＝PASS：マーク更新（status=APPLIED）・メトリクス dataapply=1
 #              FAIL：**自動切り戻し**＝停止 → ①の退避を書き戻し（qdrant はミラー）→ prev tar 再展開＋pip → 再起動 → smoke 再実行
 #                    → マーク status=ROLLED_BACK（このマニフェストは再試行しない＝15 分毎の再適用ループを防ぐ）
@@ -63,10 +63,15 @@ command -v rsync >/dev/null || { export DEBIAN_FRONTEND=noninteractive; apt-get 
 # 退避対象＝apply が書き換えるもの。除外＝箱で生まれる追記物（query_log・cache）と巨大な追記専用物（pdfs）
 REC_EXCL=(--exclude=pdfs/ --exclude=query_log/ --exclude=cache/ --exclude=qdrant_snapshots/)
 STATS_EXCL=(--exclude=query_log/ --exclude=cache/ --exclude=values_archive/)
+COMPANIES_EXCL=(--exclude=query_log/ --exclude=cache/ --exclude=verify/ --exclude=logs/)
+COMPANIES_ON=0; [[ "${ENABLE_COMPANIES_APP:-false}" == "true" ]] && COMPANIES_ON=1  # companies は opt-in（deploy.env）
 snapshot_data() { # 現行データ → $RB_DIR（--delete＝前回退避の残骸を残さない）。戻り値＝rsync の合否
   rsync -a --delete "${REC_EXCL[@]}"   "$APP_DIR/data/"        "$RB_DIR/recommendations_data/" || return 1
   if [[ -d "$REPO_DIR/stats/data" ]]; then
     rsync -a --delete "${STATS_EXCL[@]}" "$REPO_DIR/stats/data/" "$RB_DIR/stats_data/" || return 1
+  fi
+  if [[ "$COMPANIES_ON" == 1 && -d "$REPO_DIR/companies/data" ]]; then
+    rsync -a --delete "${COMPANIES_EXCL[@]}" "$REPO_DIR/companies/data/" "$RB_DIR/companies_data/" || return 1
   fi
   return 0
 }
@@ -74,6 +79,10 @@ restore_data() { # $RB_DIR → 現行（除外パターンは受け側でも保�
   rsync -a --delete "${REC_EXCL[@]}"   "$RB_DIR/recommendations_data/" "$APP_DIR/data/" || warn "recommendations データの書き戻しで rsync エラー"
   if [[ -d "$RB_DIR/stats_data" ]]; then
     rsync -a --delete "${STATS_EXCL[@]}" "$RB_DIR/stats_data/" "$REPO_DIR/stats/data/" || warn "stats データの書き戻しで rsync エラー"
+  fi
+  if [[ "$COMPANIES_ON" == 1 && -d "$RB_DIR/companies_data" ]]; then
+    rsync -a --delete "${COMPANIES_EXCL[@]}" "$RB_DIR/companies_data/" "$REPO_DIR/companies/data/" || warn "companies データの書き戻しで rsync エラー"
+    chown -R polyarchy:polyarchy "$REPO_DIR/companies/data"
   fi
   chown -R polyarchy:polyarchy "$APP_DIR/data" "$REPO_DIR/stats/data"
 }
@@ -93,7 +102,7 @@ pip_resolve() { # 切り戻し時の依存再解決（bootstrap ③ と同じ＝
       || warn "pip 再解決に失敗（コードは旧版に戻っている・依存差分があれば bootstrap 再走行）"
   fi
 }
-svc_stop()  { systemctl stop polyarchy-mcp polyarchy-stats qdrant; }
+svc_stop()  { systemctl stop polyarchy-mcp polyarchy-stats qdrant; [[ "$COMPANIES_ON" == 1 ]] && systemctl stop polyarchy-companies; return 0; }
 svc_start() { # qdrant → 応答待ち（最長 300 秒）→ アプリ。戻り値＝qdrant が応答したか
   systemctl restart qdrant
   for _ in $(seq 1 60); do
@@ -103,12 +112,16 @@ svc_start() { # qdrant → 応答待ち（最長 300 秒）→ アプリ。戻�
   local ok=0
   curl -fsS -m 3 http://127.0.0.1:6333/collections >/dev/null 2>&1 && ok=1
   systemctl restart polyarchy-mcp polyarchy-stats
+  [[ "$COMPANIES_ON" == 1 ]] && { systemctl restart polyarchy-companies || ok=0; }
   [[ "$ok" == 1 ]]
 }
-smoke() { # 箱上 smoke（recommendations＋stats）。戻り値＝合否。訓練フラグがあれば FAIL 扱い
+smoke() { # 箱上 smoke（recommendations＋stats＋companies〔有効時〕）。戻り値＝合否。訓練フラグがあれば FAIL 扱い
   local ok=1
   sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR HF_HOME=$HF_HOME COLLECTION_NAME=$COLLECTION_NAME VECTOR_BACKEND=${VECTOR_BACKEND:-qdrant} $PY -m recommendations.eval.mcp_smoke" || ok=0
   sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR $PY -m stats.eval.mcp_smoke" || ok=0
+  if [[ "$COMPANIES_ON" == 1 ]]; then
+    sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR $PY -m companies.eval.mcp_smoke" || ok=0
+  fi
   if [[ -e "$DRILL_FLAG" ]]; then warn "訓練フラグ $DRILL_FLAG あり＝smoke を FAIL 扱いにする（演習）"; ok=0; fi
   [[ "$ok" == 1 ]]
 }
@@ -151,7 +164,7 @@ apply_new() { # 各段は失敗したら即 return 1（set +e の下で呼ぶた
   chown -R polyarchy:polyarchy "$APP_DIR/data"
   bash "$REPO_DIR/deploy/bootstrap/bootstrap.sh" || { warn "bootstrap 再走行に失敗"; return 1; }
   svc_start || { warn "qdrant が起動しない"; return 1; }
-  log "③ 箱上 smoke（recommendations＋stats）"
+  log "③ 箱上 smoke（recommendations＋stats＋companies〔有効時〕）"
   smoke
 }
 set +e

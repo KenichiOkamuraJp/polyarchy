@@ -28,6 +28,8 @@ REPO_DIR="${REPO_DIR:-$INSTALL_DIR/polyarchy}"
 : "${DATA_S3_PREFIX:?}" "${ENABLE_WEB_APP:?}"
 # stats（統計参照DB・別プロセス :8766）は opt-in。deploy.env に ENABLE_STATS_APP=true で設置（B6 案 B・C2 以降）。
 ENABLE_STATS_APP="${ENABLE_STATS_APP:-false}"
+# companies（企業情報DB・別プロセス :8767）も opt-in。deploy.env に ENABLE_COMPANIES_APP=true で設置（モデル不要・ランタイム秘密なし）。
+ENABLE_COMPANIES_APP="${ENABLE_COMPANIES_APP:-false}"
 
 SVC_USER=polyarchy
 CONDA_DIR=/opt/miniconda
@@ -120,7 +122,7 @@ mkdir -p "$APP_DIR/data"
 #   作れず Permission denied になる（root は任意のパスを作成可・IMDS の instance role 資格は
 #   どのユーザからでも使える）。取得後に所有権をまとめて polyarchy へ渡す。
 # --delete は付けない（箱側で溜まった捕捉ログ＝燃料を消さない）。
-aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exclude "stats/*"
+aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exclude "stats/*" --exclude "companies/*"
 # .streamlit/config.toml は code tar に同梱済（fileWatcherType=none・§32.3）。
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR/data"
 # stats（統計参照DB）のデータ＝S3 `data/stats/` → `stats/data/`（共通契約 §4）。tar は */data を除外するので
@@ -130,6 +132,14 @@ if [[ "$ENABLE_STATS_APP" == "true" ]]; then
   mkdir -p "$REPO_DIR/stats/data"
   aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/stats/" "$REPO_DIR/stats/data/" --region "$AWS_REGION" --exclude "query_log/*"
   chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/stats/data"
+fi
+# companies（企業情報DB）のデータ＝S3 `data/companies/` → `companies/data/`（値の置き場 store/ と評価問 eval/）。
+# 原本の zip（cache/）は S3 の別 prefix に置き、箱には運ばない。EDINET の API キーも箱には運ばない（取込は作業用 PC）。
+if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
+  echo "[bootstrap] ⑥ companies データ同期 s3://$S3_BUCKET/$DATA_S3_PREFIX/companies/ → $REPO_DIR/companies/data/"
+  mkdir -p "$REPO_DIR/companies/data"
+  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/companies/" "$REPO_DIR/companies/data/" --region "$AWS_REGION" --exclude "query_log/*"
+  chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/companies/data"
 fi
 
 # ── ⑥b Qdrant 導入（VECTOR_BACKEND=qdrant のときだけ・v7 本線）──
@@ -187,6 +197,10 @@ if [[ -n "$TUNNEL_ID" && -n "$TUNNEL_CRED" ]]; then
     if [[ "$ENABLE_STATS_APP" == "true" && -n "${TUNNEL_HOST_STATS:-}" ]]; then
       echo "  - hostname: $TUNNEL_HOST_STATS"
       echo "    service: http://localhost:8766"
+    fi
+    if [[ "$ENABLE_COMPANIES_APP" == "true" && -n "${TUNNEL_HOST_COMPANIES:-}" ]]; then
+      echo "  - hostname: $TUNNEL_HOST_COMPANIES"
+      echo "    service: http://localhost:8767"
     fi
     echo "  - service: http_status:404"
   } > /etc/cloudflared/config.yml
@@ -302,6 +316,20 @@ if [[ "$ENABLE_STATS_APP" == "true" ]]; then
 else
   rm -f /etc/systemd/system/polyarchy-stats.service
 fi
+if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
+  # companies の秘密パス（SSM companies_http_path・無ければ既定 /mcp）＋認証（SSM auth_aud_companies＝案 B のスイッチ）。
+  COMPANIES_PATH="$(ssm_get companies_http_path)"
+  COMPANIES_AUD="$(ssm_get access_aud_companies)"
+  COMPANIES_IDP_AUD="$(ssm_get auth_aud_companies)"
+  write_service_env /etc/polyarchy/companies.env "$COMPANIES_PATH" "$COMPANIES_AUD" "$COMPANIES_IDP_AUD" "${TUNNEL_HOST_COMPANIES:-}"
+  if [[ -n "$COMPANIES_IDP_AUD" && -n "$AUTH_ISSUER_SSM" ]]; then
+    echo "[bootstrap] companies: IdP Bearer 検証を有効化（issuer=${AUTH_ISSUER_SSM}・案 B）"
+  fi
+  mkdir -p "$REPO_DIR/companies/data/query_log"; chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/companies/data"
+  install -m 644 "$UNIT_SRC/polyarchy-companies.service" /etc/systemd/system/polyarchy-companies.service
+else
+  rm -f /etc/systemd/system/polyarchy-companies.service
+fi
 # ユニットは固定パス＋EnvironmentFile=/etc/polyarchy/deploy.env で自己完結（deploy.env は
 # user_data が生成済＝APP_DIR/HF_HOME/COLLECTION_NAME/S3_BUCKET 等）。drop-in は不要。
 
@@ -325,6 +353,10 @@ fi
 if [[ "$ENABLE_STATS_APP" == "true" ]]; then
   systemctl enable polyarchy-stats.service
   systemctl restart polyarchy-stats.service || echo "[bootstrap] ⚠ stats 起動失敗" >&2
+fi
+if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
+  systemctl enable polyarchy-companies.service
+  systemctl restart polyarchy-companies.service || echo "[bootstrap] ⚠ companies 起動失敗" >&2
 fi
 
 # ── ⑪ 運用（運用設計 §1.1/§1.2/§4.2 段2＝A1 と同時・2026-08-28）────────

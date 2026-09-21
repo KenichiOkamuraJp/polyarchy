@@ -1,0 +1,31 @@
+# Polyarchy 企業情報DB（companies）の MCP サーバ——recommendations／stats とは別プロセス・別ホスト名。
+#   python -m companies.serving.mcp_server --http --host 127.0.0.1 --port 8767
+# 層＝公開固定・fail-closed（該当なしは「ない」と返す）。モデル不要・軽量・ランタイム秘密なし（EDINET の API キーは取込側だけ）。
+# 127.0.0.1 バインドで直露出しない。設置は bootstrap ⑩（ENABLE_COMPANIES_APP=true のとき）。
+# 入口は cloudflared ingress の companies.<domain> → :8767。
+[Unit]
+Description=Polyarchy companies MCP server (Streamable HTTP :8767, layer=public fixed, fail-closed)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polyarchy
+Group=polyarchy
+WorkingDirectory=/opt/polyarchy/polyarchy
+EnvironmentFile=-/etc/polyarchy/deploy.env
+# 秘密パス（MCP_HTTP_PATH=/mcp-<乱数>）＋認証（MCP_AUTH_*＝案 B・外部 IdP）。
+# bootstrap が SSM companies_http_path / auth_aud_companies から生成（無ければ既定 /mcp・認証なし）。
+EnvironmentFile=-/etc/polyarchy/companies.env
+Environment=PYTHONPATH=/opt/polyarchy/polyarchy
+Environment=COMPANIES_QUERY_LOG=/opt/polyarchy/polyarchy/companies/data/query_log/queries.jsonl
+ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m companies.serving.mcp_server --http --host 127.0.0.1 --port 8767
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# rsyslog がサービス別ファイル（/var/log/polyarchy/<identifier>.log）へ振り分ける鍵（運用設計 §1.2・CW Logs 転送）。
+SyslogIdentifier=polyarchy-companies
+
+[Install]
+WantedBy=multi-user.target

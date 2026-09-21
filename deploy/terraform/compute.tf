@@ -22,21 +22,23 @@ data "aws_ami" "ubuntu" {
 # 重い処理（conda/モデルDL/データ同期）は code tar 内の bootstrap.sh 側に置く。
 locals {
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    aws_region        = var.aws_region
-    bucket_name       = aws_s3_bucket.data.bucket
-    code_s3_key       = var.code_s3_key
-    data_s3_prefix    = var.data_s3_prefix
-    project           = var.project
-    environment       = var.environment
-    enable_web_app    = var.enable_web_app
-    collection_name   = var.collection_name # 既定 policy_claims_v7（v7/Qdrant 本線。切り戻しは env で policy_claims_v6）
-    vector_backend    = var.vector_backend
-    tunnel_host_mcp   = var.tunnel_hostname_mcp
-    tunnel_host_web   = var.tunnel_hostname_web
-    enable_stats_app  = var.enable_stats_app
-    tunnel_host_stats = var.tunnel_hostname_stats
-    install_dir       = "/opt/polyarchy"
-    hf_home           = "/opt/polyarchy/models"
+    aws_region            = var.aws_region
+    bucket_name           = aws_s3_bucket.data.bucket
+    code_s3_key           = var.code_s3_key
+    data_s3_prefix        = var.data_s3_prefix
+    project               = var.project
+    environment           = var.environment
+    enable_web_app        = var.enable_web_app
+    collection_name       = var.collection_name # 既定 policy_claims_v7（v7/Qdrant 本線。切り戻しは env で policy_claims_v6）
+    vector_backend        = var.vector_backend
+    tunnel_host_mcp       = var.tunnel_hostname_mcp
+    tunnel_host_web       = var.tunnel_hostname_web
+    enable_stats_app      = var.enable_stats_app
+    tunnel_host_stats     = var.tunnel_hostname_stats
+    enable_companies_app  = var.enable_companies_app
+    tunnel_host_companies = var.tunnel_hostname_companies
+    install_dir           = "/opt/polyarchy"
+    hf_home               = "/opt/polyarchy/models"
   })
 }
 

@@ -13,6 +13,9 @@ DATA="MetricName=health,Dimensions=[{Name=service,Value=mcp}],Value=$(probe 8765
 if [[ "${ENABLE_STATS_APP:-false}" == "true" ]]; then
   DATA="$DATA MetricName=health,Dimensions=[{Name=service,Value=stats}],Value=$(probe 8766),Unit=None"
 fi
+if [[ "${ENABLE_COMPANIES_APP:-false}" == "true" ]]; then
+  DATA="$DATA MetricName=health,Dimensions=[{Name=service,Value=companies}],Value=$(probe 8767),Unit=None"
+fi
 DISK=$(df --output=pcent / | tail -1 | tr -dc '0-9')
 DATA="$DATA MetricName=disk_used_percent,Dimensions=[{Name=service,Value=box}],Value=${DISK:-0},Unit=Percent"
 

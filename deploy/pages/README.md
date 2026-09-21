@@ -10,6 +10,7 @@ e-Stat API クレジット文・サポート連絡先）** の原稿。箱（EC2
 | `index.html` | `/` | 入口（サービス一覧・各ページへのリンク） |
 | `terms.html` | `/terms` | 利用規約（提供範囲・免責・料金は別途・第三者データの条件継承） |
 | `privacy.html` | `/privacy` | プライバシーポリシー（Listing 必須・不備は即却下）：捕捉ログの内容・30 日保持・user_hash・第三者提供なし・連絡先 |
+| `companies.html` | `/companies` | companies（企業情報DB）のドキュメント：接続方法・ツール・利用例 3 つ・**EDINET の出典と加工の明記（PDL1.0）**・値の見方（連結／単体・売上高が無い会社・遡及修正・会計基準の併記）。**箱で companies を有効にしてから公開する**（先に出すと案内だけが先行する） |
 | `stats.html` | `/stats` | stats（統計参照DB）のドキュメント：接続方法・ツール・**利用例 3 つ**・**e-Stat API クレジット文**・license の見方・取得元一覧 |
 | `recommendations.html` | `/recommendations` | recommendations（政策主張DB）のドキュメント：接続方法・ツールの引数と返り値・収録範囲（発行体別文書数・分野タグ 21 分類・帰属の注意）・**利用例 5 つ**・結果の見方・収集する情報・制限・サポート（2026-08-19 claims セッションで作成・2026-08-27 改名） |
 | `claims.html` | `/claims` | 旧 URL の転送スタブ（改名 claims → recommendations・2026-08-27）。`/recommendations` へ meta refresh |

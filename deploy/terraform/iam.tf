@@ -38,7 +38,7 @@ resource "aws_iam_role_policy_attachment" "cw_agent" {
 #   読取のみ … release/data.json（apply の検知）・code/polyarchy.tar.gz（apply の tar 再展開・user_data）・
 #              data/**（bootstrap ⑥ の sync・apply の qdrant ミラー）
 #   書込    … ops/dashboard/index.html（dashboard timer）・ops/report/{usage_report.html,weekly.jsonl}（usagereport timer）・
-#              data/query_log/**・data/stats/query_log/**（fuelsync timer＝aws s3 sync・--delete なし）
+#              data/query_log/**・data/stats/query_log/**・data/companies/query_log/**（fuelsync timer＝aws s3 sync・--delete なし）
 #   Delete  … 箱のどのスクリプトも使わない（fuelsync は --delete を付けない・cp は上書きのみ）＝付与しない。
 #   ★配布物（data/・code/・release/）に Put が無い＝箱が乗っ取られても配布物を書き換えて次の apply に載せる経路が無い。
 #     配布物の書込は手元の release.sh（データ運用者＝iam-data-operator-policy.json）だけ。
@@ -51,9 +51,10 @@ locals {
     "release/*",                # release/data.json（apply_data_update.sh が固定で参照）
   ]
   s3_write_prefixes = [
-    "ops/*",                                   # ops/dashboard/・ops/report/
-    "${var.data_s3_prefix}/query_log/*",       # 捕捉ログ（燃料）の保護コピー
-    "${var.data_s3_prefix}/stats/query_log/*", # 同・stats
+    "ops/*",                                       # ops/dashboard/・ops/report/
+    "${var.data_s3_prefix}/query_log/*",           # 捕捉ログ（燃料）の保護コピー
+    "${var.data_s3_prefix}/stats/query_log/*",     # 同・stats
+    "${var.data_s3_prefix}/companies/query_log/*", # 同・companies
   ]
 }
 

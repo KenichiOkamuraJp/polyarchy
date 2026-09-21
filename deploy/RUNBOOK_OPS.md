@@ -24,11 +24,11 @@
 
 ## 1. 症状 → 確認 → 復旧
 
-### アラーム「health-mcp / health-stats」
+### アラーム「health-mcp / health-stats / health-companies」
 ```bash
-systemctl status polyarchy-mcp polyarchy-stats qdrant
-curl -s localhost:8765/healthz; curl -s localhost:8766/healthz
-journalctl -u polyarchy-mcp -n 50 --no-pager     # or polyarchy-stats
+systemctl status polyarchy-mcp polyarchy-stats polyarchy-companies qdrant
+curl -s localhost:8765/healthz; curl -s localhost:8766/healthz; curl -s localhost:8767/healthz
+journalctl -u polyarchy-mcp -n 50 --no-pager     # or polyarchy-stats / polyarchy-companies
 ```
 - unit が落ちている → `sudo systemctl restart polyarchy-mcp`（Restart=always なのに落ち続ける場合はログの Traceback を読む）
 - recommendations の healthz が `ok:false`／chunks=0 → qdrant を疑う：`systemctl status qdrant`・`curl -s localhost:6333/collections`
@@ -71,6 +71,7 @@ curl -sI https://recommendations.<domain>/healthz | head -1   # staging は reco
 | qdrant | ベクトルDB :6333（v7 本線） | mcp より先 |
 | polyarchy-mcp | recommendations MCP :8765 | qdrant |
 | polyarchy-stats | stats MCP :8766（ENABLE_STATS_APP=true の箱のみ） | — |
+| polyarchy-companies | companies MCP :8767（ENABLE_COMPANIES_APP=true の箱のみ・モデル不要・ランタイム秘密なし） | — |
 | polyarchy-web | **廃止（2026-09-02）**＝unit はリポ残置・箱には無い | — |
 | cloudflared | 入口（トンネル） | 全 origin の後に start が安全 |
 | polyarchy-health.timer | 毎分 healthz→CW metric | — |
@@ -78,7 +79,7 @@ curl -sI https://recommendations.<domain>/healthz | head -1   # staging は reco
 | polyarchy-logprune.timer | 捕捉ログ 30 日削除（毎日） | — |
 | polyarchy-usagereport.timer | 週次利用レポート→S3 ops/report/（月曜 09:20 JST） | — |
 | polyarchy-dashboard.timer | 運用ダッシュボード→S3 ops/dashboard/（毎時 05 分） | — |
-| polyarchy-dataapply.timer | 15 分毎に S3 release/data.json を検知→自動適用（退避→コード反映→同期→smoke→切り戻し）＝§5 | root・qdrant/mcp/stats を止める |
+| polyarchy-dataapply.timer | 15 分毎に S3 release/data.json を検知→自動適用（退避→コード反映→同期→smoke→切り戻し）＝§5 | root・qdrant/mcp/stats(/companies) を止める |
 | polyarchy-updatecheck.timer | 更新チェック（freshness＋提言新着→ダッシュボード反映・毎日 06:10 JST。手動キック＝SSM ドキュメント check-updates） | — |
 
 ## 3. データ復元（S3 が原本）
@@ -93,6 +94,7 @@ sudo systemctl start qdrant polyarchy-mcp
 - ★qdrant の S3 側を更新する（Mac→S3）のは**ローカル qdrant-dev を止めてから**（upload_to_s3.sh がガードする）。
 - ★箱側で bootstrap を再走行すると ⑥ が data/ を sync する＝qdrant 稼働中に走るので、**qdrant データを S3 から入れ直したい時は上の手順（stop→sync→start）を使い、bootstrap 任せにしない**。
 - stats データも同型：`s3://<bucket>/data/stats/` → `stats/data/`（`--delete` は registry/values のみに限定して使う。query_log を消さない）。
+- companies データも同型：`s3://<bucket>/data/companies/` → `companies/data/`（store/ と eval/。query_log を消さない）。手元での復元も同じ sync＝原本の zip（`cache/`）は S3 の別 prefix（任意）か再取得（EDINET API・約 4,300 書類・約 3 時間）。
 - 完全な作り直し＝`deploy.sh <env> apply` で EC2 を建て直し（S3/SSM/Cloudflare は残るので upload 不要・約 10 分）。
 
 ## 4. 秘密の再発行
@@ -115,6 +117,30 @@ sudo systemctl start qdrant polyarchy-mcp
 python -m stats.ops.freshness
 python -m stats.ops.refresh --dataset <コード名>   # ゲート 3 本まで通る・自動コミットしない
 ```
+
+### 企業情報（companies）の更新 — 有価証券報告書の提出に応じて・全てローカルで取り込んで箱へ配布
+
+```bash
+# 取込（作業用 PC・EDINET の API キーは companies/.env＝箱には運ばない）。日付の範囲＝前回以降の提出日。取得済みの書類は再取得しない
+python -m companies.ingest.edinet --from 2026-10-01 --to 2026-10-31
+python -m companies.ops.population_report | head -40      # 棚卸し＝「語彙に無い標準要素」「最上段の収益が見当たらない会社」が増えていないか
+python -m companies.eval.exact_match && python -m companies.eval.find_quality && python -m companies.eval.test_core   # 既存の問は書類を固定して引く＝新しい書類で動かない
+bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_APP=true の env ならゲート 13 本→配布→自動適用
+```
+- 6 月（3 月決算の提出集中期）は約 2,400 書類＝約 2 時間。他の月は数十〜数百。
+- 語彙に無い標準要素が出たら、公式 CSV（API type=5）でラベルを確かめてから `companies/core/items.py` に足し、`make_candidates --docids=` で問を足す（companies/CLAUDE.md）。
+
+### サービスを足す（companies を有効にする・2026-09-22）
+
+配線はコードに入っている（`ENABLE_COMPANIES_APP` の opt-in・既定 false）。有効化は上流の運営者（または導入団体）の作業＝順に：
+1. **IdP（WorkOS）**＝Resource indicator に `https://companies.<domain>/<秘密パス>` を追加（三点一致＝PROD_MIGRATION §2.5）。
+2. **env**＝`deploy/env/<env>.env` に `ENABLE_COMPANIES_APP=true`・`TUNNEL_HOST_COMPANIES=companies.<domain>`・`AUTH_AUD_COMPANIES=<aud>`。
+3. **SSM**＝`bash deploy/scripts/register-secrets.sh <env>`（`auth_aud_companies` を登録）＋秘密パス `companies_http_path` を `/mcp-<乱数>` で登録（§4 と同じ流儀）。
+4. **Terraform**＝`bash deploy/scripts/deploy.sh <env> apply`（ロググループ・health アラーム・箱ロールの書込先・S3 ライフサイクル。EC2 の差分は `ignore_changes` で出ない）。
+5. **箱の deploy.env**＝★稼働中の箱は user_data を再実行しない＝SSM Session で `/etc/polyarchy/deploy.env` に同じ 2 行（`ENABLE_COMPANIES_APP`・`TUNNEL_HOST_COMPANIES`）を足す。
+6. **Cloudflare**＝DNS `companies.<domain>` → トンネル（CNAME・既存と同じ UUID）・guard を `SERVICE=companies` で apply（`cloudflare-guard.sh` 冒頭）。
+7. **配布**＝配布用のクローンで `release.sh <env>`（ゲート 13 本）→ 自動適用が `bootstrap` 再走行で ⑥ データ同期・⑧ companies.env・⑩ ユニット設置・ingress 追記まで行う → ダッシュボードで版一致・`https://companies.<domain>/healthz` が 200。
+8. **接続確認**＝claude.ai／Claude Code／ChatGPT の 3 経路（PROD_MIGRATION §2.5 と同じ）。公開ページ `companies.html` はこの後に Pages へ（先に出すと案内だけが先行する）。
 
 ### 配布用のクローンを開発用と分ける（推奨・2026-09-19）
 

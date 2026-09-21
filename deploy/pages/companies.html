@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>companies（企業情報DB） — Polyarchy</title>
+<style>:root{--fg:#1e1e1e;--bg:#fff;--muted:#666;--line:#ddd;--accent:#1f4e79}
+@media(prefers-color-scheme:dark){:root{--fg:#e8e8e8;--bg:#151515;--muted:#aaa;--line:#333;--accent:#8fb8e8}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.7}
+main{max-width:820px;margin:0 auto;padding:2rem 1.2rem}
+h1{font-size:1.6rem;border-bottom:1px solid var(--line);padding-bottom:.4rem}
+h2{font-size:1.2rem;margin-top:2rem}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
+code{background:rgba(127,127,127,.15);padding:.1rem .3rem;border-radius:3px}
+pre{background:rgba(127,127,127,.12);padding:.8rem;overflow-x:auto}
+footer{max-width:820px;margin:2rem auto;padding:1rem 1.2rem;color:var(--muted);border-top:1px solid var(--line);font-size:.9rem}
+nav a{margin-right:1rem}
+a{color:var(--accent)}
+.note{border-left:4px solid var(--accent);padding:.4rem .8rem;background:rgba(127,127,127,.08)}
+</style></head><body>
+<main>
+<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/companies">companies（企業情報DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
+
+<h1>companies — 企業情報DB（Polyarchy）</h1>
+<p>更新日：2026-09-22</p>
+<p>日本の有価証券報告書（EDINET・金融庁）に書かれた企業の数値を、<strong>公表どおりの値・出典つき</strong>で Claude から参照するためのリモート MCP サーバです。
+「主張（政策提言）↔ 事実」の突き合わせの<strong>企業側の事実</strong>として作られており、<strong>該当する開示がなければ「ない」と返します</strong>（別の連結／単体の別・隣の項目・近い決算期の値で埋めません）。</p>
+<p class="note">出典：EDINET（金融庁）の有価証券報告書。本サービスは XBRL から値を抽出・加工して提供しています（公共データ利用規約 第 1.0 版）。値は各提出会社の開示に帰属し、本サービスは値を保証しません（原典で確認してください）。</p>
+
+<h2>接続</h2>
+<ol>
+<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy companies</code>、URL は利用者ごとに個別にご案内します（当面は招待制。利用希望は下記連絡先へ）。</li>
+<li>「Connect」→ ブラウザで開くログイン画面でサインイン。許可された利用者のみ接続できます。</li>
+<li>Claude Code：<code>claude mcp add --transport http polyarchy-companies &lt;URL&gt;</code>。</li>
+</ol>
+
+<h2>ツール（すべて読み取り専用）</h2>
+<table>
+<tr><th>ツール</th><th>何をするか</th><th>何を返さないか</th></tr>
+<tr><td><code>find_company</code></td><td>社名（一部・旧社名・英文社名でも可）・証券コード・EDINET コードから提出会社を同定</td><td>候補が複数あるときは 1 社に決めず、候補の一覧を返します</td></tr>
+<tr><td><code>lookup_company_facts</code></td><td>企業×項目×決算期（決算期末の <code>YYYY-MM</code>）の値を厳密参照。連結／単体の別・会計基準・要素・出典（書類管理番号・提出日・引用 1 行）つき</td><td>該当がなければ <code>found=false</code> と理由。派生値（利益率・前年比 等）は計算しません</td></tr>
+<tr><td><code>list_items</code></td><td>項目の語彙（キー・日本語の呼び名・対応する標準タクソノミの要素）</td><td>値</td></tr>
+</table>
+
+<h2>使ってみる（プロンプト例）</h2>
+<ol>
+<li>「日立製作所の売上収益と親会社株主に帰属する当期純利益を、直近 5 期分、出典つきで表にして」</li>
+<li>「湖池屋の従業員数・平均年間給与・平均年齢・平均勤続年数の推移は？」</li>
+<li>「三菱ＵＦＪフィナンシャル・グループの売上高は？」（→ 銀行は「売上高」を開示していないため <code>found=false</code> が返り、代わりに開示している「経常収益」での引き直し方が案内されます）</li>
+</ol>
+
+<h2>値の見方</h2>
+<ul>
+<li><code>value</code> は XBRL に書かれた文字列のままです（金額は円・比率は <code>0.444</code> の形。<code>unit</code>・<code>decimals</code> つき）。換算・丸め・補完はしていません。</li>
+<li><strong>連結と単体（提出会社）は別の系列</strong>です（<code>basis</code>）。平均年間給与・資本金・配当などは単体にだけあります。連結財務諸表を作成していない会社に連結を指定すると <code>found=false</code> です。</li>
+<li><strong>「売上高」が無い会社があります</strong>（IFRS の会社は「売上収益」、銀行・保険は「経常収益」、鉄道・持株会社は「営業収益」、建設は「完成工事高」、会社が独自に定義した項目 など。全体の約 1 割）。そのとき <code>suggest</code> に、その会社が代わりに開示している項目と引き直し方が返ります。これらは「売上高」とは別の概念なので、返ってきたラベルのまま扱ってください。</li>
+<li>同じ決算期の値は後年の書類に再掲され、<strong>遡及修正で変わることがあります</strong>。既定は提出日が最新の書類の値で、他の書類の値は <code>source.other_documents</code> に並びます（<code>doc_id</code> で書類を指定できます）。</li>
+<li>IFRS の表と日本基準の表を併記する会社や、会計基準の移行年には、同じ項目に<strong>基準ごとの値</strong>が並びます。既定は書類が宣言する会計基準の値で、もう一方は <code>other_standards</code> に必ず添えられます。</li>
+<li>平均年齢・平均勤続年数を「年」と「月」に分けて開示する会社があります（<code>companion</code> に対の値。40 年と 5 月＝40 歳 5 か月）。</li>
+</ul>
+
+<h2 id="sources">取得元と利用条件</h2>
+<table>
+<tr><th>取得元</th><th>内容</th><th>規約</th><th>区分</th></tr>
+<tr><td>EDINET（金融庁）</td><td>有価証券報告書（「主要な経営指標等の推移」・従業員の状況）。EDINET API により取得</td><td><a href="https://disclosure2dl.edinet-fsa.go.jp/guide/static/disclosure/WZEK0030.html">EDINET 利用規約</a>（<a href="https://www.digital.go.jp/resources/open_data/public_data_license_v1.0">公共データ利用規約 第 1.0 版</a>）</td><td>○（出典の明記と加工の明記）</td></tr>
+</table>
+<p>出典表示の例：「出典：EDINET 有価証券報告書（○○株式会社・2026-06-20 提出・書類管理番号 S100XXXX）／XBRL から抽出」。応答の <code>source.citation</code> にそのまま使える 1 行が入っています。原文（有価証券報告書そのもの）は再配布していません。</p>
+
+<h2>収集する情報</h2>
+<p>ツール名・引数（社名・項目・決算期等）・該当有無・時刻・利用者のメールアドレスのハッシュ値を 30 日間記録し、収録の拡充と品質改善に使います。会話本文は取得しません。詳細は<a href="/privacy">プライバシーポリシー</a>。</p>
+
+<h2>制限</h2>
+<ul>
+<li>収録は有価証券報告書の提出会社 約 4,100 社・直近の書類に載る 5 期分（2026-09 時点）。半期報告書・訂正報告書・決算短信・セグメント別／地域別の内訳・定性情報（事業等のリスク 等）は未収録です。</li>
+<li>有価証券報告書を提出していない会社（多くの非上場会社）は収録されていません。</li>
+<li>レート制限があります（通常の対話利用では到達しません）。</li>
+</ul>
+
+<h2>サポート</h2>
+<p>kenichi.okamura.jp@gmail.com — 接続できない・値が原典と違う・収録の希望・脆弱性の報告。</p>
+</main>
+<footer>
+運営者：岡村 健一（個人運営）／サポート・脆弱性報告の連絡先：kenichi.okamura.jp@gmail.com<br>
+Polyarchy は Anthropic 社の製品ではありません。Claude は Anthropic PBC の商標です。
+</footer></body></html>

@@ -37,6 +37,7 @@ MCP_HOST="${MCP_HOST:-recommendations.polyarchy.net}"
 # サービス単位で入れ替える＝stats 用に適用しても recommendations(mcp) のルールを消さない。
 #   recommendations: 既定（SERVICE=mcp・MCP_HOST=mcp.…・SSM mcp_http_path）
 #   stats : SERVICE=stats MCP_HOST=stats.… SSM_PATH_PARAM=/polyarchy/<env>/stats_http_path bash cloudflare-guard.sh apply
+#   companies : SERVICE=companies MCP_HOST=companies.… SSM_PATH_PARAM=/polyarchy/<env>/companies_http_path bash cloudflare-guard.sh apply
 SERVICE="${SERVICE:-mcp}"
 # レート制限ルールは Free プランで1本のため単一ルールに全ホストを載せる（RL_HOSTS＝カンマ区切り・既定 MCP_HOST）。
 RL_HOSTS="${RL_HOSTS:-$MCP_HOST}"

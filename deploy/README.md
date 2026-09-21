@@ -30,15 +30,16 @@
     ├ systemd polyarchy-web   :8502  ← **廃止（2026-09-02）**＝unit はリポ残置・箱には無い
     ├ systemd cloudflared            ← 入口（手動 start：カットオーバー時）
     ├ systemd polyarchy-stats :8766  ← 統計参照DB（認証必須・稼働中）
-    ├ systemd polyarchy-fuelsync.timer → 捕捉ログ(燃料)を S3 へ（毎時・recommendations と stats）
-    ├ systemd polyarchy-logprune.timer → 捕捉ログの30日超過分を削除（毎日・recommendations と stats）
+    ├ systemd polyarchy-companies :8767  ← 企業情報DB（opt-in＝ENABLE_COMPANIES_APP・モデル不要・2026-09-22 配線・有効化は RUNBOOK §5「サービスを足す」）
+    ├ systemd polyarchy-fuelsync.timer → 捕捉ログ(燃料)を S3 へ（毎時・recommendations と stats と companies）
+    ├ systemd polyarchy-logprune.timer → 捕捉ログの30日超過分を削除（毎日・recommendations と stats と companies）
     ├ systemd polyarchy-health.timer   → 毎分 /healthz → CloudWatch metric（運用設計 §1）
     ├ systemd polyarchy-usagereport.timer → 週次利用レポート → S3 ops/report/（月曜 09:20 JST）
     ├ systemd polyarchy-dashboard.timer   → 運用ダッシュボード → S3 ops/dashboard/（毎時）
     ├ systemd polyarchy-updatecheck.timer → 提言新着＋統計取得元の変化を検知（毎日 06:10 JST）
     └ systemd polyarchy-dataapply.timer   → S3 release/data.json を検知→自動適用・失敗時は自動切り戻し（15 分毎・RUNBOOK §5）
   IAM instance role: S3 は最小権限（data/・code/・release/ は読取のみ／書込は ops/ と query_log/ だけ・Delete 無し＝2026-09-04 B17 (2)）・SSM 読取・CloudWatch。秘密は SSM Parameter Store（.env は運ばない）
-  S3: code/polyarchy.tar.gz ＋ data/{qdrant(v7 本線),chroma(v5 データ保管のみ・経路は全廃),bm25,pdfs,eval,catalog,query_log,stats/}
+  S3: code/polyarchy.tar.gz ＋ data/{qdrant(v7 本線),chroma(v5 データ保管のみ・経路は全廃),bm25,pdfs,eval,catalog,query_log,stats/,companies/}
       ＋ release/data.json（リリースマニフェスト）＋ ops/{dashboard,report}/（運用の可視化）。監査用証跡は別バケット（trail.tf） ＋ data/stats/{registry,values,eval,query_log}（versioning ON）
 ```
 
@@ -48,7 +49,7 @@
 - **`scripts/deploy.sh`** … operator 手順を1本化（secrets→bucket→upload→apply）。`bash scripts/deploy.sh <env> [phase]`。
 - **`scripts/rollback.sh`** … ロールバック/現状復帰（status／entry-to-mac／entry-to-ec2／snapshot／destroy）。
 - **`scripts/cloudflare-guard.sh`** … 入口ガード（秘密パス＋レート制限。IP 許可はオプション＝公開 DB では `IP_ALLOWLIST=off`・§9.5）を Cloudflare に冪等適用。
-- **`scripts/prune_query_log.py`** … 捕捉ログの保持期間超過分を削除（30日・systemd タイマーから毎日・recommendations と stats の 2 本）。
+- **`scripts/prune_query_log.py`** … 捕捉ログの保持期間超過分を削除（30日・systemd タイマーから毎日・recommendations／stats／companies の 3 本）。
 - **`scripts/access-oauth.sh`** …（案 A 資産・**現行未使用**＝2026-09-02 案 B 採択）Cloudflare Access アプリ（Managed OAuth）の作成/確認（公式コネクタ化）。
 - **`RUNBOOK_OPS.md`** … 運用・障害対応の一次手順書（アラーム対応・復元・秘密再発行）。
 - **`pages/`** … 公開ページ（利用規約・プライバシーポリシー・ドキュメント）＝Cloudflare Pages `docs.polyarchy.net`（旧 `docs.policy-database.com` エイリアスは 2026-09-02 撤去済）。
@@ -61,7 +62,7 @@
 - **`requirements/lock-recommendations-stats.txt`・`lock-stats.txt`** … 依存ロック（版＋sha256・箱と同じ Linux x86_64／py3.12 で生成）。`build.in`＝ビルド時依存（setuptools/wheel）。**箱に入る Python 依存はここに書かれたものだけ**（bootstrap ③）。再生成＝`scripts/lock_deps.sh`（docker）→ ゲート → release.sh＝RUNBOOK §7
 - `scripts/lock_deps.sh` … 依存ロックの（再）生成（`--upgrade` で更新・更新は PR＝ゲート経由）
 - `bootstrap/prefetch_models.py` … `cl-nagoya/ruri-v3-310m` ＋ `hotchpotch/japanese-reranker-cross-encoder-xsmall-v1`
-- `systemd/*.service|*.timer` … mcp / qdrant / web / stats / cloudflared / fuelsync / logprune / health / usagereport
+- `systemd/*.service|*.timer` … mcp / qdrant / web / stats / companies / cloudflared / fuelsync / logprune / health / usagereport
 - `cloudflared/config.yml.example` … 入口設定の参考形（実体は bootstrap が SSM から生成）
 
 ---

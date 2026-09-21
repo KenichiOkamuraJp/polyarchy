@@ -65,6 +65,8 @@ load_env() {
     -var "tunnel_hostname_web=${TUNNEL_HOST_WEB:-}"
     -var "enable_stats_app=${ENABLE_STATS_APP:-false}"
     -var "tunnel_hostname_stats=${TUNNEL_HOST_STATS:-}"
+    -var "enable_companies_app=${ENABLE_COMPANIES_APP:-false}"
+    -var "tunnel_hostname_companies=${TUNNEL_HOST_COMPANIES:-}"
     # recommendations の検索構成（既定＝本線 v7/qdrant。切り戻しは Qdrant 内 v6 の COLLECTION_NAME 切替＝
     # Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃・vector_backend は qdrant のみ有効）。
     # ★シェルに export 済みの COLLECTION_NAME（ローカル運用）が混入しないよう env 側は RECOMMENDATIONS_ 接頭辞。
@@ -135,7 +137,7 @@ do_register_secrets() {
     log "SSM: $SSM_PREFIX/access_team_domain"
     aws ssm put-parameter --overwrite --type String \
       --name "$SSM_PREFIX/access_team_domain" --value "$ACCESS_TEAM_DOMAIN" >/dev/null
-    for svc in stats mcp; do
+    for svc in stats mcp companies; do
       local var="ACCESS_AUD_$(echo "$svc" | tr a-z A-Z)" val; val="${!var:-}"
       if [[ -n "$val" ]]; then
         log "SSM: $SSM_PREFIX/access_aud_$svc"
@@ -146,13 +148,13 @@ do_register_secrets() {
   fi
 
   # 外部 IdP（個人認証・案 B＝docs/個人認証_案B設計.md）。env に AUTH_ISSUER と AUTH_AUD_STATS /
-  # AUTH_AUD_MCP があれば登録。bootstrap が該当サービスの env に MCP_AUTH_*（resource URL は
+  # AUTH_AUD_MCP / AUTH_AUD_COMPANIES があれば登録。bootstrap が該当サービスの env に MCP_AUTH_*（resource URL は
   # TUNNEL_HOST_<SVC>＋秘密パスから合成）を書く。AUTH_AUD_<SVC> はサービス毎の有効化スイッチ兼 aud 値。
   if [[ -n "${AUTH_ISSUER:-}" ]]; then
     log "SSM: $SSM_PREFIX/auth_issuer"
     aws ssm put-parameter --overwrite --type String \
       --name "$SSM_PREFIX/auth_issuer" --value "$AUTH_ISSUER" >/dev/null
-    for svc in stats mcp; do
+    for svc in stats mcp companies; do
       local avar="AUTH_AUD_$(echo "$svc" | tr a-z A-Z)" aval; aval="${!avar:-}"
       if [[ -n "$aval" ]]; then
         log "SSM: $SSM_PREFIX/auth_aud_$svc"
