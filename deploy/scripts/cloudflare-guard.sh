@@ -10,6 +10,10 @@
 #     AWS_PROFILE_CF・RL_HOSTS・SERVICE を必ず上書きする（例は deploy/PROD_MIGRATION.md §2.3）。
 #   ★レート制限は Free プラン1本＝description は polyarchy-mcp-ratelimit 固定で全サービス共有
 #     （SERVICE=stats remove ではレート制限は消えない＝消すのは mcp 側の remove か手動）。
+#     apply はこの 1 本を**作り直す**＝載せるホストは RL_HOSTS（カンマ区切り）。RL_HOSTS を省いたときは
+#     「既存ルールの式にあるホスト ∪ MCP_HOST」を自動で引き継ぐ（2026-09-22〜。それ以前は MCP_HOST だけに
+#     置き換わり、新サービスで apply すると既存ホストがレート制限から外れる事故があった＝staging 実測）。
+#     ホストを外したいときだけ RL_HOSTS を明示する。apply 後は status でレート制限の式を確認する。
 #   bash cloudflare-guard.sh remove              本スクリプトが作ったルールだけ削除
 #   bash cloudflare-guard.sh test                この端末から到達できるか確認
 #
@@ -37,10 +41,14 @@ MCP_HOST="${MCP_HOST:-recommendations.polyarchy.net}"
 # サービス単位で入れ替える＝stats 用に適用しても recommendations(mcp) のルールを消さない。
 #   recommendations: 既定（SERVICE=mcp・MCP_HOST=mcp.…・SSM mcp_http_path）
 #   stats : SERVICE=stats MCP_HOST=stats.… SSM_PATH_PARAM=/polyarchy/<env>/stats_http_path bash cloudflare-guard.sh apply
-#   companies : SERVICE=companies MCP_HOST=companies.… SSM_PATH_PARAM=/polyarchy/<env>/companies_http_path bash cloudflare-guard.sh apply
+#   companies（完全形・実走 2026-09-22）:
+#     SERVICE=companies MCP_HOST=companies.<domain> SSM_PATH_PARAM=/polyarchy/<env>/companies_http_path \
+#     RL_HOSTS=recommendations.<domain>,stats.<domain>,companies.<domain> IP_ALLOWLIST=off \
+#     bash cloudflare-guard.sh apply && bash cloudflare-guard.sh status   # 式に既存ホストが残っていること
 SERVICE="${SERVICE:-mcp}"
-# レート制限ルールは Free プランで1本のため単一ルールに全ホストを載せる（RL_HOSTS＝カンマ区切り・既定 MCP_HOST）。
-RL_HOSTS="${RL_HOSTS:-$MCP_HOST}"
+# レート制限ルールは Free プランで1本のため単一ルールに全ホストを載せる（RL_HOSTS＝カンマ区切り）。
+# 空＝apply 時に「既存ルールの式にあるホスト ∪ MCP_HOST」を引き継ぐ（rl_hosts_effective）。
+RL_HOSTS="${RL_HOSTS:-}"
 ORG_IPS="${ORG_IPS:-}"                               # 導入団体の固定 IP（IP_ALLOWLIST=on のときだけ使う・既定は空）
 ANTHROPIC_IPS="${ANTHROPIC_IPS:-160.79.104.0/21}"    # Anthropic outbound（MCP ツール呼び出し元）
 EXTRA_IPS="${EXTRA_IPS:-}"                           # 任意：自分の作業IP等を足す場合
@@ -117,6 +125,14 @@ allow_list() { # 許可IPを Cloudflare 式の集合表記に（スペース区�
 }
 
 # ── 現在の phase entrypoint ルールを取得（無ければ空配列）─────────────────────
+rl_hosts_effective() { # $1=現行の http_ratelimit ルール(JSON array) → 載せるホスト（カンマ区切り・重複なし）
+  # RL_HOSTS 明示＝そのまま。未指定＝既存の polyarchy-mcp-ratelimit の式から (http.host eq "…") を拾い、MCP_HOST と和集合。
+  if [[ -n "$RL_HOSTS" ]]; then printf '%s' "$RL_HOSTS"; return; fi
+  { printf '%s' "$1" | jq -r '.[] | select(.description=="polyarchy-mcp-ratelimit") | .expression' 2>/dev/null \
+      | grep -o 'http\.host eq "[^"]*"' | sed 's/.*"\(.*\)"/\1/'; printf '%s\n' "$MCP_HOST"; } \
+    | sed '/^$/d' | awk '!seen[$0]++' | paste -sd',' -
+}
+
 get_rules() { # $1=phase
   local r
   r="$(cf GET "/zones/${ZONE_ID}/rulesets/phases/$1/entrypoint" 2>/dev/null)" || true
@@ -203,10 +219,12 @@ cmd_apply() {
   put_rules http_request_firewall_custom "$rules_new"
   if [[ "${IP_ALLOWLIST:-off}" == "off" ]]; then log "✅ 秘密パスルールを適用（IP 許可は作らない）"; else log "✅ IP 許可リスト（＋秘密パス）を適用"; fi
 
-  # ② レート制限（anti-flood）
-  local expr_rl rl_now rl_new
-  expr_rl="$(printf '%s' "$RL_HOSTS" | tr ',' '\n' | sed '/^$/d;s/.*/(http.host eq "&")/' | paste -sd'|' - | sed 's/|/ or /g')"
+  # ② レート制限（anti-flood）＝1 本を作り直す。RL_HOSTS 未指定なら既存ルールのホストを引き継ぐ（置き換え事故の防止）
+  local expr_rl rl_now rl_new hosts
   rl_now="$(get_rules http_ratelimit)"
+  hosts="$(rl_hosts_effective "$rl_now")"
+  log "レート制限の対象ホスト: ${hosts}"
+  expr_rl="$(printf '%s' "$hosts" | tr ',' '\n' | sed '/^$/d;s/.*/(http.host eq "&")/' | paste -sd'|' - | sed 's/|/ or /g')"
   rl_new="$(jq -n --argjson now "$rl_now" --arg expr "$expr_rl" --arg tag "$TAG" \
               --argjson period "$RL_PERIOD" --argjson reqs "$RL_REQS" --argjson mt "$RL_TIMEOUT" '
       ($now | map(select((.description // "") | startswith("polyarchy-") | not)))

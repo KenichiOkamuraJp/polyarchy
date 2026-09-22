@@ -62,6 +62,7 @@ systemctl status cloudflared; journalctl -u cloudflared -n 30 --no-pager   # Reg
 curl -sI https://recommendations.<domain>/healthz | head -1   # staging は recommendations.polyarchy.net
 ```
 - cloudflared 再起動 → ダメなら Cloudflare 側（DNS・トンネル・WAF）を疑う。WAF ルールの現状＝`bash deploy/scripts/cloudflare-guard.sh status`。
+- ★ingress を変えた直後（サービスを足した・外した）に**そのホストだけ** 404 なら cloudflared の未再読込を疑う＝cloudflared は起動時にしか config.yml を読まない。自動適用は config が変わったときだけ再起動する（2026-09-22〜）が、bootstrap の手動再走行では再起動されない。
 - ★WAF を再適用するとき：`ZONE_NAME`・`MCP_HOST`・`SERVICE`・`SSM_PATH_PARAM`（・prod は `AWS_PROFILE_CF`）を対象に合わせて上書きして apply（guard の既定値は staging 固定）。**IP_ALLOWLIST の既定は off**（2026-09-03 スクリプト側も off に変更＝IP 許可の復活事故は既定では起きない。on は明示時のみ・IP 方式は OAuth/コネクタと両立しない＝2026-08-27/28 実測）。秘密パスルールは /.well-known/・/cdn-cgi/・/healthz を除外済（PRM/認証ディスカバリの生命線）。
 
 ## 2. ユニット早見表（箱）
@@ -133,15 +134,46 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
 
 ### サービスを足す（companies を有効にする・2026-09-22）
 
-配線はコードに入っている（`ENABLE_COMPANIES_APP` の opt-in・既定 false）。有効化は上流の運営者（または導入団体）の作業＝順に：
-1. **IdP（WorkOS）**＝Resource indicator に `https://companies.<domain>/<秘密パス>` を追加（三点一致＝PROD_MIGRATION §2.5）。
-2. **env**＝`deploy/env/<env>.env` に `ENABLE_COMPANIES_APP=true`・`TUNNEL_HOST_COMPANIES=companies.<domain>`・`AUTH_AUD_COMPANIES=<aud>`。
-3. **SSM**＝`bash deploy/scripts/register-secrets.sh <env>`（`auth_aud_companies` を登録）＋秘密パス `companies_http_path` を `/mcp-<乱数>` で登録（§4 と同じ流儀）。
-4. **Terraform**＝`bash deploy/scripts/deploy.sh <env> apply`（ロググループ・health アラーム・箱ロールの書込先・S3 ライフサイクル。EC2 の差分は `ignore_changes` で出ない）。
-5. **箱の deploy.env**＝★稼働中の箱は user_data を再実行しない＝SSM Session で `/etc/polyarchy/deploy.env` に同じ 2 行（`ENABLE_COMPANIES_APP`・`TUNNEL_HOST_COMPANIES`）を足す。
-6. **Cloudflare**＝DNS `companies.<domain>` → トンネル（CNAME・既存と同じ UUID）・guard を `SERVICE=companies` で apply（`cloudflare-guard.sh` 冒頭）。
-7. **配布**＝配布用のクローンで `release.sh <env>`（ゲート 13 本）→ 自動適用が `bootstrap` 再走行で ⑥ データ同期・⑧ companies.env・⑩ ユニット設置・ingress 追記まで行う → ダッシュボードで版一致・`https://companies.<domain>/healthz` が 200。
-8. **接続確認**＝claude.ai／Claude Code／ChatGPT の 3 経路（PROD_MIGRATION §2.5 と同じ）。公開ページ `companies.html` はこの後に Pages へ（先に出すと案内だけが先行する）。
+配線はコードに入っている（`ENABLE_COMPANIES_APP` の opt-in・既定 false）。有効化は上流の運営者（または導入団体）の作業＝順に
+（★順序は 2026-09-22 の staging 実走で並べ替えた＝IdP の Resource indicator は秘密パスを含むので、秘密パスを先に決める）：
+
+1. **秘密パス**＝`aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/<env>/companies_http_path --value "/mcp-$(openssl rand -hex 16)"`（§4 と同じ流儀・値は控えない＝SSM が唯一の置き場）。
+2. **env**＝`deploy/env/<env>.env` に 3 行＝`ENABLE_COMPANIES_APP=true`・`TUNNEL_HOST_COMPANIES=companies.<domain>`・`AUTH_AUD_COMPANIES=https://companies.<domain>/<1 の秘密パス>`。
+3. **SSM**＝`bash deploy/scripts/register-secrets.sh <env>`（`auth_aud_companies` を登録）。三点一致の確認＝値を表示せずに比べる：
+   ```bash
+   P=/polyarchy/<env>; H=companies.<domain>
+   [[ "$(aws ssm get-parameter --name $P/auth_aud_companies --query Parameter.Value --output text)" == \
+      "https://$H$(aws ssm get-parameter --name $P/companies_http_path --with-decryption --query Parameter.Value --output text)" ]] && echo "三点一致 OK（aud＝https://host＋秘密パス）" || echo "不一致"
+   ```
+4. **IdP（WorkOS）**＝Resource indicator に 2 と同じ文字列 `https://companies.<domain>/<秘密パス>` を追加（三点一致＝PROD_MIGRATION §2.5）。
+5. **Terraform**＝`bash deploy/scripts/deploy.sh <env> apply`（ロググループ・health/401/5xx アラーム・箱ロールの書込先・S3 ライフサイクル。EC2 の差分は `ignore_changes` で出ない）。
+   ★フラグが false のままでも「変更 2」（箱ロールの `data/companies/query_log/*` 書込先・S3 ライフサイクル `companies-query-log-retention-30d`）は出る＝コミット済みのコード由来で想定内。
+6. **箱の deploy.env**＝★稼働中の箱は user_data を再実行しない＝`/etc/polyarchy/deploy.env` に同じ 2 行（`ENABLE_COMPANIES_APP`・`TUNNEL_HOST_COMPANIES`）を足す。
+   SSM Session で編集してもよいが、`send-command` なら SSM のコマンド履歴に残る（監査線）。★`--parameters` はインライン JSON だと `$`・`\n`・`(` のエスケープで壊れる＝**ファイルに書いて `file://` で渡す**：
+   ```bash
+   cat > /tmp/enable_companies.json <<'EOF'
+   {"commands":[
+    "F=/etc/polyarchy/deploy.env", "cp -p $F $F.bak-$(date +%Y%m%d)",
+    "grep -q '^ENABLE_COMPANIES_APP=' $F || printf 'ENABLE_COMPANIES_APP=true\\nTUNNEL_HOST_COMPANIES=companies.<domain>\\n' >> $F",
+    "logger -t polyarchy-dataapply '[manual] deploy.env: companies enabled'",
+    "grep -e '^ENABLE_' -e '^TUNNEL_HOST_' $F"]}
+   EOF
+   aws ssm send-command --instance-ids <instance-id> --document-name AWS-RunShellScript --parameters file:///tmp/enable_companies.json --query Command.CommandId --output text
+   aws ssm get-command-invocation --command-id <上の ID> --instance-id <instance-id> --query StandardOutputContent --output text
+   ```
+   （`logger -t polyarchy-dataapply` を挟むと CW Logs `polyarchy/dataapply` の線にも残る＝§5「切り戻し後」の `systemd-cat` と同じ意図）
+7. **Cloudflare**＝
+   - DNS＝**ダッシュボードで CNAME**（名前 `companies`・ターゲット `<TUNNEL_ID>.cfargotunnel.com`・プロキシ済み）。一覧では既存の stats/recommendations と同じ「トンネル」型で表示される。API で足すには DNS:Edit を持つトークンが要る（現行の guard 用・Access 用の 2 トークンには無い）。`cloudflared tunnel route dns` は cert.pem が対象ゾーンに紐づく新トンネル作成直後だけ使える（PROD_MIGRATION §2.2）。
+   - guard＝★レート制限は Free プラン 1 本を全ホストで共有し、apply はそれを**作り直す**。`RL_HOSTS` を省けば既存の式のホストを引き継ぐ（2026-09-22〜）が、明示するなら**全ホスト**を渡す：
+     ```bash
+     SERVICE=companies MCP_HOST=companies.<domain> SSM_PATH_PARAM=/polyarchy/<env>/companies_http_path \
+     RL_HOSTS=recommendations.<domain>,stats.<domain>,companies.<domain> IP_ALLOWLIST=off \
+     bash deploy/scripts/cloudflare-guard.sh apply
+     bash deploy/scripts/cloudflare-guard.sh status   # レート制限の式に stats/recommendations が残っていること
+     ```
+8. **配布**＝配布用のクローンで `release.sh <env>`（ゲート 13 本）→ 自動適用が `bootstrap` 再走行で ⑥ データ同期・⑧ companies.env・⑩ ユニット設置・ingress 追記まで行い、**ingress が変わったので cloudflared も再起動する**（2026-09-22〜・数秒の断＝stats/recommendations も一瞬切れる。config が変わらない通常のデータ更新では再起動しない）→ ダッシュボードで版一致・`https://companies.<domain>/healthz` が 200。
+   ★それ以前の版の箱、または bootstrap を手で再走行したときは cloudflared が旧 ingress のまま＝公開側は 404（トンネルの catch-all）が続く。`send-command` で `logger -t polyarchy-dataapply '[manual] restart cloudflared'; systemctl restart cloudflared` を流してから healthz を確認する。
+9. **接続確認**＝claude.ai／Claude Code／ChatGPT の 3 経路（PROD_MIGRATION §2.5 と同じ）。公開ページ `companies.html` はこの後に Pages へ（先に出すと案内だけが先行する）。
 
 ### 配布用のクローンを開発用と分ける（推奨・2026-09-19）
 

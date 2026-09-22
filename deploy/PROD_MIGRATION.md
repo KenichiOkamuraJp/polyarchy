@@ -116,6 +116,7 @@ cloudflared tunnel login                        # ブラウザで★導入団体
 cloudflared tunnel create adopter-prod          # → 新UUID と資格情報 JSON のパスが出る（控える）
 cloudflared tunnel route dns adopter-prod recommendations.<導入団体ドメイン>   # CNAME をトンネル宛に（stats.<導入団体ドメイン> も同様）
 ```
+（`route dns` は `tunnel login` 直後＝cert.pem が導入団体ゾーンに紐づいている間だけ使える。後からホストを足すときはダッシュボードで CNAME `<name>` → `<UUID>.cfargotunnel.com`（プロキシ済み）＝RUNBOOK §5「サービスを足す」）
 → **新UUID**（例 `xxxxxxxx-...`）と `~/.cloudflared/<新UUID>.json` を控える（§4/§5 で使う）。
 
 ### 2.3 ② 入口の絞り＝秘密パス＋レート制限（★IP 許可方式は廃止・2026-08-27/28）
@@ -127,8 +128,9 @@ export ZONE_NAME=<導入団体ドメイン> AWS_PROFILE_CF=adopter-prod \
        RL_HOSTS=recommendations.<導入団体ドメイン>,stats.<導入団体ドメイン>
 SERVICE=mcp   MCP_HOST=recommendations.<導入団体ドメイン> SSM_PATH_PARAM=/polyarchy/prod/mcp_http_path   bash scripts/cloudflare-guard.sh apply
 SERVICE=stats MCP_HOST=stats.<導入団体ドメイン>           SSM_PATH_PARAM=/polyarchy/prod/stats_http_path bash scripts/cloudflare-guard.sh apply
-bash scripts/cloudflare-guard.sh status   # 同じ環境変数で
+bash scripts/cloudflare-guard.sh status   # 同じ環境変数で＝レート制限の式に全ホストが載っていること
 ```
+★レート制限は Free プラン 1 本を全ホストで共有し、apply はそれを `RL_HOSTS` の内容で**作り直す**＝サービスを足すときは `RL_HOSTS` に既存ホストも含めて渡す（省略時は既存の式のホストを引き継ぐ・2026-09-22〜）。companies を有効にするなら `RL_HOSTS` に `companies.<導入団体ドメイン>` を足して `SERVICE=companies` でも apply（手順の全体＝RUNBOOK §5「サービスを足す」）。
 （Cloudflare API トークンは Keychain `cloudflare-api-token`＝README §9）
 
 > **★廃止の経緯（実測 2 件）**：①ChatGPT コネクタ対応＝OpenAI の egress は 261 プレフィックスで変動し

@@ -28,7 +28,7 @@
     ├ systemd polyarchy-mcp   :8765  ← 主役（層公開固定・秘密ゼロ・秘密パスで待受）
     ├ systemd qdrant          :6333  ← ベクトルDB（v7 本線・127.0.0.1 のみ・storage=data/qdrant）
     ├ systemd polyarchy-web   :8502  ← **廃止（2026-09-02）**＝unit はリポ残置・箱には無い
-    ├ systemd cloudflared            ← 入口（手動 start：カットオーバー時）
+    ├ systemd cloudflared            ← 入口（手動 start：カットオーバー時。以後は自動適用が ingress の変化時だけ再起動）
     ├ systemd polyarchy-stats :8766  ← 統計参照DB（認証必須・稼働中）
     ├ systemd polyarchy-companies :8767  ← 企業情報DB（opt-in＝ENABLE_COMPANIES_APP・モデル不要・2026-09-22 配線・有効化は RUNBOOK §5「サービスを足す」）
     ├ systemd polyarchy-fuelsync.timer → 捕捉ログ(燃料)を S3 へ（毎時・recommendations と stats と companies）

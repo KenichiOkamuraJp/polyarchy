@@ -7,6 +7,9 @@
 #              （稼働中に 1 回目→停止後に差分の 2 回目＝停止時間を伸ばさず整合コピー）。現行の code tar も prev として保持。
 #   ② 反映   ＝サービス停止 → code tar 再展開（★bootstrap はコードを更新しないため apply が行う＝旧地雷の解消）
 #              → qdrant ミラー同期（--delete）→ bootstrap 再走行（データ差分 sync・pip 再解決・ユニット設置）→ 再起動
+#              → ★入口：bootstrap が /etc/cloudflared/config.yml を書き換えていた（ingress の追加・削除）ときだけ cloudflared も再起動
+#                （数秒の断。通常のデータ更新では config が変わらない＝入口を揺らさない。2026-09-22 staging 実測＝再起動しないと
+#                 新ホストは 25 分以上 404 のまま・切り戻し経路でも同じ判定）
 #   ③ 検証   ＝qdrant 応答待ち → 箱上 smoke（recommendations＋stats＋companies〔有効時〕）
 #   ④ 判定   ＝PASS：マーク更新（status=APPLIED）・メトリクス dataapply=1
 #              FAIL：**自動切り戻し**＝停止 → ①の退避を書き戻し（qdrant はミラー）→ prev tar 再展開＋pip → 再起動 → smoke 再実行
@@ -103,7 +106,26 @@ pip_resolve() { # 切り戻し時の依存再解決（bootstrap ③ と同じ＝
   fi
 }
 svc_stop()  { systemctl stop polyarchy-mcp polyarchy-stats qdrant; [[ "$COMPANIES_ON" == 1 ]] && systemctl stop polyarchy-companies; return 0; }
-svc_start() { # qdrant → 応答待ち（最長 300 秒）→ アプリ。戻り値＝qdrant が応答したか
+# 入口（cloudflared）＝config.yml が「いま動いているプロセスが読んだ内容」から変わったときだけ再起動する。
+#   bootstrap ⑦ は再走行のたびに config.yml を生成する（ingress は deploy.env の ENABLE_*_APP／TUNNEL_HOST_* から）が、
+#   cloudflared は起動時にしか config を読まない＝ingress を足しても再起動しなければ新ホストは 404（トンネルの catch-all）のまま。
+#   毎回 restart しない理由＝通常のデータ更新で入口を揺らさない（stats/recommendations に数秒の断が出る）。
+#   cloudflared が動いていない箱（初回カットオーバー前＝入口は手動 start・bootstrap ⑩）では何もしない＝安全順序を崩さない。
+CF_CFG=/etc/cloudflared/config.yml
+cf_cfg_hash() { [[ -f "$CF_CFG" ]] && sha256sum "$CF_CFG" | cut -d' ' -f1 || echo none; }
+CF_CFG_LIVE="$(cf_cfg_hash)"   # 適用前＝稼働中の cloudflared が読んでいる config（切り戻し経路でも同じ基準で比べる）
+reload_ingress() {
+  local now; now="$(cf_cfg_hash)"
+  [[ "$now" == "$CF_CFG_LIVE" ]] && return 0
+  if systemctl is-active --quiet cloudflared; then
+    log "入口: $CF_CFG が変わった（ingress の追加・削除）＝cloudflared を再起動（数秒の断）"
+    systemctl restart cloudflared || warn "cloudflared の再起動に失敗（origin は健全・入口だけが古い＝RUNBOOK §1「公開 URL が落ちている」）"
+  else
+    log "入口: $CF_CFG が変わったが cloudflared は停止中＝起動しない（初回カットオーバーは手動 start＝bootstrap ⑩）"
+  fi
+  CF_CFG_LIVE="$now"
+}
+svc_start() { # qdrant → 応答待ち（最長 300 秒）→ アプリ → 入口（config が変わったときだけ）。戻り値＝qdrant が応答したか
   systemctl restart qdrant
   for _ in $(seq 1 60); do
     curl -fsS -m 3 http://127.0.0.1:6333/collections >/dev/null 2>&1 && break
@@ -113,6 +135,7 @@ svc_start() { # qdrant → 応答待ち（最長 300 秒）→ アプリ。戻�
   curl -fsS -m 3 http://127.0.0.1:6333/collections >/dev/null 2>&1 && ok=1
   systemctl restart polyarchy-mcp polyarchy-stats
   [[ "$COMPANIES_ON" == 1 ]] && { systemctl restart polyarchy-companies || ok=0; }
+  reload_ingress
   [[ "$ok" == 1 ]]
 }
 smoke() { # 箱上 smoke（recommendations＋stats＋companies〔有効時〕）。戻り値＝合否。訓練フラグがあれば FAIL 扱い

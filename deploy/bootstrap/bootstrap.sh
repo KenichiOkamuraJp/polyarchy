@@ -205,6 +205,9 @@ if [[ -n "$TUNNEL_ID" && -n "$TUNNEL_CRED" ]]; then
     echo "  - service: http_status:404"
   } > /etc/cloudflared/config.yml
   echo "[bootstrap] cloudflared config を生成（tunnel=${TUNNEL_ID}）"
+  # ★本スクリプトは config を書くだけで cloudflared を再起動しない（起動時にしか config を読まない）。再走行で ingress が
+  #   変わった場合の再読込は自動適用（apply_data_update.sh の reload_ingress＝変わったときだけ restart）が行う。
+  #   手で再走行したときは `systemctl restart cloudflared` を自分で（RUNBOOK §5「サービスを足す」）。
 else
   echo "[bootstrap] ⚠ SSM に cloudflared_tunnel_id/credentials 未登録。config は後で（README §2/§7）。" >&2
 fi
@@ -336,6 +339,7 @@ fi
 systemctl daemon-reload
 # アプリ面は起動（origin を先に健全化）。cloudflared はアプリ面の健全を確認した後に手動 start＝
 # 二重 origin（Mac と EC2 が同一トンネルに同時接続）を避ける安全順序（README §7）。
+# ★稼働中の箱での再走行（自動適用）では、⑦ が ingress を書き換えていたときだけ apply 側が cloudflared を再起動する。
 # enable + restart（enable --now は既存起動プロセスを再起動しない＝再走行でユニット更新が反映されない）。
 # Qdrant はアプリより先に上げる（mcp/web は localhost:6333 に接続する。ユニット側も After=qdrant.service）。
 if [[ "$VECTOR_BACKEND" == "qdrant" ]]; then

@@ -49,6 +49,8 @@ load_env() {
   export AWS_PROFILE AWS_DEFAULT_REGION="$AWS_REGION"
 
   # 認証確認＋アカウントID→バケット名（terraform の local.bucket_name と同式）。
+  # ★env に BUCKET が書いてあってもここでは使わず再計算する（deploy.sh 系は state と同じ式で足りる）。
+  #   env の BUCKET が効くのは release.sh／upload_to_s3.sh（tfstate を持たない運用者用＝RUNBOOK §5）だけ。
   ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)" \
     || die "AWS 認証に失敗（AWS_PROFILE=${AWS_PROFILE}）。aws configure --profile ${AWS_PROFILE} を確認。"
   BUCKET="${PROJECT}-${ENVIRONMENT}-${ACCOUNT_ID}"
