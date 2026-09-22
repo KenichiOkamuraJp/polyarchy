@@ -171,7 +171,7 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
      bash deploy/scripts/cloudflare-guard.sh apply
      bash deploy/scripts/cloudflare-guard.sh status   # レート制限の式に stats/recommendations が残っていること
      ```
-8. **配布**＝配布用のクローンで `release.sh <env>`（ゲート 13 本）→ 自動適用が `bootstrap` 再走行で ⑥ データ同期・⑧ companies.env・⑩ ユニット設置・ingress 追記まで行い、**ingress が変わったので cloudflared も再起動する**（2026-09-22〜・数秒の断＝stats/recommendations も一瞬切れる。config が変わらない通常のデータ更新では再起動しない）→ ダッシュボードで版一致・`https://companies.<domain>/healthz` が 200。
+8. **配布**＝配布用のクローンで `release.sh <env>`（ゲート 13 本）→ 自動適用が `bootstrap` 再走行で ⑥ データ同期・⑧ companies.env・⑩ ユニット設置・ingress 追記まで行い、**ingress が変わったので cloudflared も再起動する**（2026-09-22〜・数秒の断＝stats/recommendations も一瞬切れる。config が変わらない通常のデータ更新では再起動しない）→ ダッシュボードで版一致・①に `polyarchy-companies` active と `:8767` ok・②に companies 収録 N 社（ダッシュボードは `ENABLE_COMPANIES_APP=true` の箱だけ companies の行を出す）。公開側の入口まで含めて見るときは `https://companies.<domain>/healthz` が 200 も補助に。
    ★それ以前の版の箱、または bootstrap を手で再走行したときは cloudflared が旧 ingress のまま＝公開側は 404（トンネルの catch-all）が続く。`send-command` で `logger -t polyarchy-dataapply '[manual] restart cloudflared'; systemctl restart cloudflared` を流してから healthz を確認する。
 9. **接続確認**＝claude.ai／Claude Code／ChatGPT の 3 経路（PROD_MIGRATION §2.5 と同じ）。公開ページ `companies.html` はこの後に Pages へ（先に出すと案内だけが先行する）。
 

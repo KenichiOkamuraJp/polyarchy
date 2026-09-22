@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import subprocess
 import sys
 import urllib.request
@@ -47,6 +48,7 @@ WEEKLY_PATH = OUT_DIR / "weekly.jsonl"
 HTML_PATH = OUT_DIR / "usage_report.html"
 FRESHNESS_STATE = ROOT / "stats" / "data" / "cache" / "freshness.json"
 HEALTHZ_DEFAULT = ("http://localhost:8765/healthz", "http://localhost:8766/healthz")
+HEALTHZ_COMPANIES = "http://localhost:8767/healthz"
 LOW_HIT = 3   # recommendations の低ヒット閾値（coverage_warning と同じ count<3）
 
 
@@ -180,6 +182,16 @@ def freshness_summary() -> dict:
         return {}
 
 
+def companies_enabled() -> bool:
+    """companies は opt-in（deploy.env の ENABLE_COMPANIES_APP＝health_metric.sh と同じ判定）。"""
+    return os.environ.get("ENABLE_COMPANIES_APP", "false") == "true"
+
+
+def healthz_targets() -> tuple[str, ...]:
+    """既定の healthz 一覧。companies を有効にした箱だけ :8767 を足す（無効の箱で「応答なし」と出さない）。"""
+    return HEALTHZ_DEFAULT + ((HEALTHZ_COMPANIES,) if companies_enabled() else ())
+
+
 def probe_healthz(urls: Iterable[str]) -> list[dict]:
     """GET /healthz（timeout 2 秒・best-effort）。応答なしは ok=None。"""
     out = []
@@ -288,7 +300,7 @@ def main(argv=None) -> int:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
-    health = [] if a.no_health else probe_healthz(a.healthz or HEALTHZ_DEFAULT)
+    health = [] if a.no_health else probe_healthz(a.healthz or healthz_targets())
     HTML_PATH.write_text(render_html(rows, freshness_summary(), health, generated_at), encoding="utf-8")
 
     if a.json:

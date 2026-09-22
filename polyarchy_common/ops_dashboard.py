@@ -29,8 +29,8 @@ from pathlib import Path
 
 from polyarchy_common.capture import load_records
 from polyarchy_common.logsetup import configure_quiet_logging, get_logger
-from polyarchy_common.usage_report import (HEALTHZ_DEFAULT, freshness_summary,
-                                           pct, probe_healthz)
+from polyarchy_common.usage_report import (companies_enabled, freshness_summary,
+                                           healthz_targets, pct, probe_healthz)
 
 configure_quiet_logging()
 log = get_logger("polyarchy.ops_dashboard")
@@ -45,6 +45,7 @@ QE_EDITION_PATH = ROOT / "stats" / "data" / "registry" / "qe_edition.json"
 UPDATE_CHECK_PATH = ROOT / "recommendations" / "data" / "cache" / "update_check.json"
 FRESHNESS_RUN_PATH = ROOT / "stats" / "data" / "cache" / "freshness_last_run.json"
 APPLIED_RELEASE_PATH = ROOT / "ops" / "dashboard" / "applied_data_release.json"
+COMPANIES_REGISTRY_PATH = ROOT / "companies" / "data" / "store" / "companies.json"
 UNITS = ("qdrant", "polyarchy-mcp", "polyarchy-stats", "cloudflared",
          "polyarchy-health.timer", "polyarchy-fuelsync.timer",
          "polyarchy-logprune.timer", "polyarchy-usagereport.timer", "polyarchy-dashboard.timer",
@@ -58,7 +59,8 @@ def unit_states() -> list[tuple[str, str]]:
     if not shutil.which("systemctl"):
         return []
     out = []
-    for u in UNITS:
+    units = UNITS + (("polyarchy-companies",) if companies_enabled() else ())
+    for u in units:
         try:
             rc = subprocess.run(["systemctl", "is-active", u], capture_output=True, text=True, timeout=5)
             out.append((u, rc.stdout.strip() or "unknown"))
@@ -93,6 +95,11 @@ def data_scale() -> dict:
         d["recommendations_docs"] = max(0, sum(1 for _ in open(cat, encoding="utf-8")) - 1)
     except Exception:  # noqa: BLE001
         pass
+    if companies_enabled():
+        try:  # mcp_server が n_companies として返す数と同じ（companies.json の社数）
+            d["companies"] = len(json.loads(COMPANIES_REGISTRY_PATH.read_text(encoding="utf-8")))
+        except Exception:  # noqa: BLE001
+            pass
     return d
 
 
@@ -178,7 +185,7 @@ def _release_cell(e) -> str:
 def render(generated_at: str, env_name: str) -> str:
     e = html.escape
     units = unit_states()
-    health = probe_healthz(HEALTHZ_DEFAULT)
+    health = probe_healthz(healthz_targets())
     scale = data_scale()
     fresh_rec = rec_freshness()
     fresh_stats = freshness_summary()
@@ -225,7 +232,10 @@ def render(generated_at: str, env_name: str) -> str:
 <tr><th>検索構成</th><td>COLLECTION_NAME={e(os.environ.get('COLLECTION_NAME', 'policy_claims_v7'))}／VECTOR_BACKEND=qdrant（固定）</td></tr>
 <tr><th>データ版</th><td>{_release_cell(e)}</td></tr>
 <tr><th>stats 収録</th><td>{scale.get('stats_series', '—')} 系列</td></tr>
-<tr><th>recommendations 収録</th><td>{scale.get('recommendations_docs', '—')} 文書</td></tr></table>""")
+<tr><th>recommendations 収録</th><td>{scale.get('recommendations_docs', '—')} 文書</td></tr>""")
+    if companies_enabled():
+        parts.append(f"<tr><th>companies 収録</th><td>{scale.get('companies', '—')} 社</td></tr>")
+    parts.append("</table>")
 
     # ③ 鮮度
     parts.append("<h2>③ データ鮮度</h2>")

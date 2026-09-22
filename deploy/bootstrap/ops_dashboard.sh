@@ -5,7 +5,7 @@ set -euo pipefail
 source /etc/polyarchy/deploy.env
 cd "$REPO_DIR"
 PY=/opt/miniconda/envs/polyarchy/bin/python
-PYTHONPATH="$REPO_DIR" ENVIRONMENT="$ENVIRONMENT" "$PY" -m polyarchy_common.ops_dashboard
+PYTHONPATH="$REPO_DIR" ENVIRONMENT="$ENVIRONMENT" ENABLE_COMPANIES_APP="${ENABLE_COMPANIES_APP:-false}" "$PY" -m polyarchy_common.ops_dashboard
 aws s3 cp ops/dashboard/index.html "s3://$S3_BUCKET/ops/dashboard/index.html" \
   --content-type "text/html; charset=utf-8" --region "$AWS_REGION"
 echo "[dashboard] 生成と S3 保存 完了 $(date -Is)"

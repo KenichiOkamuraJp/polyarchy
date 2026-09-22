@@ -7,7 +7,7 @@ set -euo pipefail
 source /etc/polyarchy/deploy.env
 cd "$REPO_DIR"
 PY=/opt/miniconda/envs/polyarchy/bin/python
-PYTHONPATH="$REPO_DIR" "$PY" -m polyarchy_common.usage_report
+PYTHONPATH="$REPO_DIR" ENABLE_COMPANIES_APP="${ENABLE_COMPANIES_APP:-false}" "$PY" -m polyarchy_common.usage_report
 aws s3 cp ops/usage/usage_report.html "s3://$S3_BUCKET/ops/report/usage_report.html" --region "$AWS_REGION"
 aws s3 cp ops/usage/weekly.jsonl "s3://$S3_BUCKET/ops/report/weekly.jsonl" --region "$AWS_REGION"
 echo "[usage-report] 生成と S3 保存 完了 $(date -Is)"
