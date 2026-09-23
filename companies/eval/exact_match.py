@@ -67,6 +67,10 @@ def check_negative(q: dict, lookup) -> str | None:
     missing = [k for k in q.get("expect_suggest", []) if k not in {s.get("item") for s in r.get("suggest", [])}]
     if missing:
         return f"引き直し先の案内（suggest）に {missing} が無い"
+    # 会社独自の項目への案内（item を持たない＝要素 ID で名指す）。ラベルが空だと案内から落ちる（2026-09-23 のラベル欠落で実測）
+    missing_el = [e for e in q.get("expect_suggest_elements", []) if e not in {s.get("element") for s in r.get("suggest", [])}]
+    if missing_el:
+        return f"引き直し先の案内（suggest）に会社独自の項目 {missing_el} が無い"
     if q.get("expect_alternatives") and not r.get("alternatives"):
         return "代わりに開示されている項目の一覧（alternatives）が無い"
     if q.get("expect_competing") and len(r.get("competing") or []) < 2:
