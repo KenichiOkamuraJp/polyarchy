@@ -12,6 +12,9 @@ from companies.core.items import BASES, ELEMENT_TO_KEY, ITEMS
 from companies.eval.exact_match import EVAL
 
 MIN_POS, MIN_NEG, MIN_FIND = 371, 36, 20  # 問は減らさない（足したら上げる）
+MIN_SEG_POS, MIN_SEG_NEG = 120, 12        # 第 1b 便（セグメント別）
+SEG_REASONS = {"no_segment_figures", "not_tagged", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_company"}
+SEG_SECTIONS = {"segment_information", "employees", "capex", "research_and_development"}
 REASONS = {"item_not_disclosed", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_item",
            "unknown_company", "ambiguous_company", "ambiguous_item"}
 
@@ -41,7 +44,18 @@ def main() -> int:
     find = [json.loads(l) for l in (EVAL / "find_quality.jsonl").read_text().splitlines() if l.strip()]
     assert len(find) >= MIN_FIND and len({q["id"] for q in find}) == len(find), f"発見層の問が減った／id 重複: {len(find)}"
     assert all(q["expect"] in ("found", "ambiguous_company", "unknown_company") for q in find)
-    print(f"PASS: 語彙 {len(ITEMS)} キー／{len(ELEMENT_TO_KEY)} 要素・正例 {len(pos)}・負例 {len(neg)}・発見層 {len(find)}")
+    seg = [json.loads(l) for l in (EVAL / "segments.jsonl").read_text().splitlines() if l.strip()]
+    seg_neg = [json.loads(l) for l in (EVAL / "segments_fail_closed.jsonl").read_text().splitlines() if l.strip()]
+    assert len(seg) >= MIN_SEG_POS and len(seg_neg) >= MIN_SEG_NEG, f"セグメントの問が減った: 正例 {len(seg)}・負例 {len(seg_neg)}"
+    assert len({q["id"] for q in seg + seg_neg}) == len(seg) + len(seg_neg), "セグメントの問の id の重複"
+    for q in seg:
+        e = q["expected"]
+        assert q["basis"] in BASES and re.fullmatch(r"\d{4}-\d{2}", q["period"]) and q["doc_id"], q["id"]
+        assert isinstance(e["value"], str) and e["value"] and e["section"] in SEG_SECTIONS, q["id"]
+        assert e["member_kind"] != "company_defined" or e.get("member_label"), f"{q['id']}: 会社が定義した区分はラベルを固定する"
+    assert {q["reason"] for q in seg_neg} == SEG_REASONS, "セグメントの理由の種類ごとに最低 1 問"
+    print(f"PASS: 語彙 {len(ITEMS)} キー／{len(ELEMENT_TO_KEY)} 要素・正例 {len(pos)}・負例 {len(neg)}・発見層 {len(find)}"
+          f"・セグメント 正例 {len(seg)}／負例 {len(seg_neg)}")
     return 0
 
 
