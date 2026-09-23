@@ -21,7 +21,7 @@ async def run() -> list[str]:
     async with stdio_client(params) as (r, w), ClientSession(r, w) as s:  # stdout が汚れていればここで壊れる
         await s.initialize()
         tools = {t.name: t for t in (await s.list_tools()).tools}
-        if set(tools) != {"find_company", "lookup_company_facts", "list_items"}:
+        if set(tools) != {"find_company", "lookup_company_facts", "lookup_segments", "list_items"}:
             errs.append(f"[1] ツール集合が違う: {sorted(tools)}")
         for t in tools.values():
             if "layer" in (t.inputSchema.get("properties") or {}):
@@ -45,6 +45,12 @@ async def run() -> list[str]:
         r3 = await call("lookup_company_facts", company="E99999", period="2025-03", item="ebitda")
         if r3.get("found") or r3.get("reason") != "unknown_item":
             errs.append(f"[7] 語彙に無い項目を弾かない: {r3}")
+        r5 = await call("lookup_segments", company="E99999", period="2025-03")
+        if r5.get("found") or r5.get("reason") != "unknown_company" or r5.get("facts"):
+            errs.append(f"[9] セグメント：存在しない会社で fail-closed にならない: {r5}")
+        r6 = await call("lookup_segments", company="E99999", period="FY2024")
+        if r6.get("found") or r6.get("reason") != "bad_period":
+            errs.append(f"[10] セグメント：年度表記を弾かない: {r6}")
         r4 = await call("find_company", query="")
         if r4.get("found"):
             errs.append("[8] 空の問い合わせで会社を返した")

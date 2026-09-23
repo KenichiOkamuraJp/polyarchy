@@ -8,6 +8,8 @@
   ①標準要素の `…SummaryOfBusinessResults`（語彙に無いものも持つ＝「代わりに何が開示されているか」の一覧に使う）
   ②各社の拡張要素の `…KeyFinancialData`／会社の名前空間の `…SummaryOfBusinessResults`（会社が定義した項目＝zip 内のラベルつき）
   ③従業員の状況（従業員数・平均年間給与・平均年齢・平均勤続年数）
+  ④セグメント別の数値（第 1b 便）＝次元が「セグメントの軸」（と連結・個別の軸）だけの context（当期・前期）＝別の置き場へ。
+    書類ごとにセグメント情報の注記の有無と、数値が無いときに示す会社の文 1 行（単一セグメント・記載の省略）も控える
 値は公表どおりの文字列。連結と単体は別の系列（basis）。項目単位で単体へ落とす処理は**しない**（実データ検証 2026-09-20 §2）。
 """
 from __future__ import annotations
@@ -17,10 +19,12 @@ import datetime as dt
 import re
 import sys
 import zipfile
+from html import unescape
 from pathlib import Path
 
 from companies.core import store
 from companies.core.items import ITEMS
+from companies.core.segments import AXIS, section_of
 from companies.ingest.edinet_api import CACHE, fetch_zip, is_yuho, list_docs, parse_instance
 
 NONCON = "_NonConsolidatedMember"
@@ -75,6 +79,59 @@ def extension_labels(zip_path: Path) -> dict[str, str]:
     return out
 
 
+def _plain_text(html: str) -> str:
+    return re.sub(r"\s+", "", unescape(re.sub(r"<[^>]+>", "", unescape(html))))
+
+
+def note_quote(text: str) -> tuple[str | None, bool]:
+    """セグメント情報の注記から、会社の文（単一セグメント・記載の省略）を 1 つと、報告セグメントごとの表の見出しの有無。分類はしない。
+
+    見るのは【関連情報】より前（セグメント情報の節）だけ＝関連情報の「記載を省略」（地域・顧客）を拾わない。「。」で切ると表のセルが
+    連なった断片が 1 文になる（2026-09-23 実測＝三菱製鋼・ハニーズ）＝単位の表記を含む断片・長すぎる断片は採らない。
+    """
+    seg = text.split("【関連情報】")[0]
+    sentences = [s + "。" for s in seg.split("。") if s]
+    hit = next((s for s in sentences if re.search(r"単一|省略|のみであ|重要性が乏し", s) and len(s) <= 200 and "単位" not in s), None)
+    return hit, bool(re.search(r"報告セグメントごとの(売上高|売上収益|営業収益|収益|利益|資産)", seg))
+
+
+def segment_parts(inst: dict, labels: dict[str, str], doc_id: str, submitted: str, consolidated: bool) -> tuple[dict, list[dict]]:
+    """セグメント別の値と、書類の属性（当期・前期の期末・注記の有無と引用）。
+
+    連結・個別の軸が無い値は、連結を作成している会社なら連結・作成していない会社なら提出会社（単体）の値
+    （2026-09-23 実測＝中村屋の設備投資は軸なし）。同じ区分×要素×context の値が本文の 2 か所に載る（トヨタの設備投資）＝1 件にまとめる。
+    """
+    ctxs = inst["contexts"]
+    periods = {k: ctxs[c][0].split("/")[-1][:7] for k, c in (("current", "CurrentYearDuration"), ("prior", "Prior1YearDuration")) if c in ctxs}
+    facts, seen = [], set()
+    for f in inst["facts"]:
+        per, dims = ctxs.get(f["context"], (None, {}))
+        axes = {d.split(":")[-1] for d in dims}
+        if f["nil"] or f["value"] == "" or not f["unit"] or AXIS not in axes or axes - {AXIS, "ConsolidatedOrNonConsolidatedAxis"}:
+            continue
+        if not f["context"].startswith(("CurrentYear", "Prior1Year")):
+            continue
+        member = next(m for d, m in dims.items() if d.split(":")[-1] == AXIS)
+        el = f"{f['prefix']}:{f['name']}"
+        if (member, el, f["context"], f["value"]) in seen:
+            continue
+        seen.add((member, el, f["context"], f["value"]))
+        end = per.split("/")[-1]
+        facts.append({"member": member, "member_label": labels.get(member), "element": el,
+                      "element_label": None if el.split(":")[0] in ("jpcrp_cor", "jppfs_cor", "jpigp_cor") else labels.get(el),
+                      "section": section_of(el),
+                      "basis": "non_consolidated" if NONCON in f["context"] or not consolidated else "consolidated",
+                      "period": end[:7], "period_end": end, "value": f["value"], "unit": f["unit"], "decimals": f["decimals"],
+                      "context": f["context"], "doc_id": doc_id, "submitted": submitted})
+    notes = {}
+    for f in inst["facts"]:
+        if f["name"].startswith("NotesSegmentInformation") and f["name"].endswith("TextBlock") and f["context"].startswith("CurrentYear") and f["value"]:
+            basis = "non_consolidated" if (NONCON in f["context"] or "FinancialStatementsTextBlock" in f["name"] and "Consolidated" not in f["name"]) else "consolidated"
+            quote, tables = note_quote(_plain_text(f["value"]))
+            notes[basis] = {"present": True, "quote": quote, "segment_tables": tables}
+    return {"submitted": submitted, "periods": periods, "notes": notes}, facts
+
+
 def submitted_of(zip_path: Path) -> str:
     """提出日＝インスタンスのファイル名の末尾（…_<期末>_<連番>_<提出日>.xbrl）。"""
     with zipfile.ZipFile(zip_path) as z:
@@ -111,6 +168,8 @@ def ingest(doc_id: str) -> tuple[dict, int]:
             "accounting_standard": dei.get("AccountingStandardsDEI"),
             "fiscal_year_end": dei.get("CurrentFiscalYearEndDateDEI"), "submitted": submitted}
     store.write_company(meta, facts)
+    doc, seg = segment_parts(inst, labels, doc_id, submitted, meta["consolidated"])
+    store.write_segments(code, doc_id, {**doc, "accounting_standard": meta["accounting_standard"]}, seg)
     return meta, len(facts)
 
 

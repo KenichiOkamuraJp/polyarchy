@@ -8,6 +8,10 @@
 - basis＝consolidated／non_consolidated（連結と単体は別の系列）。
 - dims＝連結・個別以外の次元（第 1 便は空。セグメント別〔第 1b 便〕はここに区分を刻む）。
 - 同じ（element・basis・period・dims）が複数の書類に載る（5 期推移の再掲・遡及修正）＝全部持ち、参照は提出日が最新の書類の値。
+
+  data/store/segments/<EDINET コード>.json  セグメント別の値（第 1b 便）＝{"docs": {書類: 書類の属性}, "facts": [値の列]}
+    書類の属性＝{submitted, accounting_standard, periods: {current, prior}, notes: {basis: {present, quote}}}
+    値 1 行＝{member, member_label, element, element_label, section, basis, period, period_end, value, unit, decimals, context, doc_id, submitted}
 """
 from __future__ import annotations
 
@@ -50,3 +54,23 @@ def registry() -> dict[str, dict]:
 def facts_of(edinet_code: str) -> tuple[dict, ...]:
     fp = STORE / "facts" / f"{edinet_code}.json"
     return tuple(json.loads(fp.read_text())) if fp.exists() else ()
+
+
+def write_segments(edinet_code: str, doc_id: str, doc: dict, facts: list[dict]) -> None:
+    """セグメント別の値（第 1b 便）。同じ書類の再取込は置き換え。"""
+    (STORE / "segments").mkdir(parents=True, exist_ok=True)
+    fp = STORE / "segments" / f"{edinet_code}.json"
+    old = json.loads(fp.read_text()) if fp.exists() else {"docs": {}, "facts": []}
+    data = {"docs": {**old["docs"], doc_id: doc}, "facts": [f for f in old["facts"] if f["doc_id"] != doc_id] + facts}
+    fp.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+    segments_of.cache_clear()
+
+
+@lru_cache(maxsize=256)
+def segments_of(edinet_code: str) -> dict:
+    fp = STORE / "segments" / f"{edinet_code}.json"
+    return json.loads(fp.read_text()) if fp.exists() else {"docs": {}, "facts": []}
+
+
+def segment_codes() -> list[str]:
+    return sorted(p.stem for p in (STORE / "segments").glob("*.json"))

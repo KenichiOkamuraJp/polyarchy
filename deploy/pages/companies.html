@@ -20,7 +20,7 @@ a{color:var(--accent)}
 <nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/companies">companies（企業情報DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
 
 <h1>companies — 企業情報DB（Polyarchy）</h1>
-<p>更新日：2026-09-22</p>
+<p>更新日：2026-09-23</p>
 <p>日本の有価証券報告書（EDINET・金融庁）に書かれた企業の数値を、<strong>公表どおりの値・出典つき</strong>で Claude から参照するためのリモート MCP サーバです。
 「主張（政策提言）↔ 事実」の突き合わせの<strong>企業側の事実</strong>として作られており、<strong>該当する開示がなければ「ない」と返します</strong>（別の連結／単体の別・隣の項目・近い決算期の値で埋めません）。</p>
 <p class="note">出典：EDINET（金融庁）の有価証券報告書。本サービスは XBRL から値を抽出・加工して提供しています（公共データ利用規約 第 1.0 版）。値は各提出会社の開示に帰属し、本サービスは値を保証しません（原典で確認してください）。</p>
@@ -37,6 +37,7 @@ a{color:var(--accent)}
 <tr><th>ツール</th><th>何をするか</th><th>何を返さないか</th></tr>
 <tr><td><code>find_company</code></td><td>社名（一部・旧社名・英文社名でも可）・証券コード・EDINET コードから提出会社を同定</td><td>候補が複数あるときは 1 社に決めず、候補の一覧を返します</td></tr>
 <tr><td><code>lookup_company_facts</code></td><td>企業×項目×決算期（決算期末の <code>YYYY-MM</code>）の値を厳密参照。連結／単体の別・会計基準・要素・出典（書類管理番号・提出日・引用 1 行）つき</td><td>該当がなければ <code>found=false</code> と理由。派生値（利益率・前年比 等）は計算しません</td></tr>
+<tr><td><code>lookup_segments</code></td><td>企業×決算期のセグメント別の値を表ごと返す（区分×項目。セグメント情報の注記・従業員の状況・設備投資・研究開発の欄）。区分は会社が定義したラベルのまま・区分の種類（報告セグメント／調整額／全社／合計 等）つき</td><td>業種横断の区分や利益の物差しへの寄せ・区分の合計の計算。単一セグメント・記載の省略のときは <code>found=false</code> と会社の文 1 行。米国基準の会社はセグメント情報の注記が XBRL に無いため <code>found=false</code></td></tr>
 <tr><td><code>list_items</code></td><td>項目の語彙（キー・日本語の呼び名・対応する標準タクソノミの要素）</td><td>値</td></tr>
 </table>
 
@@ -45,6 +46,7 @@ a{color:var(--accent)}
 <li>「日立製作所の売上収益と親会社株主に帰属する当期純利益を、直近 5 期分、出典つきで表にして」</li>
 <li>「湖池屋の従業員数・平均年間給与・平均年齢・平均勤続年数の推移は？」</li>
 <li>「三菱ＵＦＪフィナンシャル・グループの売上高は？」（→ 銀行は「売上高」を開示していないため <code>found=false</code> が返り、代わりに開示している「経常収益」での引き直し方が案内されます）</li>
+<li>「日立製作所のセグメント別の売上収益と利益を、直近 2 期で比べて」（→ 区分は日立が定義した名前のまま、利益は日立が使う物差しのまま返ります）</li>
 </ol>
 
 <h2>値の見方</h2>
@@ -55,12 +57,13 @@ a{color:var(--accent)}
 <li>同じ決算期の値は後年の書類に再掲され、<strong>遡及修正で変わることがあります</strong>。既定は提出日が最新の書類の値で、他の書類の値は <code>source.other_documents</code> に並びます（<code>doc_id</code> で書類を指定できます）。</li>
 <li>IFRS の表と日本基準の表を併記する会社や、会計基準の移行年には、同じ項目に<strong>基準ごとの値</strong>が並びます。既定は書類が宣言する会計基準の値で、もう一方は <code>other_standards</code> に必ず添えられます。</li>
 <li>平均年齢・平均勤続年数を「年」と「月」に分けて開示する会社があります（<code>companion</code> に対の値。40 年と 5 月＝40 歳 5 か月）。</li>
+<li><strong>セグメント別</strong>（<code>lookup_segments</code>）の値は各書類に当期・前期の 2 期だけです。区分の足し算の関係は返しません＝合計を作るときは <code>kind</code> を見て、調整額・全社・合計・会社が定義した小計を二重に数えないでください。セグメント利益が営業利益・経常利益・事業利益のどれかは会社ごとに違います（<code>element</code> と <code>label</code> のまま）。</li>
 </ul>
 
 <h2 id="sources">取得元と利用条件</h2>
 <table>
 <tr><th>取得元</th><th>内容</th><th>規約</th><th>区分</th></tr>
-<tr><td>EDINET（金融庁）</td><td>有価証券報告書（「主要な経営指標等の推移」・従業員の状況）。EDINET API により取得</td><td><a href="https://disclosure2dl.edinet-fsa.go.jp/guide/static/disclosure/WZEK0030.html">EDINET 利用規約</a>（<a href="https://www.digital.go.jp/resources/open_data/public_data_license_v1.0">公共データ利用規約 第 1.0 版</a>）</td><td>○（出典の明記と加工の明記）</td></tr>
+<tr><td>EDINET（金融庁）</td><td>有価証券報告書（「主要な経営指標等の推移」・従業員の状況・セグメント情報）。EDINET API により取得。要素の日本語の呼び名は EDINET の公式 CSV の項目名</td><td><a href="https://disclosure2dl.edinet-fsa.go.jp/guide/static/disclosure/WZEK0030.html">EDINET 利用規約</a>（<a href="https://www.digital.go.jp/resources/open_data/public_data_license_v1.0">公共データ利用規約 第 1.0 版</a>）</td><td>○（出典の明記と加工の明記）</td></tr>
 </table>
 <p>出典表示の例：「出典：EDINET 有価証券報告書（○○株式会社・2026-06-20 提出・書類管理番号 S100XXXX）／XBRL から抽出」。応答の <code>source.citation</code> にそのまま使える 1 行が入っています。原文（有価証券報告書そのもの）は再配布していません。</p>
 

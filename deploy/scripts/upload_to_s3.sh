@@ -101,7 +101,7 @@ echo "[upload] stats データ同期 → s3://$BUCKET/$DATA_PREFIX/stats/ （reg
 "${AWS[@]}" s3 sync "$REPO_DIR/stats/data/" "s3://$BUCKET/$DATA_PREFIX/stats/" --region "$REGION" \
   --exclude "cache/*" --exclude "values_archive/*" --exclude "query_log/*" --exclude "*.bak"
 
-# companies（企業情報DB）のデータ＝S3 `data/companies/`。値の置き場 store/（約 200MB）＋評価問 eval/ を運ぶ（tar は */data を除外するため
+# companies（企業情報DB）のデータ＝S3 `data/companies/`。値の置き場 store/（約 340MB＝経営指標 約 200MB＋セグメント別 segments/ 約 130MB）＋評価問 eval/ を運ぶ（tar は */data を除外するため
 # git 追跡の eval/ も S3 経由）。cache/（原本 zip 約 3GB・取込時のみ使用）・verify/・logs/・query_log/（箱で生成する燃料）は運ばない。
 # 値の置き場が無い環境（companies を使わない導入団体）では何もしない＝S3 側を空にしない（--delete も付けない）。
 if [[ -f "$REPO_DIR/companies/data/store/companies.json" ]]; then

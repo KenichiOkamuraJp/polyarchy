@@ -18,7 +18,7 @@ import anyio  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 
-from companies.core import lookup, store  # noqa: E402
+from companies.core import lookup, segments, store  # noqa: E402
 from companies.core.items import ITEMS  # noqa: E402
 from polyarchy_common.capture import append_record  # noqa: E402
 
@@ -30,11 +30,13 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotent
 SERVER_INSTRUCTIONS = (
     "Polyarchy 企業情報DB(companies)。日本の有価証券報告書(EDINET・金融庁)の「主要な経営指標等の推移」と従業員の状況を、"
     "公表どおりの値で厳密参照する読み取り専用サービス(公開データのみ)。2層構造:発見層(find_company=企業の同定/list_items=項目の語彙)と"
-    "参照層(lookup_company_facts=値の完全一致参照)。値は XBRL に書かれた文字列のまま返す(換算・丸め・補完なし。比率は 0.444 の形・金額は円)。"
+    "参照層(lookup_company_facts=値の完全一致参照/lookup_segments=セグメント別の値を表ごと)。値は XBRL に書かれた文字列のまま返す(換算・丸め・補完なし。比率は 0.444 の形・金額は円)。"
     "連結と単体(提出会社)は別の系列で、どちらの値かを必ず返す。該当が無ければ found=false と理由を返し、別の連結/単体の別・隣の項目・近い決算期の値では埋めない"
     "(例=IFRS の会社は「売上高」ではなく「売上収益」(item=revenue)、持株会社・金融・建設などは「営業収益」「経常収益」「完成工事高」や"
     "会社が独自に定義した項目で開示している=net_sales が found=false のとき suggest に、その会社が最上段の収益として開示している項目と"
     "引き直し方が返る。alternatives にはその決算期に開示している全項目の一覧が返る)。"
+    "セグメント別(lookup_segments)は会社が定義した区分をその会社のラベルのまま返し、業種横断の区分や利益の物差しに寄せない"
+    "(セグメント利益が営業利益か経常利益か事業利益かは会社の定義=要素とラベルのまま)。"
     "各値には出典(書類管理番号・提出日・要素・context・URL・引用1行)が付く。派生値(利益率・前年比 等)は計算しない。"
     "値そのものは各提出会社の開示に帰属し、本サービスは値を保証しない(原典で確認すること)。"
 )
@@ -87,6 +89,27 @@ def lookup_company_facts(company: str, period: str, item: str | None = None, ele
     return r
 
 
+@mcp.tool(title="セグメント別の値を参照する", annotations=READ_ONLY)
+def lookup_segments(company: str, period: str, basis: str | None = None, doc_id: str | None = None) -> dict:
+    """企業×決算期のセグメント別の値を、有価証券報告書に書かれたとおりに表ごと返す(完全一致参照)。
+
+    company=EDINET コード・証券コード・社名。period=決算期末の YYYY-MM(各書類に当期・前期の 2 期だけ載る)。
+    basis=consolidated/non_consolidated(省くと、連結を作成している会社は連結)。doc_id=書類管理番号(省くと提出日が最新の書類)。
+    返り値=segments(区分の一覧=member〔要素 ID〕・label〔会社のラベル〕・kind)・facts(区分×要素の値=member・element・label・
+    section〔segment_information=セグメント情報の注記/employees=従業員の状況/capex=設備投資/research_and_development=研究開発〕・
+    value〔文字列のまま〕・unit・decimals)・source。
+    区分は会社の定義のまま(業種横断の区分に寄せない)。kind=company_defined/reportable_total/other/reconciling/corporate/
+    unallocated_and_elimination/total。区分の足し算の関係は返さない=合計を作るときは kind を見て調整額・全社・合計・小計を二重に数えない。
+    利益の物差し(営業利益・経常利益・事業利益・セグメント利益 等)は会社ごとに違う=element と label のまま扱う。
+    無ければ found=false と reason(no_segment_figures=セグメント情報の注記に数値が無い〔単一セグメント・記載の省略 等〕→ quote に会社の文 1 行 /
+    not_tagged=米国基準の会社で注記が XBRL に無い〔本文の表だけ〕/ no_consolidated_statements / out_of_range / bad_period /
+    unknown_company / ambiguous_company)。数値が無いときもタグのある欄(従業員の状況 等)は other_sections に返る。
+    """
+    r = segments.lookup_segments(company, period, basis=basis, doc_id=doc_id)
+    _capture("lookup_segments", {"company": company, "period": period, "basis": basis, "doc_id": doc_id}, r)
+    return r
+
+
 @mcp.tool(title="項目の語彙を見る", annotations=READ_ONLY)
 def list_items() -> dict:
     """lookup_company_facts の item に使えるキーの一覧(キー・日本語の呼び名・対応する標準タクソノミの要素)。
@@ -111,7 +134,7 @@ def main() -> int:
     if a.http:
         from polyarchy_common.mcp_http import serve_streamable_http
         serve_streamable_http(mcp, host=a.host, port=a.port, path=os.getenv("MCP_HTTP_PATH", "/mcp"),
-                              tools_desc="find_company / lookup_company_facts / list_items", logger_name="polyarchy.companies",
+                              tools_desc="find_company / lookup_company_facts / lookup_segments / list_items", logger_name="polyarchy.companies",
                               health_check=_health)
         return 0
     log.info("companies MCP（stdio）起動＝収録 %d 社", len(store.registry()))

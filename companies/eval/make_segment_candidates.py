@@ -77,7 +77,9 @@ def candidates(doc_id: str) -> tuple[dict, list[dict]]:
         member = seg[0]
         q = {"member": member, "member_kind": kind_of(member), "element": el, "section": section_of(el),
              "value": value, "unit": unit, "context": ctx,
-             "basis": "non_consolidated" if NONCON in ctx else "consolidated", "period": period.split("/")[-1][:7]}
+             # 連結・個別の軸が無い値は、連結を作成していない会社なら提出会社（単体）の値（DEI で判別）
+             "basis": "non_consolidated" if NONCON in ctx or dei.get("WhetherConsolidatedFinancialStatementsArePreparedDEI") != "true"
+                      else "consolidated", "period": period.split("/")[-1][:7]}
         lab = labels.get(member)
         if q["member_kind"] == "company_defined" and lab and re.sub(r"\s|　", "", lab) in body:
             q["member_label"] = lab
@@ -137,7 +139,8 @@ def negatives() -> list[dict]:
         return {"edinet_code": c["edinet_code"], "name": c["name"]}, c["fiscal_year_end"][:7]
 
     out = []
-    for sec, quote in (("7974", "単一"), ("4502", "単一"), ("2130", "単一"), ("8558", "のみ")):
+    # 8418・8360＝単一セグメントでも従業員の状況を 2 区分（銀行業・その他）でタグ付けする会社＝区分の数だけで not_tagged にしない（2026-09-23）
+    for sec, quote in (("7974", "単一"), ("4502", "単一"), ("2130", "単一"), ("8558", "のみ"), ("8418", "単一"), ("8360", "報告セグメントが１つ")):
         company, per = co(sec)
         out.append({"id": f"{company['edinet_code']}-no_segment_figures-{per}", "company": company, "period": per, "basis": None,
                     "reason": "no_segment_figures", "quote_contains": quote,
@@ -147,6 +150,17 @@ def negatives() -> list[dict]:
         out.append({"id": f"{company['edinet_code']}-not_tagged-{per}", "company": company, "period": per, "basis": None,
                     "reason": "not_tagged", "expect_other_sections": sec != "8604",
                     "note": "米国基準＝セグメント情報の注記が XBRL に無い（本文の表だけ）。従業員の状況などタグのある欄は other_sections で返す"})
+    for sec in ("5632", "6439"):
+        company, per = co(sec)
+        out.append({"id": f"{company['edinet_code']}-not_tagged-jgaap-{per}", "company": company, "period": per, "basis": None,
+                    "reason": "not_tagged", "expect_other_sections": True,
+                    "note": "日本基準でも、セグメント情報の注記の表に数値のタグが無い書類がある（2026-09-23 母集団で発見＝三菱製鋼・中日本鋳工）。"
+                            "従業員の状況等では 2 つ以上の区分をタグ付けしている＝単一セグメントではない。no_segment_figures（単一・省略）と取り違えない"})
+    company, per = co("2792")
+    out.append({"id": f"{company['edinet_code']}-no_segment_figures-changed-{per}", "company": company, "period": per, "basis": None,
+                "reason": "no_segment_figures", "quote_contains": "単一報告セグメントへ変更",
+                "note": "当期から単一セグメントへ変更した会社（前期の書類には 2 区分の表がある）。当期の表のタグ漏れと取り違えない＝会社の文で示す"
+                        "（2026-09-23 に評価問の側が not_tagged と誤って立てていた）"})
     company, per = co("2204")
     out += [
         {"id": f"{company['edinet_code']}-consolidated-of-nonconsolidated", "company": company, "period": per, "basis": "consolidated",

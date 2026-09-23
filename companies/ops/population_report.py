@@ -2,7 +2,8 @@
 
   python -m companies.ops.population_report            # 標準出力に Markdown
 見るもの：会計基準と連結の有無／最上段の収益をどのキーで開示しているか／同じ決算期に同じキーの要素が並ぶ会社／
-語彙に無い標準要素（足す候補）／書類間で値が変わった点（遡及修正）／決算期の間隔が 12 か月でない会社／社名の衝突。
+語彙に無い標準要素（足す候補）／書類間で値が変わった点（遡及修正）／決算期の間隔が 12 か月でない会社／社名の衝突／
+セグメント別（第 1b 便）＝最新の書類で found になる会社・理由の内訳・ラベルの無い区分と標準要素・同じ決算期の値が書類で変わった会社。
 """
 from __future__ import annotations
 
@@ -70,8 +71,40 @@ def main() -> int:
     out += [f"- {name}: {ends}" for name, ends in odd[:15]]
     out += ["", f"## 社名の衝突（正規化後に同名）：{sum(1 for c in names.values() if c > 1)} 組", ""]
     out += [f"- {k}: {c}" for k, c in names.most_common(10) if c > 1]
+    out += segment_report(reg)
     print("\n".join(out))
     return 0
+
+
+def segment_report(reg: dict) -> list[str]:
+    from companies.core.segments import STANDARD_PREFIXES, kind_of, lookup_segments, standard_labels
+    reasons, members, unlabeled_el, regrouped = Counter(), Counter(), Counter(), []
+    labels = standard_labels()
+    for code, co in reg.items():
+        r = lookup_segments(code, co["fiscal_year_end"][:7])
+        reasons["found" if r.get("found") else r.get("reason")] += 1
+        if r.get("found"):
+            members.update(s["kind"] for s in r["segments"])
+        data = store.segments_of(code)
+        for f in data["facts"]:
+            if f["element"].split(":")[0] in STANDARD_PREFIXES and f["element"] not in labels:
+                unlabeled_el[f["element"]] += 1
+        pts = defaultdict(dict)
+        for f in data["facts"]:
+            pts[(f["member"], f["element"], f["basis"], f["period"])][f["doc_id"]] = f["value"]
+        ch = [k for k, v in pts.items() if len(set(v.values())) > 1]
+        if ch:
+            regrouped.append((co["name"], len(ch)))
+    n = len(reg)
+    out = ["", "## セグメント別（第 1b 便）：最新の決算期で引いた結果", ""]
+    out += [f"- {k}: {c}（{c / n:.1%}）" for k, c in reasons.most_common()]
+    out += ["", f"- 区分の種類（found の会社）：{dict(members.most_common())}",
+            f"- 会社が定義した区分でラベルが空：{sum(1 for code in store.segment_codes() for f in store.segments_of(code)['facts'] if kind_of(f['member']) == 'company_defined' and not f['member_label'])} 値",
+            "", f"## セグメント：ラベルの無い標準要素（公式 CSV を足すと埋まる）：{len(unlabeled_el)} 要素", ""]
+    out += [f"- {el}: {c} 値" for el, c in unlabeled_el.most_common(20)]
+    out += ["", f"## セグメント：同じ決算期の値が書類で変わった会社（組み替え・遡及修正）：{len(regrouped)} 社", ""]
+    out += [f"- {name}: {c} 点" for name, c in regrouped[:15]]
+    return out
 
 
 if __name__ == "__main__":
