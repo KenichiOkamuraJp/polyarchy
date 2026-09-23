@@ -38,6 +38,11 @@ def check_positive(q: dict, lookup) -> str | None:
         return f"要素が不一致: {r.get('element')!r}"
     if (r.get("source") or {}).get("doc_id") != q["source"]["doc_id"]:
         return f"出所の書類が不一致: {(r.get('source') or {}).get('doc_id')!r}"
+    # 各社の拡張要素は会社のラベルつきで返す契約（要素 ID の英語名だけでは利用側が意味を推せない・2026-09-23 目視で欠落を発見）
+    if not q["expected_element"].startswith("jpcrp_cor:") and not r.get("label"):
+        return "拡張要素のラベル（label）が空"
+    if "expected_label" in q and r.get("label") != q["expected_label"]:
+        return f"ラベルが不一致: {r.get('label')!r} ≠ {q['expected_label']!r}"
     if "expected_companion" in q and (r.get("companion") or {}).get("value", "（欄なし）") != q["expected_companion"]:
         return f"対の値（年／月）が不一致: {r.get('companion')!r} ≠ {q['expected_companion']!r}"
     if q.get("expect_other_standards") and not r.get("other_standards"):
@@ -71,6 +76,17 @@ def check_negative(q: dict, lookup) -> str | None:
     return None
 
 
+def unlabeled_extensions() -> list[str]:
+    """値の置き場の全件で、ラベルが空の拡張要素（会社・要素）。問の外の会社も含めて 0 件であること。"""
+    from companies.core import store
+    out = set()
+    for f in (store.STORE / "facts").glob("*.json"):
+        for r in json.loads(f.read_text()):
+            if not r["element"].startswith("jpcrp_cor:") and not r.get("label"):
+                out.add(f"{f.stem} {r['element']}")
+    return sorted(out)
+
+
 def main() -> int:
     pos, neg = _load("exact_match.jsonl"), _load("fail_closed.jsonl")
     try:
@@ -87,6 +103,11 @@ def main() -> int:
                 err = f"例外: {e!r}"
             if err:
                 fails.append((q["id"], err))
+    unlabeled = unlabeled_extensions()
+    for u in unlabeled[:10]:
+        print(f"  FAIL ラベルが空の拡張要素: {u}")
+    if unlabeled:
+        fails.append(("store", f"ラベルが空の拡張要素 {len(unlabeled)} 件"))
     for i, e in fails[:40]:
         print(f"  FAIL {i}: {e}")
     print(f"{'PASS' if not fails else 'FAIL'}: 正例 {len(pos)}・負例 {len(neg)}・失敗 {len(fails)}")

@@ -39,18 +39,39 @@ def wanted(prefix: str, name: str) -> bool:
     return prefix.startswith("jpcrp030000-asr_") and (name.endswith("KeyFinancialData") or "SummaryOfBusinessResults" in name)
 
 
+def _attr(attrs: str, name: str) -> str | None:
+    m = re.search(rf'\b{name}="([^"]*)"', attrs)
+    return m.group(1) if m else None
+
+
 def extension_labels(zip_path: Path) -> dict[str, str]:
-    """各社の拡張要素の日本語ラベル（標準ラベル）＝zip 内 `*_lab.xml`。"""
+    """各社の拡張要素の日本語ラベル（標準ラベル）＝zip 内 `*_lab.xml`。
+
+    ラベルリンクを loc（要素の id）→ labelArc → label（role=label・ja）の順にたどる。xlink:label の名前は書類ごとに任意
+    （`<接頭辞>_<要素>_label` の会社と `label_<要素>` の会社がある＝2026-09-23 に名前の決め打ちで 243 社のラベルが空だった）。
+    """
     with zipfile.ZipFile(zip_path) as z:
         names = [n for n in z.namelist() if n.startswith("XBRL/PublicDoc/") and n.endswith("_lab.xml")]
         text = z.read(names[0]).decode("utf-8") if names else ""
-    out = {}
-    for m in re.finditer(r'<link:label\b([^>]*)>([^<]*)</link:label>', text):
+    locs, arcs, labels = {}, {}, {}
+    for m in re.finditer(r"<link:loc\b([^>]*)/?>", text):
+        href, name = _attr(m.group(1), "xlink:href"), _attr(m.group(1), "xlink:label")
+        if href and name and "#" in href:
+            prefix, _, local = href.split("#", 1)[1].rpartition("_")
+            locs[name] = f"{prefix}:{local}"
+    for m in re.finditer(r"<link:labelArc\b([^>]*)/?>", text):
+        src, dst = _attr(m.group(1), "xlink:from"), _attr(m.group(1), "xlink:to")
+        if src and dst:
+            arcs.setdefault(src, []).append(dst)
+    for m in re.finditer(r"<link:label\b([^>]*)>([^<]*)</link:label>", text):
         attrs, label = m.groups()
-        lab = re.search(r'xlink:label="([^"]+?)_label"', attrs)
-        if lab and 'role/label"' in attrs and 'xml:lang="ja"' in attrs:
-            prefix, _, local = lab.group(1).rpartition("_")
-            out[f"{prefix}:{local}"] = label.strip()
+        if _attr(attrs, "xml:lang") == "ja" and (_attr(attrs, "xlink:role") or "").endswith("/role/label"):
+            labels[_attr(attrs, "xlink:label")] = label.strip()
+    out = {}
+    for name, el in locs.items():
+        found = next((labels[d] for d in arcs.get(name, []) if d in labels), None)
+        if found:
+            out[el] = found
     return out
 
 

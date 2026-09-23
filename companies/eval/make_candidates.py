@@ -12,13 +12,16 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import hashlib
+import html as html_mod
 import io
 import json
+import re
 import sys
 import zipfile
 
 from companies.core.items import COMPANION, ELEMENT_TO_KEY, ITEMS, TOP_LINE, standard_of
 from companies.ingest import verify_xbrl as v
+from companies.ingest.edinet import extension_labels
 
 EVAL = v.DATA / "eval"
 PICK_CTX = ("CurrentYear", "Prior2Year", "Prior4Year")  # 最新・中間・5 期推移の端
@@ -37,14 +40,36 @@ def official_csv(doc_id: str) -> list[list[str]]:
     return list(csv.reader(io.StringIO(z.read(name).decode("utf-16")), delimiter="\t"))[1:]
 
 
+def body_text(zp) -> str:
+    """人が読む本文（第一部 第 1 企業の概況＝`0101010_honbun_*.htm`）の文字だけ＝タグと空白を除く。"""
+    with zipfile.ZipFile(zp) as z:
+        names = [n for n in z.namelist() if n.startswith("XBRL/PublicDoc/0101010_") and n.endswith(".htm")]
+        html = "".join(z.read(n).decode("utf-8") for n in names)
+    return re.sub(r"\s|&nbsp;|　", "", html_mod.unescape(re.sub(r"<[^>]+>", "", html)))
+
+
+def expected_label(c: dict, el: str) -> str | None:
+    """拡張要素のラベルの期待値＝lab.xml からたどったラベルが本文の表にも同じ文字列で出てくるときだけ（2 経路一致）。
+    公式 CSV の「項目名」は拡張要素で空になる書類がある（2026-09-23 実測＝ソニー・トヨタ）＝ラベルの第 2 経路には使えない。"""
+    label = c["labels"].get(el)
+    if not label:
+        return None
+    if re.sub(r"\s|　", "", label) not in c["body"]:
+        print(f"  ラベルが本文に見当たらない＝期待値にしない: {c['name']} {el} {label!r}", file=sys.stderr)
+        return None
+    return label
+
+
 def load(doc_id: str) -> dict:
-    inst = v.parse_instance(v.fetch_zip(doc_id))
+    zp = v.fetch_zip(doc_id)
+    inst = v.parse_instance(zp)
     dei = {f["name"]: f["value"] for f in inst["facts"] if f["prefix"] == "jpdei_cor"}
     mine = {(f"{f['prefix']}:{f['name']}", f["context"]): f["value"] for f in inst["facts"] if not f["nil"]}
     rows = {}
     for el, label, ctx, _rel, _cn, _pt, unit_id, _unit, value in official_csv(doc_id):
         rows[(el, ctx)] = {"label": label, "unit": unit_id, "value": value}
-    return {"doc_id": doc_id, "edinet_code": dei.get("EDINETCodeDEI"), "name": dei.get("FilerNameInJapaneseDEI"),
+    return {"labels": extension_labels(zp), "body": body_text(zp),
+            "doc_id": doc_id, "edinet_code": dei.get("EDINETCodeDEI"), "name": dei.get("FilerNameInJapaneseDEI"),
             "consolidated": dei.get("WhetherConsolidatedFinancialStatementsArePreparedDEI") == "true",
             "standard": dei.get("AccountingStandardsDEI"), "contexts": inst["contexts"], "mine": mine, "rows": rows}
 
@@ -81,6 +106,8 @@ def positive(c: dict, el: str, ctx: str, *, by_element: bool = False) -> dict | 
          "checked_by": "edinet_csv+xbrl（2 経路一致・人手の目視は未）", "checked_at": TODAY}
     if std:
         q["accounting_standard"] = std
+    if not el.startswith("jpcrp_cor:") and (label := expected_label(c, el)):
+        q["expected_label"] = label
     if key in COMPANION and not by_element:  # 年と月に分けて開示する会社＝対の値が必ず添えられること（無ければ null）
         pair = [c["rows"][(f"jpcrp_cor:{e}", ctx)]["value"] for e in ITEMS[COMPANION[key]][1] if (f"jpcrp_cor:{e}", ctx) in c["rows"]]
         q["expected_companion"] = next((x for x in pair if x not in ("", "－")), None)
