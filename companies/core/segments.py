@@ -26,9 +26,14 @@ KIND = {"ReportableSegmentsMember": "reportable_total", "ReconcilingItemsMember"
         "OperatingSegmentsNotIncludedInReportableSegmentsAndOtherRevenueGeneratingBusinessActivitiesMember": "other",
         "UnallocatedAmountsAndEliminationMember": "unallocated_and_elimination",
         "OtherReportableSegmentsMember": "other_reportable", "OtherOperatingSegmentsAxisMember": "other"}
-KIND_NOTE = ("kind＝company_defined（会社が定義した区分。小計の区分もあり得る）／reportable_total（報告セグメント計）／other（その他）／"
-             "reconciling（調整額）／corporate（全社）／unallocated_and_elimination（消去又は全社）／total（合計）。"
-             "区分の足し算の関係は返さない＝合計を作るときは kind を見て二重に数えない")
+# kind の説明＝標準の区分はタクソノミの標準ラベル（冗長ラベル）の意味。会社が定義した区分は会社の要素の置き方が一様でない
+# （2026-09-23 母集団で実測＝会社の区分 9,675 件は報告セグメントの下・約 115 件は外で、調整額と事業セグメントが混在）＝名前や位置から
+# 調整額と判定しない。company_defined のままとし、事業セグメントとは限らないことを説明で示す
+KIND_NOTE = ("kind＝company_defined（会社が定義した区分。事業セグメントとは限らない＝会社独自の調整額・消去・全社・小計の区分もこの kind で返る"
+             "＝何の区分かは label で読む）／reportable_total（報告セグメント〔計〕）／other_reportable（その他の報告セグメント）／"
+             "other（報告セグメントに含まれない事業セグメント等＝その他）／reconciling（調整項目＝調整額）／corporate（全社〔共通〕）／"
+             "unallocated_and_elimination（全社・消去）／total（事業セグメント合計）／other_standard（上記以外の標準の区分）。"
+             "区分の足し算の関係は返さない＝合計を作るときは kind と label を見て調整額・全社・合計・小計を二重に数えない")
 LABELS = Path(__file__).resolve().parent / "segment_labels.json"
 
 
@@ -44,7 +49,8 @@ def kind_of(member: str) -> str:
 
 @lru_cache(maxsize=1)
 def standard_labels() -> dict[str, str]:
-    """標準要素の公式ラベル（公式 CSV の「項目名」から作った表＝ops/build_segment_labels.py）。会社が定義した要素は lab.xml のラベル。"""
+    """標準要素の公式ラベル（要素＝公式 CSV の「項目名」・区分＝EDINET タクソノミの標準ラベル。表は ops/build_segment_labels.py）。
+    会社が定義した要素・区分は lab.xml のラベル（標準の区分でも会社がラベルを付けていればそちら）。"""
     return json.loads(LABELS.read_text()) if LABELS.exists() else {}
 
 
@@ -116,7 +122,8 @@ def lookup_segments(company: str, period: str, *, basis: str | None = None, doc_
     hits = [f for f in rows if f["doc_id"] == use]
     seen = {}
     for f in hits:
-        seen.setdefault(f["member"], {"member": f["member"], "label": f["member_label"], "kind": kind_of(f["member"])})
+        seen.setdefault(f["member"], {"member": f["member"], "label": f["member_label"] or standard_labels().get(f["member"]),
+                                      "kind": kind_of(f["member"])})
     return {"found": True, "company": co, "basis": basis, "period": period,
             "segments": sorted(seen.values(), key=lambda s: (s["kind"] != "company_defined", s["member"])),
             "facts": [_fact(f) for f in hits],
@@ -131,10 +138,10 @@ def lookup_segments(company: str, period: str, *, basis: str | None = None, doc_
 
 
 def unlabeled_members() -> list[str]:
-    """値の置き場の全件で、会社が定義した区分のうちラベルが空のもの（0 件であること）。"""
+    """値の置き場の全件で、ラベルが空の区分（会社のラベルもタクソノミの標準ラベルも無いもの・0 件であること）。"""
     out = set()
     for code in store.segment_codes():
         for f in store.segments_of(code)["facts"]:
-            if kind_of(f["member"]) == "company_defined" and not f["member_label"]:
+            if not f["member_label"] and not standard_labels().get(f["member"]):
                 out.add(f"{code} {f['member']}")
     return sorted(out)

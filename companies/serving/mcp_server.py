@@ -95,11 +95,13 @@ def lookup_segments(company: str, period: str, basis: str | None = None, doc_id:
 
     company=EDINET コード・証券コード・社名。period=決算期末の YYYY-MM(各書類に当期・前期の 2 期だけ載る)。
     basis=consolidated/non_consolidated(省くと、連結を作成している会社は連結)。doc_id=書類管理番号(省くと提出日が最新の書類)。
-    返り値=segments(区分の一覧=member〔要素 ID〕・label〔会社のラベル〕・kind)・facts(区分×要素の値=member・element・label・
+    返り値=segments(区分の一覧=member〔要素 ID〕・label〔会社のラベル。標準の区分で会社のラベルが無ければタクソノミの標準ラベル〕・kind)・facts(区分×要素の値=member・element・label・
     section〔segment_information=セグメント情報の注記/employees=従業員の状況/capex=設備投資/research_and_development=研究開発〕・
     value〔文字列のまま〕・unit・decimals)・source。
-    区分は会社の定義のまま(業種横断の区分に寄せない)。kind=company_defined/reportable_total/other/reconciling/corporate/
-    unallocated_and_elimination/total。区分の足し算の関係は返さない=合計を作るときは kind を見て調整額・全社・合計・小計を二重に数えない。
+    区分は会社の定義のまま(業種横断の区分に寄せない)。kind=company_defined/reportable_total/other_reportable/other/reconciling/
+    corporate/unallocated_and_elimination/total/other_standard(意味は返り値の kind_note)。company_defined は事業セグメントとは限らない
+    (会社独自の調整額・消去・全社・小計もこの kind)=何の区分かは label で読む。区分の足し算の関係は返さない=合計を作るときは
+    kind と label を見て調整額・全社・合計・小計を二重に数えない。
     利益の物差し(営業利益・経常利益・事業利益・セグメント利益 等)は会社ごとに違う=element と label のまま扱う。
     無ければ found=false と reason(no_segment_figures=セグメント情報の注記に数値が無い〔単一セグメント・記載の省略 等〕→ quote に会社の文 1 行 /
     not_tagged=米国基準の会社で注記が XBRL に無い〔本文の表だけ〕/ no_consolidated_statements / out_of_range / bad_period /

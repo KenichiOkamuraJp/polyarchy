@@ -116,6 +116,12 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
                        "持株会社・金融・建設・小売などは「売上高」ではなく営業収益・経常収益・完成工事高・各社が定義した項目で開示する。")
                 guide = {"suggest": [{**a, "how": (f"item={a['item']}" if a["item"] else f"element={a['element']}") + " で引き直す"} for a in sug],
                          "suggest_note": why + "この会社が最上段の収益として開示しているのは suggest の項目（別の概念＝「売上高」として扱わない）"}
+        if element is not None:  # 接頭辞（名前空間）違い＝要素 ID の完全一致ではないので値は返さない。名前が一致する要素が 1 つだけなら案内する
+            local = element.rpartition(":")[2]
+            same = [a for a in alts if a["element"].rpartition(":")[2] == local and a["element"] != element]
+            if len(same) == 1:
+                guide = {"suggest": [{**same[0], "how": f"element={same[0]['element']} で引き直す"}],
+                         "suggest_note": "element は接頭辞（名前空間）つきの要素 ID の完全一致で引く。接頭辞を除いた名前が一致する要素がこの 1 つだけある"}
         return _miss("item_not_disclosed", company=co, basis=basis, period=period, **guide,
                      disclosed_in_other_basis=any(f["element"] in wanted and f["basis"] == other and f["period"] == period for f in facts),
                      alternatives=alts,

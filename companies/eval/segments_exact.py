@@ -6,7 +6,8 @@
 判定に使う参照層の契約（実装は `companies.core.segments`・未実装のあいだは全問 FAIL＝docs/第1b便_計画.md §3）：
   lookup_segments(company: str, period: str, *, basis: str|None = None, doc_id: str|None = None)
     -> {"found": True, "basis": str, "period": str,
-        "segments": [{"member": 要素 ID, "label": str|None, "kind": str}],       # kind＝company_defined／reconciling／corporate／total 等
+        "segments": [{"member": 要素 ID, "label": str, "kind": str}],            # kind＝company_defined／reconciling／corporate／total 等（全種類を kind_note で説明）
+        "kind_note": str,
         "facts": [{"member", "element", "label", "section", "value", "unit", "decimals", "context"}],
         "source": {"doc_id", "submitted", "url", "citation", "other_documents"}, "license": {...}}
     -> {"found": False, "reason": str, "quote": str|None, "other_sections": [...], ...}
@@ -50,10 +51,19 @@ def check_positive(q: dict, lookup) -> str | None:
         return f"区分の一覧（segments）に {e['member']} が無い"
     if seg.get("kind") != e["member_kind"]:
         return f"区分の種類が不一致: {seg.get('kind')!r} ≠ {e['member_kind']!r}"
-    if e["member_kind"] == "company_defined" and not seg.get("label"):
-        return "会社が定義した区分のラベルが空"
+    # ラベルは区分の種類を問わず空にしない＝会社が定義した区分は会社のラベル・標準の区分は会社のラベルが無ければタクソノミの標準ラベル
+    # （2026-09-23 staging で実測＝標準の区分の label が null だった）
+    if not seg.get("label"):
+        return f"区分のラベルが空（kind={seg.get('kind')}）"
     if "member_label" in e and seg.get("label") != e["member_label"]:
         return f"区分のラベルが不一致: {seg.get('label')!r} ≠ {e['member_label']!r}"
+    # 返した kind はすべて kind_note に説明がある（列挙に無い kind を返さない＝2026-09-23 staging で other_reportable が列挙から漏れていた）
+    note = r.get("kind_note") or ""
+    undocumented = sorted({s.get("kind") for s in r.get("segments", []) if f"{s.get('kind')}（" not in note})
+    if undocumented:
+        return f"kind_note に説明の無い kind: {undocumented}"
+    if "kind_note_contains" in q and q["kind_note_contains"] not in note:
+        return f"kind_note に {q['kind_note_contains']!r} が無い"
     if (r.get("source") or {}).get("doc_id") != q["doc_id"]:
         return f"出所の書類が不一致: {(r.get('source') or {}).get('doc_id')!r}"
     return None

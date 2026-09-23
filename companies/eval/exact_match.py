@@ -54,7 +54,7 @@ def check_positive(q: dict, lookup) -> str | None:
 
 def check_negative(q: dict, lookup) -> str | None:
     who = q["company"]["edinet_code"] or q["company"]["name"]
-    r = lookup(who, item=q["item"], element=None, period=q["period"], basis=q.get("basis"))
+    r = lookup(who, item=q.get("item"), element=q.get("element"), period=q["period"], basis=q.get("basis"))
     if r.get("found"):
         return f"値を返した: {r.get('value')!r}（期待＝not_found・{q['reason']}）"
     if r.get("value") not in (None, ""):

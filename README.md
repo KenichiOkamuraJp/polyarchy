@@ -91,7 +91,7 @@ polyarchy/
 
 ## 運用（人手の箱操作ゼロ・2026-09-03〜）
 
-- **配布**＝`bash deploy/scripts/release.sh <env>`（ゲート 9 本全 PASS のときだけ S3 へ upload → マニフェスト）。提言の定型更新は `update.sh`、燃料の週次トリアージは `triage.sh`。
+- **配布**＝`bash deploy/scripts/release.sh <env>`（ゲート 9 本〔companies を有効にした環境は 13 本〕全 PASS のときだけ S3 へ upload → マニフェスト）。提言の定型更新は `update.sh`、燃料の週次トリアージは `triage.sh`。
 - **箱**＝15 分毎の自動適用（コード tar 再展開・データ同期・smoke・**失敗時は旧版へ自動切り戻し**）・毎日の更新チェック・毎時のダッシュボード（S3 `ops/dashboard/`）・アラーム→メール。
 - **CI 化（計画）**＝ゲートを公開リポジトリの PR／main に紐づけ（GitHub Actions）、release も CI から行う＝運用者の仕事は「PR をマージ」になる。段階と現在地＝[docs/運用設計.md](docs/運用設計.md) §2.5。
 - 手順＝[deploy/RUNBOOK_OPS.md](deploy/RUNBOOK_OPS.md) §5・設計＝[docs/運用設計.md](docs/運用設計.md) §0/§2.4・監査＝[docs/導入団体側_監査ガイド.md](docs/導入団体側_監査ガイド.md) §4b。
@@ -123,7 +123,7 @@ Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃＝v5 データは S3 `d
 
 | ゲート | 基準 |
 |---|---|
-| `python -m companies.eval.exact_match` | **原典完全一致**（`companies/data/eval/*.jsonl`）＝正例・負例とも全件 PASS（2026-09-22 時点 正例 371／負例 36。期待値は EDINET の公式 CSV と自前パーサの 2 経路一致。問は書類を固定して引く）＋**セグメント別（第 1b 便・`segments_exact` を続けて判定）**＝正例・負例とも全件 PASS（2026-09-23 時点 正例 120／負例 17）・値の置き場の全件で会社が定義した項目・区分のラベルが空の値 0 |
+| `python -m companies.eval.exact_match` | **原典完全一致**（`companies/data/eval/*.jsonl`）＝正例・負例とも全件 PASS（2026-09-23 時点 正例 371／負例 37。期待値は EDINET の公式 CSV と自前パーサの 2 経路一致。問は書類を固定して引く）＋**セグメント別（第 1b 便・`segments_exact` を続けて判定）**＝正例・負例とも全件 PASS（2026-09-23 時点 正例 129／負例 17）・値の置き場の全件で会社が定義した項目のラベルと区分のラベル（標準の区分は会社のラベルが無ければタクソノミの標準ラベル）が空の値 0・返した kind はすべて `kind_note` に説明がある |
 | `python -m companies.eval.find_quality` | 発見層（企業の同定）の到達率＝全問 PASS（2026-09-21 時点 20 問＝旧社名・表記ゆれ・候補が複数のときは 1 社に決めない） |
 | `python -m companies.eval.test_core` | 語彙と評価問の整合・問数の下限（ネットワーク不要） |
 | `python -m companies.eval.mcp_smoke` | MCP 疎通・層公開固定・fail-closed・stdout クリーン |
