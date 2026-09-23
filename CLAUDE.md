@@ -37,7 +37,7 @@ pip install -e ".[recommendations,stats]"          # ローカル（1 env に全
 python -m recommendations.eval.eval --retrieval-only --eval-set both   # ゲート（基準は README）
 python -m stats.eval.exact_match
 python -m polyarchy_common.tests.test_common
-bash deploy/scripts/release.sh <env>                # ゲート 9 本→S3 配布→箱が 15 分以内に自動適用（失敗時は自動切り戻し）
+bash deploy/scripts/release.sh <env>                # ゲート 9 本（companies 有効時は 13 本）→S3 配布→箱が 15 分以内に自動適用（失敗時は自動切り戻し）
 ```
 
 - ★ `release.sh` は**依存の入った Python 環境を PATH の先頭に通して**実行する（素の `python3` だと llama_index 不在で即 FAIL）。

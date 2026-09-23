@@ -9,7 +9,7 @@
 #   ② collect --skip-existing（新着のある団体のみ。keidanren は今年＋昨年を対象）
 #   ③ policy_tagger（分野タグ・文書性格の追い判定＝Anthropic API を使用。recommendations/.env に鍵）
 #   ④ qdrant_ingest ingest（doc 単位増分・冪等。ローカル qdrant-dev 起動が前提）
-#   ⑤ release.sh <env>（ゲート 9 本全 PASS のときだけ配布＝FAIL なら箱には何も起きない）
+#   ⑤ release.sh <env>（ゲート 9 本〔companies 有効時は 13 本〕全 PASS のときだけ配布＝FAIL なら箱には何も起きない）
 #
 # 安全設計＝失敗の最悪ケースは「リリースが起きない」（fail-closed）。--no-release で⑤の手前まで。
 # ★catalog.csv（git 追跡）が変わる＝実行後に差分をレビューしてコミットする（開発者 or 運用者・下記に表示）。
@@ -71,5 +71,5 @@ if [[ "$NO_RELEASE" == "--no-release" ]]; then
   exit 0
 fi
 
-say "⑤ リリース（ゲート 9 本 → 全 PASS のときだけ配布・箱は自動適用）"
+say "⑤ リリース（ゲート 9〜13 本 → 全 PASS のときだけ配布・箱は自動適用）"
 bash "$SCRIPT_DIR/release.sh" "$ENV_NAME"

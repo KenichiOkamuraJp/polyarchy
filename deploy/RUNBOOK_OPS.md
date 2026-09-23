@@ -232,14 +232,16 @@ COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.qdrant_ingest 
 bash deploy/scripts/release.sh <staging|prod>
 ```
 
-**release.sh がやること**＝ゲート 9 本（recommendations 4＝retrieval アンカー非劣化・filter 全問・多段・smoke（基準値はルート README「品質の担保」）／stats 4＝smoke・exact_match・test_core・find_quality／共通テスト 1）を実行し**全 PASS のときだけ** upload → 最後に S3 `release/data.json`
+**release.sh がやること**＝ゲート 9 本（recommendations 4＝retrieval アンカー非劣化・filter 全問・多段・smoke（基準値はルート README「品質の担保」）／stats 4＝smoke・exact_match・test_core・find_quality／共通テスト 1）＋ env が `ENABLE_COMPANIES_APP=true` なら companies 4（smoke・exact_match・test_core・find_quality）＝13 本（出力は `[10-13/13]` まで）を実行し**全 PASS のときだけ** upload → 最後に S3 `release/data.json`
 （リリースマニフェスト＝出荷時のゲート数値入り）を書く。**1 つでも FAIL なら S3 に何も置かれない**。
 
 **箱側の反映は自動**＝`polyarchy-dataapply.timer`（15 分毎）がマニフェストの変化を検知し、
 退避（rsync）→ サービス停止 → **コード tar 再展開**（2026-09-03〜＝コード変更もこの経路で自動反映・tar 再展開の手作業は廃止）
 → qdrant ミラー同期 → bootstrap（データ差分 sync・依存再解決）→ 再起動 → 箱上 smoke → ダッシュボード、まで
 無人で行う（全工程 journal→CW Logs `polyarchy/dataapply`・**人手の箱操作ゼロ**）。反映確認＝ダッシュボード②の
-データ版が released/applied 一致・APPLIED・smoke PASS になっていること。
+データ版が released/applied 一致・APPLIED・smoke PASS になっていること。ログで確定するなら CW Logs `polyarchy/dataapply` の
+「✅ APPLIED:」の行（smoke 3 本の PASS の直後に出る＝この版から。★それより前の版の箱では完了の行が更新チェックの終了後まで出ない＝
+smoke の PASS が最後の行のまま止まって見える。そのときはダッシュボード②〔毎時 05 分前後に更新〕を待つ）。
 
 **smoke FAIL 時は自動切り戻し**（2026-09-03・B15 論点1＝運用者ロール移譲の前提 (2)）＝停止 → 退避したデータを
 書き戻し（qdrant はミラー）→ 前回の code tar を再展開＋pip → 再起動 → smoke 再実行 → マーク status=ROLLED_BACK →
@@ -308,7 +310,7 @@ python deploy/scripts/lock_mac_variant.py                     # → /tmp/lock-ma
 P=$HOME/miniconda3/envs/polyarchy-lock/bin            # 自分の conda の envs パスに読み替え
 $P/pip install --require-hashes -r /tmp/lock-mac.txt
 $P/pip install --no-deps --no-build-isolation -e .
-# ③ ゲート 9 本＋配布＝release.sh を「PATH の python をロック env に向けて」回す。数値が README「品質の担保」と一致することが採否の基準。
+# ③ ゲート 9 本（companies 有効時は 13 本）＋配布＝release.sh を「PATH の python をロック env に向けて」回す。数値が README「品質の担保」と一致することが採否の基準。
 #    依存を上げて数値が動いたら**上げずに現行版で固定**（目的は固定であって更新ではない）
 PATH=$P:$PATH bash deploy/scripts/release.sh staging
 ```

@@ -198,9 +198,11 @@ if [[ "$APPLY_RC" == 0 ]]; then
   mv -f "$REL_DIR/next.tar.gz" "$REL_DIR/current.tar.gz"
   write_mark APPLIED PASS ""
   metric 1
+  # 完了の行は更新チェックより先に出す＝更新チェック（上流への取得を含み、終わるまで戻らない）を待たずに CW Logs で適用の完了を確定できる
+  log "✅ APPLIED: $NEW_AT（code $NEW_VER・smoke PASS）→ 更新チェックとダッシュボード更新を開始"
   # 適用直後に更新チェックを回す（polyarchy ユーザで＝ファイル所有を崩さない）＝「新着 N 件」が取込後も翌朝まで残らない。ダッシュボードも更新される
   systemctl start polyarchy-updatecheck.service || /usr/local/bin/polyarchy-dashboard || true
-  log "✅ 適用完了: $NEW_AT（code $NEW_VER・smoke PASS・ダッシュボード更新済）"
+  log "ダッシュボード更新済"
   exit 0
 fi
 
