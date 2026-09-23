@@ -100,12 +100,16 @@ def lookup_segments(company: str, period: str, basis: str | None = None, doc_id:
     value〔文字列のまま〕・unit・decimals)・source。
     区分は会社の定義のまま(業種横断の区分に寄せない)。kind=company_defined/reportable_total/other_reportable/other/reconciling/
     corporate/unallocated_and_elimination/total/other_standard(意味は返り値の kind_note)。company_defined は事業セグメントとは限らない
-    (会社独自の調整額・消去・全社・小計もこの kind)=何の区分かは label で読む。区分の足し算の関係は返さない=合計を作るときは
-    kind と label を見て調整額・全社・合計・小計を二重に数えない。
+    (会社独自の調整額・消去・全社・小計もこの kind)=何の区分かは label で読む。other_reportable(その他)は、報告セグメントの計の外の
+    「その他」に使う会社と、計に含まれる報告セグメントの一つに使う会社がある=reportable_total に足してよいかは同じ表の total と
+    突き合わせて決める(total が無ければ書類の本文の表で見る)。区分の足し算の関係は返さない=合計を作るときは
+    kind と label を見て調整額・全社・合計・小計を二重に数えない。会社が表に書いた計・合計・連結の値は区分として返らないことがある
+    (区分の軸を持たない値として書かれる)=区分から足し直さず、主要な経営指標等の推移にある項目なら lookup_company_facts で、
+    無い項目(日本基準・IFRS の営業利益 等)は書類の本文の表で見る。
     利益の物差し(営業利益・経常利益・事業利益・セグメント利益 等)は会社ごとに違う=element と label のまま扱う。
     無ければ found=false と reason(no_segment_figures=セグメント情報の注記に数値が無い〔単一セグメント・記載の省略 等〕→ quote に会社の文 1 行 /
     not_tagged=米国基準の会社で注記が XBRL に無い〔本文の表だけ〕/ no_consolidated_statements / out_of_range / bad_period /
-    unknown_company / ambiguous_company)。数値が無いときもタグのある欄(従業員の状況 等)は other_sections に返る。
+    unknown_company / ambiguous_company)。数値が無いときもタグのある欄(従業員の状況 等)は other_sections に返る(区分の label・kind は segments)。
     """
     r = segments.lookup_segments(company, period, basis=basis, doc_id=doc_id)
     _capture("lookup_segments", {"company": company, "period": period, "basis": basis, "doc_id": doc_id}, r)

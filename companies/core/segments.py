@@ -28,12 +28,20 @@ KIND = {"ReportableSegmentsMember": "reportable_total", "ReconcilingItemsMember"
         "OtherReportableSegmentsMember": "other_reportable", "OtherOperatingSegmentsAxisMember": "other"}
 # kind の説明＝標準の区分はタクソノミの標準ラベル（冗長ラベル）の意味。会社が定義した区分は会社の要素の置き方が一様でない
 # （2026-09-23 母集団で実測＝会社の区分 9,675 件は報告セグメントの下・約 115 件は外で、調整額と事業セグメントが混在）＝名前や位置から
-# 調整額と判定しない。company_defined のままとし、事業セグメントとは限らないことを説明で示す
+# 調整額と判定しない。company_defined のままとし、事業セグメントとは限らないことを説明で示す。
+# other_reportable（OtherReportableSegmentsMember）も使い方が会社で分かれる（2026-09-23 母集団で実測＝報告セグメント計・その他・事業セグメント
+# 合計が並ぶ 23 社で、計＋その他＝合計〔計の外の「その他」〕が 13 社・計＝合計〔計に含まれる報告セグメントの一つ〕が 11 社〔1 社は両方〕）＝どちらとも決めない。
+# 会社が表に書いた計・合計が区分の軸を持たない値として書かれ、区分として返らない会社がある（同日・人手の目視）＝足し直さないよう案内する
 KIND_NOTE = ("kind＝company_defined（会社が定義した区分。事業セグメントとは限らない＝会社独自の調整額・消去・全社・小計の区分もこの kind で返る"
-             "＝何の区分かは label で読む）／reportable_total（報告セグメント〔計〕）／other_reportable（その他の報告セグメント）／"
-             "other（報告セグメントに含まれない事業セグメント等＝その他）／reconciling（調整項目＝調整額）／corporate（全社〔共通〕）／"
-             "unallocated_and_elimination（全社・消去）／total（事業セグメント合計）／other_standard（上記以外の標準の区分）。"
-             "区分の足し算の関係は返さない＝合計を作るときは kind と label を見て調整額・全社・合計・小計を二重に数えない")
+             "＝何の区分かは label で読む）／reportable_total（報告セグメント〔計〕）／other_reportable（その他。標準の要素名は「その他の報告セグメント」"
+             "だが、使い方が会社で分かれる＝報告セグメントの計の外の「その他」〔報告セグメントに含まれない事業〕に使う会社と、"
+             "計に含まれる報告セグメントの一つに使う会社がある。reportable_total に足してよいかは、同じ表に total があればその値と突き合わせて決め、"
+             "無ければ書類の本文の表で見る）／other（報告セグメントに含まれない事業セグメント等＝その他）／reconciling（調整項目＝調整額）／"
+             "corporate（全社〔共通〕）／unallocated_and_elimination（全社・消去）／total（事業セグメント合計）／other_standard（上記以外の標準の区分）。"
+             "区分の足し算の関係は返さない＝合計を作るときは kind と label を見て調整額・全社・合計・小計を二重に数えない。"
+             "会社が表に書いた計・合計・連結の値は、区分として返らないことがある（区分の軸を持たない値として書かれる＝reportable_total や total の無い会社がある）。"
+             "その場合も区分から足し直さない（丸めで合わない）＝会社全体の値は、主要な経営指標等の推移にある項目なら lookup_company_facts で、"
+             "無い項目（日本基準・IFRS の営業利益 等）は書類の本文の表で見る")
 LABELS = Path(__file__).resolve().parent / "segment_labels.json"
 
 
@@ -58,6 +66,15 @@ def _source(co: dict, doc_id: str, doc: dict) -> dict:
     return {"provider": "EDINET", "doc_type": "有価証券報告書", "doc_id": doc_id, "submitted": doc["submitted"],
             "url": f"https://disclosure2.edinet-fsa.go.jp/WZEK0040.aspx?{doc_id}",
             "citation": f"出典：EDINET 有価証券報告書（{co['name']}・{doc['submitted']} 提出・書類管理番号 {doc_id}）／XBRL から抽出"}
+
+
+def _segments(rows: list[dict]) -> list[dict]:
+    """区分の一覧（member・label・kind）。label は会社のラベル・無ければタクソノミの標準ラベル。"""
+    seen = {}
+    for f in rows:
+        seen.setdefault(f["member"], {"member": f["member"], "label": f["member_label"] or standard_labels().get(f["member"]),
+                                      "kind": kind_of(f["member"])})
+    return sorted(seen.values(), key=lambda s: (s["kind"] != "company_defined", s["member"]))
 
 
 def _fact(f: dict) -> dict:
@@ -99,10 +116,12 @@ def lookup_segments(company: str, period: str, *, basis: str | None = None, doc_
     if not with_seg:
         latest = covering[-1]
         doc = docs[latest]
-        other = [_fact(f) for f in rows if f["doc_id"] == latest]
+        mine = [f for f in rows if f["doc_id"] == latest]
         note = doc["notes"].get(basis)
+        # other_sections の区分も found=true と同じ形（segments）でラベルと kind を返す
         base = {"company": co, "basis": basis, "period": period, "source": _source(co, latest, doc),
-                "other_sections": other, "section_labels": SECTION_LABEL}
+                "other_sections": [_fact(f) for f in mine], "segments": _segments(mine), "kind_note": KIND_NOTE,
+                "section_labels": SECTION_LABEL}
         # 注記に数値のタグが無い（本文の表だけ）か、数値そのものが無い（単一セグメント・記載の省略）か。分類はしない＝根拠は構造と会社の文だけ：
         #  - 米国基準で注記が XBRL に無い → not_tagged
         #  - 注記に会社の文（単一・省略 等）がある → no_segment_figures（その文を quote で示す）
@@ -120,12 +139,8 @@ def lookup_segments(company: str, period: str, *, basis: str | None = None, doc_
                           "（quote が空なら、注記の本文を書類の URL で見る）")
     use = with_seg[-1]  # 提出日が最新の書類
     hits = [f for f in rows if f["doc_id"] == use]
-    seen = {}
-    for f in hits:
-        seen.setdefault(f["member"], {"member": f["member"], "label": f["member_label"] or standard_labels().get(f["member"]),
-                                      "kind": kind_of(f["member"])})
     return {"found": True, "company": co, "basis": basis, "period": period,
-            "segments": sorted(seen.values(), key=lambda s: (s["kind"] != "company_defined", s["member"])),
+            "segments": _segments(hits),
             "facts": [_fact(f) for f in hits],
             "kind_note": KIND_NOTE, "section_labels": SECTION_LABEL,
             **({"basis_note": "連結を作成している会社の単体（提出会社）＝セグメント情報の注記は連結にだけあり、提出会社のセグメント別の値は従業員の状況の欄にだけ載る"}
@@ -144,4 +159,14 @@ def unlabeled_members() -> list[str]:
         for f in store.segments_of(code)["facts"]:
             if not f["member_label"] and not standard_labels().get(f["member"]):
                 out.add(f"{code} {f['member']}")
+    return sorted(out)
+
+
+def unlabeled_elements() -> list[str]:
+    """値の置き場の全件で、ラベルが空の要素（会社のラベルも公式 CSV の項目名・タクソノミの冗長ラベルも無いもの・0 件であること）。"""
+    out = set()
+    for code in store.segment_codes():
+        for f in store.segments_of(code)["facts"]:
+            if not f["element_label"] and not standard_labels().get(f["element"]):
+                out.add(f"{code} {f['element']}")
     return sorted(out)

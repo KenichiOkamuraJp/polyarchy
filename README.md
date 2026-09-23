@@ -123,7 +123,7 @@ Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃＝v5 データは S3 `d
 
 | ゲート | 基準 |
 |---|---|
-| `python -m companies.eval.exact_match` | **原典完全一致**（`companies/data/eval/*.jsonl`）＝正例・負例とも全件 PASS（2026-09-23 時点 正例 371／負例 37。期待値は EDINET の公式 CSV と自前パーサの 2 経路一致。問は書類を固定して引く）＋**セグメント別（第 1b 便・`segments_exact` を続けて判定）**＝正例・負例とも全件 PASS（2026-09-23 時点 正例 129／負例 17）・値の置き場の全件で会社が定義した項目のラベルと区分のラベル（標準の区分は会社のラベルが無ければタクソノミの標準ラベル）が空の値 0・返した kind はすべて `kind_note` に説明がある |
+| `python -m companies.eval.exact_match` | **原典完全一致**（`companies/data/eval/*.jsonl`）＝正例・負例とも全件 PASS（2026-09-23 時点 正例 371／負例 37。期待値は EDINET の公式 CSV と自前パーサの 2 経路一致。問は書類を固定して引く）＋**セグメント別（第 1b 便・`segments_exact` を続けて判定）**＝正例・負例とも全件 PASS（2026-09-23 時点 正例 133／負例 18）・値の置き場の全件で会社が定義した項目のラベルと区分のラベル（標準の区分は会社のラベルが無ければタクソノミの標準ラベル）と要素のラベル（標準要素は公式 CSV の項目名・無ければタクソノミの冗長ラベル）が空の値 0・返した kind はすべて `kind_note` に説明がある・found=false の区分にもラベル |
 | `python -m companies.eval.find_quality` | 発見層（企業の同定）の到達率＝全問 PASS（2026-09-21 時点 20 問＝旧社名・表記ゆれ・候補が複数のときは 1 社に決めない） |
 | `python -m companies.eval.test_core` | 語彙と評価問の整合・問数の下限（ネットワーク不要） |
 | `python -m companies.eval.mcp_smoke` | MCP 疎通・層公開固定・fail-closed・stdout クリーン |

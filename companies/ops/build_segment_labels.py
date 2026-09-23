@@ -12,6 +12,11 @@ EDINET タクソノミのラベルファイルの標準ラベル（role/label）
   curl -sL -o companies/data/cache/taxonomy/jpcrp_<版>_lab.xml \
     https://disclosure2.edinet-fsa.go.jp/taxonomy/jpcrp/<版>/label/jpcrp_<版>_lab.xml
 <版>＝書類の xsd が参照するタクソノミの日付（2025-11-01 等）。版が複数あるときは新しい版のラベルを採る。
+標準要素（jppfs_cor・jpigp_cor・jpcrp_cor）で取得済みの公式 CSV に行が無いものは、タクソノミの冗長ラベル（verboseLabel）で埋める
+＝公式 CSV の「項目名」は冗長ラベルと同じ文字列（2026-09-23 に CSV から採った 140 要素で全件一致を確認）。
+（2026-09-23 staging で実測＝CSV に無い標準要素の label が null だった）。jppfs・jpigp のラベルファイルも同じ場所に置く：
+  curl -sL -o companies/data/cache/taxonomy/<jppfs|jpigp>_<版>_lab.xml \
+    https://disclosure2.edinet-fsa.go.jp/taxonomy/<jppfs|jpigp>/<版>/label/<jppfs|jpigp>_<版>_lab.xml
 """
 from __future__ import annotations
 
@@ -29,17 +34,20 @@ from companies.ingest import verify_xbrl as v
 TAXONOMY = v.CACHE / "taxonomy"
 XLINK = "{http://www.w3.org/1999/xlink}"
 STD_LABEL = "http://www.xbrl.org/2003/role/label"
+VERBOSE_LABEL = "http://www.xbrl.org/2003/role/verboseLabel"
 
 
-def taxonomy_labels(wanted: set[str]) -> dict[str, str]:
-    """タクソノミのラベルファイル（新しい版から）で、wanted（jpcrp_cor:X）の標準ラベル。"""
+def taxonomy_labels(wanted: set[str], role: str = STD_LABEL) -> dict[str, str]:
+    """タクソノミのラベルファイル（新しい版から）で、wanted（jpcrp_cor:X・jppfs_cor:X・jpigp_cor:X）の role のラベル（既定は標準ラベル）。"""
     out: dict[str, str] = {}
-    for fn in sorted(TAXONOMY.glob("jpcrp_*_lab.xml"), reverse=True):
+    files = sorted(TAXONOMY.glob("*_lab.xml"), key=lambda fn: fn.stem.split("_")[1], reverse=True)  # 版（日付）の新しい順
+    for fn in files:
+        prefix = fn.stem.split("_")[0] + "_cor"
         t = etree.parse(str(fn))
         loc = {e.get(XLINK + "label"): e.get(XLINK + "href").rpartition("#")[2] for e in t.iter("{*}loc")}
-        lab = {e.get(XLINK + "label"): e.text for e in t.iter("{*}label") if e.get(XLINK + "role") == STD_LABEL}
+        lab = {e.get(XLINK + "label"): e.text for e in t.iter("{*}label") if e.get(XLINK + "role") == role}
         for a in t.iter("{*}labelArc"):
-            el = loc.get(a.get(XLINK + "from"), "").replace("jpcrp_cor_", "jpcrp_cor:", 1)
+            el = loc.get(a.get(XLINK + "from"), "").replace(f"{prefix}_", f"{prefix}:", 1)
             if el in wanted and el not in out and a.get(XLINK + "to") in lab:
                 out[el] = lab[a.get(XLINK + "to")]
     return out
@@ -58,13 +66,14 @@ def main() -> int:
     members = {f["member"] for code in store.segment_codes() for f in store.segments_of(code)["facts"]
                if f["member"].split(":")[0] in STANDARD_PREFIXES}
     member_labels = taxonomy_labels(members)
-    table = {el: lab for el, (_, lab) in labels.items()} | member_labels
+    fallback = taxonomy_labels(used - labels.keys(), VERBOSE_LABEL)  # CSV に行の無い標準要素＝タクソノミの冗長ラベル（CSV の項目名と同じ文字列）
+    table = fallback | {el: lab for el, (_, lab) in labels.items()} | member_labels
     LABELS.write_text(json.dumps(dict(sorted(table.items())), ensure_ascii=False, indent=0))
-    missing = sorted(used - labels.keys())
-    print(f"標準要素 {len(labels)}/{len(used)} 件のラベル（公式 CSV {len(docs)} 書類から）・標準の区分 {len(member_labels)}/{len(members)} 件"
-          f"（タクソノミ {len(list(TAXONOMY.glob('jpcrp_*_lab.xml')))} 版から）→ {LABELS}")
+    missing = sorted(used - labels.keys() - fallback.keys())
+    print(f"標準要素 {len(labels) + len(fallback)}/{len(used)} 件のラベル（公式 CSV {len(docs)} 書類から {len(labels)}・タクソノミから {len(fallback)}）"
+          f"・標準の区分 {len(member_labels)}/{len(members)} 件（ラベルファイル {len(list(TAXONOMY.glob('*_lab.xml')))} 本）→ {LABELS}")
     if missing:
-        print(f"  ラベルの無い標準要素 {len(missing)} 件（CSV を足すと埋まる）: {missing[:10]}", file=sys.stderr)
+        print(f"  ラベルの無い標準要素 {len(missing)} 件（タクソノミのラベルファイルを置くと埋まる）: {missing[:10]}", file=sys.stderr)
     if members - member_labels.keys():
         print(f"  ラベルの無い標準の区分: {sorted(members - member_labels.keys())}（タクソノミのラベルファイルを置くと埋まる）", file=sys.stderr)
     return 0
