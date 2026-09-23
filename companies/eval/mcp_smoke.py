@@ -28,6 +28,9 @@ async def run() -> list[str]:
                 errs.append(f"[2] {t.name} に layer 引数がある（層は公開固定）")
             if not (t.annotations and t.annotations.readOnlyHint) or not t.title:
                 errs.append(f"[3] {t.name} に title／readOnlyHint が無い")
+        # 「合計して」と頼まれると区分から足し直した値を先に出した（2026-09-23 staging・ChatGPT）＝会社の計を答えにするよう説明で案内する
+        if "合計を問われたら、会社が表に書いた計・合計を答えにする" not in (getattr(tools.get("lookup_segments"), "description", "") or ""):
+            errs.append("[11] lookup_segments の説明に、会社の計・合計を答えにする案内が無い")
 
         async def call(name, **kw):
             res = await s.call_tool(name, kw)
