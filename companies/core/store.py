@@ -12,6 +12,11 @@
   data/store/segments/<EDINET コード>.json  セグメント別の値（第 1b 便）＝{"docs": {書類: 書類の属性}, "facts": [値の列]}
     書類の属性＝{submitted, accounting_standard, periods: {current, prior}, notes: {basis: {present, quote}}}
     値 1 行＝{member, member_label, element, element_label, section, basis, period, period_end, value, unit, decimals, context, doc_id, submitted}
+
+  data/store/regions/<EDINET コード>.json  地域別の欄（第 1b 便②）＝{"docs": {書類: {submitted, accounting_standard, periods}}, "sections": [欄の列]}
+    欄 1 行＝{element, section, context, basis, period, period_end, source_tables, content, doc_id, submitted}
+    content＝段落と表を順に（{"type": "text"|"omitted"|"table", ...}）。表はセル単位で公表どおり・結合セルは展開しない。
+    欄の無い書類も docs には載る（欄が無い＝not_tagged と、収録外の期を分けるため）
 """
 from __future__ import annotations
 
@@ -74,3 +79,23 @@ def segments_of(edinet_code: str) -> dict:
 
 def segment_codes() -> list[str]:
     return sorted(p.stem for p in (STORE / "segments").glob("*.json"))
+
+
+def write_regions(edinet_code: str, doc_id: str, doc: dict, sections: list[dict]) -> None:
+    """地域別の欄（第 1b 便②）。同じ書類の再取込は置き換え。"""
+    (STORE / "regions").mkdir(parents=True, exist_ok=True)
+    fp = STORE / "regions" / f"{edinet_code}.json"
+    old = json.loads(fp.read_text()) if fp.exists() else {"docs": {}, "sections": []}
+    data = {"docs": {**old["docs"], doc_id: doc}, "sections": [x for x in old["sections"] if x["doc_id"] != doc_id] + sections}
+    fp.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+    regions_of.cache_clear()
+
+
+@lru_cache(maxsize=256)
+def regions_of(edinet_code: str) -> dict:
+    fp = STORE / "regions" / f"{edinet_code}.json"
+    return json.loads(fp.read_text()) if fp.exists() else {"docs": {}, "sections": []}
+
+
+def region_codes() -> list[str]:
+    return sorted(p.stem for p in (STORE / "regions").glob("*.json"))

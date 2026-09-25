@@ -10,6 +10,7 @@
   ③従業員の状況（従業員数・平均年間給与・平均年齢・平均勤続年数）
   ④セグメント別の数値（第 1b 便）＝次元が「セグメントの軸」（と連結・個別の軸）だけの context（当期・前期）＝別の置き場へ。
     書類ごとにセグメント情報の注記の有無と、数値が無いときに示す会社の文 1 行（単一セグメント・記載の省略）も控える
+  ⑤地域別の欄（第 1b 便②）＝テキストブロックの HTML を段落と表の順にセル単位で写す＝別の置き場へ（ingest/regions.py）
 値は公表どおりの文字列。連結と単体は別の系列（basis）。項目単位で単体へ落とす処理は**しない**（実データ検証 2026-09-20 §2）。
 """
 from __future__ import annotations
@@ -26,6 +27,7 @@ from companies.core import store
 from companies.core.items import ITEMS
 from companies.core.segments import AXIS, section_of
 from companies.ingest.edinet_api import CACHE, fetch_zip, is_yuho, list_docs, parse_instance
+from companies.ingest.regions import region_parts
 
 NONCON = "_NonConsolidatedMember"
 PLAIN = {f"{p}{k}" for p in ("CurrentYear", "Prior1Year", "Prior2Year", "Prior3Year", "Prior4Year") for k in ("Duration", "Instant")}
@@ -170,6 +172,8 @@ def ingest(doc_id: str) -> tuple[dict, int]:
     store.write_company(meta, facts)
     doc, seg = segment_parts(inst, labels, doc_id, submitted, meta["consolidated"])
     store.write_segments(code, doc_id, {**doc, "accounting_standard": meta["accounting_standard"]}, seg)
+    rdoc, regions = region_parts(inst, doc_id, submitted, meta["consolidated"])
+    store.write_regions(code, doc_id, {**rdoc, "accounting_standard": meta["accounting_standard"]}, regions)
     return meta, len(facts)
 
 

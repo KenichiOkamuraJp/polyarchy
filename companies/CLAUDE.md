@@ -40,10 +40,11 @@ python -m companies.ingest.verify_xbrl --from 2025-06-20 --to 2025-06-30 --n 10 
 python -m companies.ingest.verify_xbrl --docids S100XXXX,S100YYYY               # 書類を指定（銀行・証券・保険・IFRS・連結なしを含める）
 python -m companies.eval.make_candidates    # 評価問の素材づくり（既存の問の書類が対象・--docids=… で足す。★exact_match／fail_closed を上書きする）
 python -m companies.eval.test_core          # 語彙と評価問の整合（ネットワーク不要）
-python -m companies.ingest.edinet --cached   # 取得済みの書類を値の置き場（data/store/）へ取り込む（--docids／--from --to もある）。セグメント別（store/segments/）も同時に
+python -m companies.ingest.edinet --cached   # 取得済みの書類を値の置き場（data/store/）へ取り込む（--docids／--from --to もある）。セグメント別（store/segments/）・地域別（store/regions/）も同時に
 python -m companies.ops.build_segment_labels  # 取込の後＝セグメントに出る標準要素の公式ラベル表（core/segment_labels.json・git 追跡）を公式 CSV から作り直す
 python -m companies.eval.make_segment_candidates  # 第 1b 便の評価問の素材づくり（★segments*.jsonl を上書きする）
-python -m companies.eval.exact_match        # 原典完全一致＝正例・負例とも全問 PASS（第 1b 便の segments_exact も続けて判定）
+python -m companies.eval.make_region_candidates   # 第 1b 便②（地域別）の評価問の素材づくり（★regions*.jsonl を上書きする）
+python -m companies.eval.exact_match        # 原典完全一致＝正例・負例とも全問 PASS（第 1b 便の segments_exact・regions_exact も続けて判定）
 python -m companies.eval.find_quality       # 発見層（企業の同定）＝全問 PASS
 python -m companies.ops.population_report   # 母集団の棚卸し（取込のあとに回す＝語彙・契約が標本の外でも成り立つか）
 python -m companies.eval.mcp_smoke          # MCP 疎通・ツール定義・fail-closed・stdout クリーン

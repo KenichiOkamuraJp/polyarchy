@@ -15,6 +15,10 @@ MIN_POS, MIN_NEG, MIN_FIND = 371, 36, 20  # 問は減らさない（足したら
 MIN_SEG_POS, MIN_SEG_NEG = 134, 18        # 第 1b 便（セグメント別）
 SEG_REASONS = {"no_segment_figures", "not_tagged", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_company"}
 SEG_SECTIONS = {"segment_information", "employees", "capex", "research_and_development"}
+MIN_REG_POS, MIN_REG_NEG = 291, 10        # 第 1b 便②（地域別）
+REG_REASONS = {"omitted", "not_tagged", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_company"}
+REG_SECTIONS = {"revenue", "property_plant_and_equipment", "geographic_areas_ifrs"}
+REG_KINDS = {"home", "last_number", "span", "uchi", "multiline", "order", "prose_amount", "omitted_paragraph", "total_two_path", "nested"}
 REASONS = {"item_not_disclosed", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_item",
            "unknown_company", "ambiguous_company", "ambiguous_item"}
 
@@ -54,8 +58,17 @@ def main() -> int:
         assert isinstance(e["value"], str) and e["value"] and e["section"] in SEG_SECTIONS, q["id"]
         assert e["member_kind"] != "company_defined" or e.get("member_label"), f"{q['id']}: 会社が定義した区分はラベルを固定する"
     assert {q["reason"] for q in seg_neg} == SEG_REASONS, "セグメントの理由の種類ごとに最低 1 問"
+    reg = [json.loads(l) for l in (EVAL / "regions.jsonl").read_text().splitlines() if l.strip()]
+    reg_neg = [json.loads(l) for l in (EVAL / "regions_fail_closed.jsonl").read_text().splitlines() if l.strip()]
+    assert len(reg) >= MIN_REG_POS and len(reg_neg) >= MIN_REG_NEG, f"地域別の問が減った: 正例 {len(reg)}・負例 {len(reg_neg)}"
+    assert len({q["id"] for q in reg + reg_neg}) == len(reg) + len(reg_neg), "地域別の問の id の重複"
+    for q in reg:
+        assert q["basis"] in BASES and re.fullmatch(r"\d{4}-\d{2}", q["period"]) and q["doc_id"], q["id"]
+        assert q["kind"] in REG_KINDS and q["expected"]["section"] in REG_SECTIONS, q["id"]
+    assert {q["kind"] for q in reg} == REG_KINDS, "地域別の問の型ごとに最低 1 問"
+    assert {q["reason"] for q in reg_neg} == REG_REASONS, "地域別の理由の種類ごとに最低 1 問"
     print(f"PASS: 語彙 {len(ITEMS)} キー／{len(ELEMENT_TO_KEY)} 要素・正例 {len(pos)}・負例 {len(neg)}・発見層 {len(find)}"
-          f"・セグメント 正例 {len(seg)}／負例 {len(seg_neg)}")
+          f"・セグメント 正例 {len(seg)}／負例 {len(seg_neg)}・地域別 正例 {len(reg)}／負例 {len(reg_neg)}")
     return 0
 
 

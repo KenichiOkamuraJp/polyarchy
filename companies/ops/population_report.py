@@ -72,6 +72,7 @@ def main() -> int:
     out += ["", f"## 社名の衝突（正規化後に同名）：{sum(1 for c in names.values() if c > 1)} 組", ""]
     out += [f"- {k}: {c}" for k, c in names.most_common(10) if c > 1]
     out += segment_report(reg)
+    out += region_report(reg)
     print("\n".join(out))
     return 0
 
@@ -104,6 +105,24 @@ def segment_report(reg: dict) -> list[str]:
     out += [f"- {el}: {c} 値" for el, c in unlabeled_el.most_common(20)]
     out += ["", f"## セグメント：同じ決算期の値が書類で変わった会社（組み替え・遡及修正）：{len(regrouped)} 社", ""]
     out += [f"- {name}: {c} 点" for name, c in regrouped[:15]]
+    return out
+
+
+def region_report(reg: dict) -> list[str]:
+    """地域別（第 1b 便②）＝最新の決算期で引いた結果と、写しが原典と合わない欄。"""
+    from companies.core.regions import lookup_regions, unreadable_sections
+    reasons, secs = Counter(), Counter()
+    for code, co in reg.items():
+        r = lookup_regions(code, co["fiscal_year_end"][:7])
+        reasons["found" if r.get("found") else r.get("reason")] += 1
+        for s in r.get("sections") or []:
+            secs[(s["section"], "表あり" if s["has_table"] else "表なし")] += 1
+    n = len(reg)
+    bad = unreadable_sections()
+    out = ["", "## 地域別（第 1b 便②）：最新の決算期で引いた結果", ""]
+    out += [f"- {k}: {c}（{c / n:.1%}）" for k, c in reasons.most_common()]
+    out += ["", f"- 欄（最新の決算期）：{dict(sorted(secs.items()))}", f"- 写しが原典と合わない欄：{len(bad)}"]
+    out += [f"  - {b}" for b in bad[:10]]
     return out
 
 

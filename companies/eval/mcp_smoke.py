@@ -21,7 +21,7 @@ async def run() -> list[str]:
     async with stdio_client(params) as (r, w), ClientSession(r, w) as s:  # stdout が汚れていればここで壊れる
         await s.initialize()
         tools = {t.name: t for t in (await s.list_tools()).tools}
-        if set(tools) != {"find_company", "lookup_company_facts", "lookup_segments", "list_items"}:
+        if set(tools) != {"find_company", "lookup_company_facts", "lookup_segments", "lookup_regions", "list_items"}:
             errs.append(f"[1] ツール集合が違う: {sorted(tools)}")
         for t in tools.values():
             if "layer" in (t.inputSchema.get("properties") or {}):
@@ -54,6 +54,15 @@ async def run() -> list[str]:
         r6 = await call("lookup_segments", company="E99999", period="FY2024")
         if r6.get("found") or r6.get("reason") != "bad_period":
             errs.append(f"[10] セグメント：年度表記を弾かない: {r6}")
+        r7 = await call("lookup_regions", company="E99999", period="2025-03")
+        if r7.get("found") or r7.get("reason") != "unknown_company" or r7.get("sections"):
+            errs.append(f"[12] 地域別：存在しない会社で fail-closed にならない: {r7}")
+        r8 = await call("lookup_regions", company="E99999", period="FY2024")
+        if r8.get("found") or r8.get("reason") != "bad_period":
+            errs.append(f"[13] 地域別：年度表記を弾かない: {r8}")
+        # 結合セルを展開して読むと二重に数える＝説明で案内する（契約 §6）
+        if "結合セルは展開しない" not in (getattr(tools.get("lookup_regions"), "description", "") or ""):
+            errs.append("[14] lookup_regions の説明に、結合セルを展開しない旨が無い")
         r4 = await call("find_company", query="")
         if r4.get("found"):
             errs.append("[8] 空の問い合わせで会社を返した")

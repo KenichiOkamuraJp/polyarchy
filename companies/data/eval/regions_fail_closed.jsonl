@@ -1,0 +1,10 @@
+{"id": "E00004-regions-omitted-2026-05", "company": {"edinet_code": "E00004", "name": "カネコ種苗株式会社"}, "period": "2026-05", "basis": null, "reason": "omitted", "quote_contains": "90", "note": "本邦が 90% 超のため省略（最も多い型。「％」は全角の会社がある）。会社の文を quotes で返す"}
+{"id": "E00372-regions-omitted-2026-03", "company": {"edinet_code": "E00372", "name": "株式会社中村屋"}, "period": "2026-03", "basis": null, "reason": "omitted", "quote_contains": "本邦以外", "note": "連結なしの会社（単体の context）・本邦以外に無い。会社の文を quotes で返す"}
+{"id": "E00417-regions-omitted-2025-12", "company": {"edinet_code": "E00417", "name": "コカ・コーラ ボトラーズジャパンホールディングス株式会社"}, "period": "2025-12", "basis": null, "reason": "omitted", "quote_contains": "大部分", "note": "IFRS・数字の無い「大部分」＝型は分類しない。会社の文を quotes で返す"}
+{"id": "E02274-regions-not_tagged-2025-12", "company": {"edinet_code": "E02274", "name": "キヤノン株式会社"}, "period": "2025-12", "basis": null, "reason": "not_tagged", "note": "米国基準＝注記が XBRL に無い"}
+{"id": "E00095-regions-not_tagged-2026-03", "company": {"edinet_code": "E00095", "name": "大豊建設株式会社"}, "period": "2026-03", "basis": null, "reason": "not_tagged", "note": "日本基準で「地域ごとの情報」の見出しはあるが地域の要素でタグ付けしていない"}
+{"id": "E00932-regions-not_tagged-2025-12", "company": {"edinet_code": "E00932", "name": "中外製薬株式会社"}, "period": "2025-12", "basis": null, "reason": "not_tagged", "note": "IFRS で地域の欄が無い"}
+{"id": "E00372-regions-consolidated-of-nonconsolidated", "company": {"edinet_code": "E00372", "name": "株式会社中村屋"}, "period": "2026-03", "basis": "consolidated", "reason": "no_consolidated_statements", "note": "連結を作成していない会社に連結を指定"}
+{"id": "E00372-regions-out_of_range-2019-03", "company": {"edinet_code": "E00372", "name": "株式会社中村屋"}, "period": "2019-03", "basis": null, "reason": "out_of_range", "note": "収録の無い決算期＝近い期の欄は返さない"}
+{"id": "E00372-regions-bad_period-FY2025", "company": {"edinet_code": "E00372", "name": "株式会社中村屋"}, "period": "FY2025", "basis": null, "reason": "bad_period", "note": "決算期は YYYY-MM"}
+{"id": "regions-unknown-company", "company": {"edinet_code": null, "name": "存在しない架空商事株式会社"}, "period": "2026-03", "basis": null, "reason": "unknown_company", "note": "存在しない会社"}

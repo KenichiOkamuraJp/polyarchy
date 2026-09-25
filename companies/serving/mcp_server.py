@@ -18,7 +18,7 @@ import anyio  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 
-from companies.core import lookup, segments, store  # noqa: E402
+from companies.core import lookup, regions, segments, store  # noqa: E402
 from companies.core.items import ITEMS  # noqa: E402
 from polyarchy_common.capture import append_record  # noqa: E402
 
@@ -30,13 +30,14 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotent
 SERVER_INSTRUCTIONS = (
     "Polyarchy 企業情報DB(companies)。日本の有価証券報告書(EDINET・金融庁)の「主要な経営指標等の推移」と従業員の状況を、"
     "公表どおりの値で厳密参照する読み取り専用サービス(公開データのみ)。2層構造:発見層(find_company=企業の同定/list_items=項目の語彙)と"
-    "参照層(lookup_company_facts=値の完全一致参照/lookup_segments=セグメント別の値を表ごと)。値は XBRL に書かれた文字列のまま返す(換算・丸め・補完なし。比率は 0.444 の形・金額は円)。"
+    "参照層(lookup_company_facts=値の完全一致参照/lookup_segments=セグメント別の値を表ごと/lookup_regions=地域別〔国・地域ごと〕の売上高・有形固定資産・非流動資産の表を公表どおりに)。値は XBRL に書かれた文字列のまま返す(換算・丸め・補完なし。比率は 0.444 の形・金額は円)。"
     "連結と単体(提出会社)は別の系列で、どちらの値かを必ず返す。該当が無ければ found=false と理由を返し、別の連結/単体の別・隣の項目・近い決算期の値では埋めない"
     "(例=IFRS の会社は「売上高」ではなく「売上収益」(item=revenue)、持株会社・金融・建設などは「営業収益」「経常収益」「完成工事高」や"
     "会社が独自に定義した項目で開示している=net_sales が found=false のとき suggest に、その会社が最上段の収益として開示している項目と"
     "引き直し方が返る。alternatives にはその決算期に開示している全項目の一覧が返る)。"
     "セグメント別(lookup_segments)は会社が定義した区分をその会社のラベルのまま返し、業種横断の区分や利益の物差しに寄せない"
     "(セグメント利益が営業利益か経常利益か事業利益かは会社の定義=要素とラベルのまま)。"
+    "地域別(lookup_regions)は表をセル単位で写して返し、国内/海外への寄せ・比率の計算はしない(表の読み方は返り値の read_note)。"
     "各値には出典(書類管理番号・提出日・要素・context・URL・引用1行)が付く。派生値(利益率・前年比 等)は計算しない。"
     "値そのものは各提出会社の開示に帰属し、本サービスは値を保証しない(原典で確認すること)。"
 )
@@ -118,6 +119,28 @@ def lookup_segments(company: str, period: str, basis: str | None = None, doc_id:
     return r
 
 
+@mcp.tool(title="地域別の表を参照する", annotations=READ_ONLY)
+def lookup_regions(company: str, period: str, basis: str | None = None, doc_id: str | None = None) -> dict:
+    """企業×決算期の地域別(国・地域ごと)の売上高・有形固定資産(IFRS は売上収益・非流動資産)の欄を、有価証券報告書に書かれたとおりに返す。
+
+    company=EDINET コード・証券コード・社名。period=決算期末の YYYY-MM(各書類に当期・前期の 2 期)。
+    basis=consolidated/non_consolidated(省くと、連結を作成している会社は連結)。doc_id=書類管理番号(省くと提出日が最新の書類)。
+    地域別の値は XBRL の数値のタグが無く表だけ=表をセル単位で公表どおりに写して返す(数値に換算しない)。
+    返り値=sections(欄ごと=section〔revenue=売上高/property_plant_and_equipment=有形固定資産/geographic_areas_ifrs=IFRS の地域別情報〕・
+    context・period・period_in_columns〔IFRS は 1 つの欄の表に前期と当期の列が並ぶ〕・content〔欄の中身を原典の順に=text 段落/table 表/omitted 省いた長い文の字数〕)・read_note・source。
+    表は rows(行の並び・セルは HTML の並び)で、結合セルは展開しない=rowspan/colspan のあるセルは複数の行・列を占める 1 つのセル(値は 1 回だけ数える)。
+    「うち」・括弧の値は内数=合計に足さない。単位は表の前の段落・表の上段・見出しの括弧・値の末尾のどこかにある。
+    何の値の表か(売上/非流動資産)は表の前の段落で読む(section は要素名で決まり中身とずれることがある)。表の外の文に国ごとの値があることがある(text)。
+    国内/海外への寄せ・地域の読み替え・比率の計算はしない=海外比率などを示すなら使ったセル(本邦と合計)を添えて派生値と明記する。
+    無ければ found=false と reason(omitted=欄はあるが表が無い〔本邦が 90% 超・本邦以外に無い 等〕→ quotes に会社の文 /
+    not_tagged=地域の欄が無い〔米国基準・地域の要素でタグ付けしていない書類〕/ no_consolidated_statements / out_of_range / bad_period /
+    unknown_company / ambiguous_company)。
+    """
+    r = regions.lookup_regions(company, period, basis=basis, doc_id=doc_id)
+    _capture("lookup_regions", {"company": company, "period": period, "basis": basis, "doc_id": doc_id}, r)
+    return r
+
+
 @mcp.tool(title="項目の語彙を見る", annotations=READ_ONLY)
 def list_items() -> dict:
     """lookup_company_facts の item に使えるキーの一覧(キー・日本語の呼び名・対応する標準タクソノミの要素)。
@@ -142,7 +165,7 @@ def main() -> int:
     if a.http:
         from polyarchy_common.mcp_http import serve_streamable_http
         serve_streamable_http(mcp, host=a.host, port=a.port, path=os.getenv("MCP_HTTP_PATH", "/mcp"),
-                              tools_desc="find_company / lookup_company_facts / lookup_segments / list_items", logger_name="polyarchy.companies",
+                              tools_desc="find_company / lookup_company_facts / lookup_segments / lookup_regions / list_items", logger_name="polyarchy.companies",
                               health_check=_health)
         return 0
     log.info("companies MCP（stdio）起動＝収録 %d 社", len(store.registry()))
