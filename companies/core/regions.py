@@ -6,6 +6,8 @@ fail-closed：欄はあるが表が無い → omitted＋会社の文（型は分
 """
 from __future__ import annotations
 
+import re
+
 from companies.core import store
 
 SECTION_LABEL = {"revenue": "地域ごとの情報（売上高・日本基準）", "property_plant_and_equipment": "地域ごとの情報（有形固定資産・日本基準）",
@@ -16,7 +18,7 @@ READ_NOTE = (
     "表は rows＝行の並び・各行のセルは HTML の並びのまま。結合セルは展開していない＝rowspan／colspan のあるセルは複数の行・列を占める 1 つのセル"
     "（値は 1 回だけ数える。展開して読むと同じ値が 2 回出て二重に数える）。セルの文字列は公表どおり（改行は \\n）。"
     "セルの中に表が入れ子になっている会社がある＝そのセルは text（中身を行に分けたもの）と tables（入れ子の表の行の並び）を持つ。"
-    "単位は会社ごとに書く場所が違う＝表の前の段落・表の上段の行・見出しの括弧（日本(百万円)）・値の末尾（2,077,642千円）のいずれか。"
+    "単位は会社ごとに書く場所が違う＝表の前の段落・表の上段の行・見出しの括弧（日本(百万円)）・値の末尾（2,077,642千円）のいずれか。欄に単位が無く、同じ注記の別の欄（売上高の欄の表の上）にだけ書く会社もある。"
     "期は日本基準では欄ごと（context・period）、IFRS は 1 つの欄の表に前期と当期の列が並ぶ（列の見出しで読む・period_in_columns）。"
     "何の値の表か（売上高・売上収益・非流動資産・有形固定資産）は表の前の段落や表の見出しで読む＝section は要素名で決まり、中身とずれることがある"
     "（売上高の欄に有形固定資産の表を置く会社がある＝欄の中の見出しの文を優先する）。IFRS は 1 つの欄に表が 2〜4 つ（売上収益と非流動資産・前期と当期）、"
@@ -32,8 +34,37 @@ def _source(co: dict, doc_id: str, doc: dict) -> dict:
             "citation": f"出典：EDINET 有価証券報告書（{co['name']}・{doc['submitted']} 提出・書類管理番号 {doc_id}）／XBRL のテキストブロックから表を写した"}
 
 
+UNIT_ONLY = re.compile(r"[（(]?単位[:：][^）)]*[）)]?")
+
+
+def _is_filler(text: str) -> bool:
+    """表のセルのうち、値でも見出しでもないもの＝空・単位だけ・文（「。」を含む＝省略・該当なしの文）。"""
+    s = re.sub(r"\s+", "", text)
+    return not s or "。" in s or bool(UNIT_ONLY.fullmatch(s))
+
+
+def _is_value_table(t: dict) -> bool:
+    """値の表か。省略・該当なしの文を枠なしの 1 セルの表に入れる会社・文の後に空のセルだけの表を置く会社がある
+    （PDF では段落に見える＝2026-09-26 目視で発見・母集団で 6 社）＝セルが空・単位・文だけの表は表として数えない。"""
+    return any(not _is_filler(c["text"]) for row in t["rows"] for c in row)
+
+
 def _has_table(sec: dict) -> bool:
-    return any(x["type"] == "table" for x in sec["content"])
+    return any(x["type"] == "table" and _is_value_table(x) for x in sec["content"])
+
+
+def _content(sec: dict) -> list[dict]:
+    """値の表が 1 つも無い欄は、表に入った文を段落として返す（空のセルは落とす・文字列は公表どおり）＝表があるように見せない。
+    値の表がある欄はそのまま（単位だけの表も表の番号も原典どおり）。"""
+    if _has_table(sec):
+        return sec["content"]
+    out = []
+    for x in sec["content"]:
+        if x["type"] == "table":
+            out.extend({"type": "text", "text": c["text"]} for row in x["rows"] for c in row if c["text"].strip())
+        else:
+            out.append(x)
+    return out
 
 
 def _for_period(data: dict, doc_id: str, period: str, basis: str) -> list[dict]:
@@ -53,7 +84,7 @@ def _for_period(data: dict, doc_id: str, period: str, basis: str) -> list[dict]:
 def _section(s: dict) -> dict:
     return {"element": s["element"], "section": s["section"], "section_label": SECTION_LABEL[s["section"]], "context": s["context"],
             "period": s["period"], "period_end": s["period_end"], "period_in_columns": s["period_in_columns"],
-            "has_table": _has_table(s), "content": s["content"]}
+            "has_table": _has_table(s), "content": _content(s)}
 
 
 def lookup_regions(company: str, period: str, *, basis: str | None = None, doc_id: str | None = None) -> dict:
@@ -84,7 +115,7 @@ def lookup_regions(company: str, period: str, *, basis: str | None = None, doc_i
         latest = covering[-1]
         others = sorted({s["basis"] for s in data["sections"] if s["doc_id"] == latest} - {basis})
         return _miss("not_tagged", company=co, basis=basis, period=period, source=_source(co, latest, docs[latest]),
-                     hint="この書類に地域別の欄（地域ごとの情報の要素）が無い＝米国基準（注記が XBRL に無い）や、地域の要素でタグ付けしていない書類。"
+                     hint="この書類に地域別の欄（地域ごとの情報の要素）が無い＝米国基準（注記が XBRL に無い）や、地域の要素でタグ付けしていない書類・関連情報ごと記載を省略している書類（単一セグメント 等）。"
                           "書類の URL で本文を見る" + (f"（{'・'.join(others)} の欄はある＝basis で引き直す）" if others else ""))
     use = with_sec[-1]  # 提出日が最新の書類
     secs = [_section(s) for s in _for_period(data, use, period, basis)]

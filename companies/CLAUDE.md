@@ -54,6 +54,7 @@ python -m companies.serving.mcp_server      # stdio（--http --port 8767 で配�
 出力＝`companies/data/verify/<実行日時>/coverage.md`。ゲートの基準はルート README「品質の担保」。
 
 - ★ **標本で決めた語彙・契約は、取込のあとに母集団で洗う**（`population_report`）。20 社では見えなかった型が 2,400 社で 6 つ、4,100 社でさらに 2 つ出た＝[母集団の棚卸し](docs/記録/母集団の棚卸し_2026-09-21.md)・[全社の取込と棚卸し](docs/記録/全社の取込と棚卸し_2026-09-22.md)。取込の漏れは「最上段の収益が見当たらない会社」の一覧で見つかる。
+- ★ **HTML の `<table>` があることを「表がある」としない**＝省略・該当なしの文を枠なしの 1 セルの表に入れる会社がある（PDF では段落に見える・地域別で 6 社）。値の表かはセルの中身で決める（`core/regions.py` の `_is_value_table`）。
 - ★ **XBRL のリンクベースは名前を決め打ちしない**＝ラベルは loc（要素の id）→ labelArc → label の順にたどる。`xlink:label` の名前は書類ごとに任意（`<接頭辞>_<要素>_label` と `label_<要素>` の 2 通りを実測）＝決め打ちで 243 社の拡張要素のラベルが空だった（2026-09-23・[人手の目視](docs/記録/人手の目視_2026-09-23.md) §3）。公式 CSV の「項目名」も拡張要素で空になる書類がある＝ラベルの突き合わせ先は本文（`0101010_honbun_*.htm`）。
 - ★ **配信側（`core/`・`serving/`）に lxml など取込用の依存を import しない**＝箱のロックに入っていない（取込は作業用 PC だけ・`pip install -e ".[companies]"`）。
 - ★ **stdio では `guard_stdout_for_stdio()` が返す実 stdout を `stdio_server(stdout=…)` に渡す**（`mcp.run()` をそのまま呼ぶと、差し替え後の stdout＝stderr にプロトコルが流れてクライアントが無応答で止まる＝2026-09-20 に実際に踏んだ）。
