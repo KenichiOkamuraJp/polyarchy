@@ -17,6 +17,8 @@
     欄 1 行＝{element, section, context, basis, period, period_end, source_tables, content, doc_id, submitted}
     content＝段落と表を順に（{"type": "text"|"omitted"|"table", ...}）。表はセル単位で公表どおり・結合セルは展開しない。
     欄の無い書類も docs には載る（欄が無い＝not_tagged と、収録外の期を分けるため）
+
+  data/store/industries.json  業種（第 1c 便）＝EDINET コードリストの提出者業種・上場区分（core/industries.py・作り方は ops/build_industries.py）
 """
 from __future__ import annotations
 

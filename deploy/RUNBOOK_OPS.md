@@ -124,6 +124,8 @@ python -m stats.ops.refresh --dataset <コード名>   # ゲート 3 本まで�
 ```bash
 # 取込（作業用 PC・EDINET の API キーは companies/.env＝箱には運ばない）。日付の範囲＝前回以降の提出日。取得済みの書類は再取得しない
 python -m companies.ingest.edinet --from 2026-10-01 --to 2026-10-31
+curl -sS -o companies/data/cache/codelist/Edinetcode.zip https://disclosure2dl.edinet-fsa.go.jp/searchdocument/codelist/Edinetcode.zip \
+  && unzip -o -q companies/data/cache/codelist/Edinetcode.zip -d companies/data/cache/codelist/ && python -m companies.ops.build_industries   # 業種（EDINET コードリスト）＝新しい会社が入ったら必須（無いと exact_match の業種の判定が FAIL）
 python -m companies.ops.population_report | head -40      # 棚卸し＝「語彙に無い標準要素」「最上段の収益が見当たらない会社」が増えていないか
 python -m companies.eval.exact_match && python -m companies.eval.find_quality && python -m companies.eval.test_core   # 既存の問は書類を固定して引く＝新しい書類で動かない
 bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_APP=true の env ならゲート 13 本→配布→自動適用

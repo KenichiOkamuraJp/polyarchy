@@ -15,7 +15,8 @@ MIN_POS, MIN_NEG, MIN_FIND = 371, 36, 20  # 問は減らさない（足したら
 MIN_SEG_POS, MIN_SEG_NEG = 134, 18        # 第 1b 便（セグメント別）
 SEG_REASONS = {"no_segment_figures", "not_tagged", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_company"}
 SEG_SECTIONS = {"segment_information", "employees", "capex", "research_and_development"}
-MIN_REG_POS, MIN_REG_NEG = 291, 10        # 第 1b 便②（地域別）
+MIN_REG_POS, MIN_REG_NEG = 291, 16        # 第 1b 便②（地域別）
+MIN_IND = 13                              # 第 1c 便（業種）
 REG_REASONS = {"omitted", "not_tagged", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_company"}
 REG_SECTIONS = {"revenue", "property_plant_and_equipment", "geographic_areas_ifrs"}
 REG_KINDS = {"home", "last_number", "span", "uchi", "multiline", "order", "prose_amount", "omitted_paragraph", "total_two_path", "nested"}
@@ -67,8 +68,12 @@ def main() -> int:
         assert q["kind"] in REG_KINDS and q["expected"]["section"] in REG_SECTIONS, q["id"]
     assert {q["kind"] for q in reg} == REG_KINDS, "地域別の問の型ごとに最低 1 問"
     assert {q["reason"] for q in reg_neg} == REG_REASONS, "地域別の理由の種類ごとに最低 1 問"
+    ind = [json.loads(l) for l in (EVAL / "industries.jsonl").read_text().splitlines() if l.strip()]
+    assert len(ind) >= MIN_IND and len({q["id"] for q in ind}) == len(ind), f"業種の問が減った／id 重複: {len(ind)}"
+    assert any(q["expected"]["manufacturing"] for q in ind) and any(not q["expected"]["manufacturing"] for q in ind), "製造業と非製造業の両方"
+    assert any(q["expected"]["listing"] == "非上場" for q in ind), "非上場の会社を 1 問以上"
     print(f"PASS: 語彙 {len(ITEMS)} キー／{len(ELEMENT_TO_KEY)} 要素・正例 {len(pos)}・負例 {len(neg)}・発見層 {len(find)}"
-          f"・セグメント 正例 {len(seg)}／負例 {len(seg_neg)}・地域別 正例 {len(reg)}／負例 {len(reg_neg)}")
+          f"・セグメント 正例 {len(seg)}／負例 {len(seg_neg)}・地域別 正例 {len(reg)}／負例 {len(reg_neg)}・業種 {len(ind)}")
     return 0
 
 
