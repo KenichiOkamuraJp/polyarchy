@@ -14,6 +14,9 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 
+TOOL_NAMES: list[str] = []  # 出力の 1 行目に本数と名前を出す（配布後に手元で本数を確かめられるように）
+
+
 async def run() -> list[str]:
     errs: list[str] = []
     env = {**os.environ, "COMPANIES_QUERY_LOG": os.path.join(tempfile.mkdtemp(), "q.jsonl")}  # スモークで捕捉ログを汚さない
@@ -21,6 +24,7 @@ async def run() -> list[str]:
     async with stdio_client(params) as (r, w), ClientSession(r, w) as s:  # stdout が汚れていればここで壊れる
         await s.initialize()
         tools = {t.name: t for t in (await s.list_tools()).tools}
+        TOOL_NAMES[:] = sorted(tools)
         if set(tools) != {"find_company", "lookup_company_facts", "lookup_segments", "lookup_regions", "list_items"}:
             errs.append(f"[1] ツール集合が違う: {sorted(tools)}")
         for t in tools.values():
@@ -74,6 +78,7 @@ def main() -> int:
         errs = asyncio.run(asyncio.wait_for(run(), 120))  # ゲートは止まらない（応答が来なければ FAIL）
     except BaseException as e:  # noqa: BLE001  タイムアウトは TaskGroup の例外群で上がる
         errs = [f"[0] 疎通できない／時間切れ: {e!r}"[:300]]
+    print(f"ツール {len(TOOL_NAMES)} 本: {', '.join(TOOL_NAMES)}")
     for e in errs:
         print("  FAIL", e)
     print("PASS: MCP 疎通・ツール定義・fail-closed・stdout クリーン" if not errs else f"FAIL: {len(errs)} 件")

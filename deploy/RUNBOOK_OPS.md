@@ -129,7 +129,7 @@ python -m companies.eval.exact_match && python -m companies.eval.find_quality &&
 bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_APP=true の env ならゲート 13 本→配布→自動適用
 ```
 - 6 月（3 月決算の提出集中期）は約 2,400 書類＝約 2 時間。他の月は数十〜数百。
-- ★上流の運営者（開発と運用を 1 人が兼ねる）は、取込を開発用フォルダで行い、値の置き場だけを配布用のクローンへ写してから release する（`data/` は git 外＝pull では届かない）：`rsync -a --delete <開発>/companies/data/store/ <クローン>/companies/data/store/`。★`eval/` は git 追跡＝写さない（先に置くと `git pull` が上書きを拒む）。原本の zip（cache/）も写さない。
+- ★上流の運営者（開発と運用を 1 人が兼ねる）は、取込を開発用フォルダで行い、値の置き場だけを配布用のクローンへ写してから release する（`data/` は git 外＝pull では届かない）：`rsync -rlp --checksum --delete <開発>/companies/data/store/ <クローン>/companies/data/store/`（中身で比べ、時刻は写さない＝中身の同じファイルの時刻が変わらず、`release.sh` の S3 同期〔サイズと時刻で比べる〕が変わったファイルだけを送る。`-a` だと中身が同じでも時刻が開発側に揃い、置き場の全体〔数百 MB〕を送り直す。`-a --checksum` でも時刻は揃えられる）。★`eval/` は git 追跡＝写さない（先に置くと `git pull` が上書きを拒む）。原本の zip（cache/）も写さない。
 - 語彙に無い標準要素が出たら、公式 CSV（API type=5）でラベルを確かめてから `companies/core/items.py` に足し、`make_candidates --docids=` で問を足す（companies/CLAUDE.md）。
 
 ### サービスを足す（companies を有効にする・2026-09-22）
@@ -242,6 +242,8 @@ bash deploy/scripts/release.sh <staging|prod>
 データ版が released/applied 一致・APPLIED・smoke PASS になっていること。ログで確定するなら CW Logs `polyarchy/dataapply` の
 「✅ APPLIED:」の行（smoke 3 本の PASS の直後に出る＝この版から。★それより前の版の箱では完了の行が更新チェックの終了後まで出ない＝
 smoke の PASS が最後の行のまま止まって見える。そのときはダッシュボード②〔毎時 05 分前後に更新〕を待つ）。
+ダッシュボードは APPLIED の後の更新チェックの最後（数分後＝CW Logs の「ダッシュボード更新済」の行）と毎時 05 分に生成される。
+版を見るときは冒頭の「生成」の時刻（JST）が APPLIED より後であることを先に確かめる（それより前の生成なら古い版が出ていて正しい）。
 
 **smoke FAIL 時は自動切り戻し**（2026-09-03・B15 論点1＝運用者ロール移譲の前提 (2)）＝停止 → 退避したデータを
 書き戻し（qdrant はミラー）→ 前回の code tar を再展開＋pip → 再起動 → smoke 再実行 → マーク status=ROLLED_BACK →

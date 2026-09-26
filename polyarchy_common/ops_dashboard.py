@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from polyarchy_common.capture import load_records
@@ -283,7 +284,8 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     env_name = a.env or os.environ.get("ENVIRONMENT", "local")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    generated_at = datetime.now().isoformat(timespec="seconds")
+    # 箱は UTC＝JST で刻む（②の released／applied と揃える。offset なしの UTC を JST と読み違えないように）
+    generated_at = datetime.now(ZoneInfo("Asia/Tokyo")).isoformat(timespec="seconds")
     HTML_PATH.write_text(render(generated_at, env_name), encoding="utf-8")
     print(f"運用ダッシュボード: {HTML_PATH.relative_to(ROOT)}（env={env_name}）", file=sys.stderr)
     return 0
