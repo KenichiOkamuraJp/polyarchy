@@ -196,9 +196,8 @@ git status --short && git log origin/main..HEAD --oneline      # どちらも空
 docker inspect qdrant-dev --format '{{json .HostConfig.Binds}}'  # マウント元が「配布用のクローン」の recommendations/data/qdrant であること
 curl -s localhost:6333/collections/policy_claims_v7 | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['points_count'])"
 aws sts get-caller-identity                                    # AWS のログインが生きていること
-aws configure export-credentials --format process | python3 -c "import sys,json;print(json.load(sys.stdin).get('Expiration'))"   # 残り時間＝期限だけを出す（資格そのものは画面に出さない）
 ```
-- ★ **AWS のログインは配布の直前に取り直す**：`release.sh` はゲート（十数分）の後に upload とマニフェストの書き込みをする。途中で有効期限が切れると upload とマニフェストの間で止まり得る（2026-09-27 staging＝release の直後に切れた）。期限が近ければログインし直してから始める。
+- ★ **AWS のログインが配布の途中で切れないようにする**：`release.sh` はゲート（十数分）の後に upload とマニフェストの書き込みをする。途中で有効期限が切れると upload とマニフェストの間で止まり得る（2026-09-27 staging＝release の直後に切れた）。判断は `sts` が通ることと、ログインしてからの経過時間で行う＝ログインから長く経っていればログインし直してから始める。`aws configure export-credentials` の `Expiration` は判断材料にならない（手元の短期資格が自動更新されるため、ログインし直した直後も含めて常に十数分先を示す。実際に効くのはその下のログインのセッションの期限で、これは画面から見えない）。
 - 配布のたびに qdrant のファイル（約 100MB）が送り直しになる＝`qdrant-dev` の停止・再開でファイルの時刻が変わるため。索引を変えていなくても起きる＝害はない（S3 の同期はサイズと時刻で比べる）。
 - 配布の後の確認＝ダッシュボードは APPLIED の直後に再生成して S3 へ上げる（2026-09-27 の版から。それより前の版の箱では次の毎時 05 分）。捕捉ログは箱から S3 へ毎時の同期（06 分ごろ・変化が無い時間は上げない＝最後の更新時刻が古く見えても止まってはいない）＝当日の問は 1 時間ほどで S3 の `query_log/` に見える。コネクタでの確認の前の Reconnect（Claude Code の `/mcp`）は、**ツールが増減したとき・ツールやサーバの説明が変わったときだけ**要る＝返り値だけの変更は Reconnect なしで新しい振る舞いが返る（ChatGPT のコネクタの作り直しも同じ条件）。
 - ★ **`qdrant-dev` のマウント元は配布用のクローンに置く**：`release.sh` は `qdrant-dev` を止めて `recommendations/data/qdrant` を S3 へ**ミラー（--delete）**する。
