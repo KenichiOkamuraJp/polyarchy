@@ -23,7 +23,7 @@ from functools import lru_cache
 
 from companies.core import store
 from companies.core.industries import INDUSTRIES, MANUFACTURING, MANUFACTURING_NOTE, industry_of
-from companies.core.items import ITEMS, TOP_LINE, standard_of
+from companies.core.items import ITEMS, RATIO_NOTE, TOP_LINE, standard_of
 from companies.core.regions import _has_table, _is_value_table
 
 getcontext().prec = 28
@@ -62,14 +62,13 @@ NOT_INGESTED = {
     "current_liabilities": ("流動負債", "貸借対照表"),
     "interest_bearing_debt": ("有利子負債", "貸借対照表の借入金・社債・リース債務 等"),
     "research_and_development_expenses": ("研究開発費（会社全体）", "研究開発活動・損益計算書の注記"),
+    # 語彙（単社の lookup_company_facts）にはあるが、「主要な経営指標等の推移」に営業利益を書く会社は無い（米国基準の会社も書いていない＝
+    # 2026-09-27 実測で最新期に値のある会社 0 社）＝横断検索では gross_profit と同じく式ごと計算しない（全社を回して 0 件にしない）
+    "operating_profit": ("営業利益", "損益計算書"),
 }
 # 赤字の年は「－」と書いて開示しないことが多い項目（2026-09-27 実測＝ROE の開示が無い 233 社のうち 229 社が赤字の年）。
 # 開示が無く同じ書類・同じ期の当期純利益がマイナスなら、理由を not_disclosed_loss_year に分ける（値は計算して埋めない）
 LOSS_BLANK = {"roe"}
-# 語彙にはあるが、大半の会社で値の置き場に取り込めていない項目（会社は別の場所で開示している＝「開示が無い」ではなく「未収録」）
-PARTIAL = {
-    "operating_profit": "営業利益は「主要な経営指標等の推移」に無い（米国基準の会社だけ）＝損益計算書の営業利益は未収録",
-}
 REASON_NOTE = {
     "input_not_disclosed": "入力の項目をこの会社はこの書類・決算期・basis で開示していない（近い項目では埋めない）",
     "not_disclosed_loss_year": "赤字の年で、会社がこの比率を開示していない（「－」と書く会社が多い）＝低い順の並びにはこの会社が出ない（値は計算して埋めない）",
@@ -107,7 +106,7 @@ def _offset(sl) -> int:
 
 
 def _vocab() -> list[str]:
-    return sorted([*ITEMS, *PSEUDO, *DERIVED, *PRESETS, *NOT_INGESTED])
+    return sorted({*ITEMS, *PSEUDO, *DERIVED, *PRESETS, *NOT_INGESTED})
 
 
 def _tree(node, shift: int, depth: int = 0):
@@ -137,12 +136,12 @@ def _term(name: str, off: int, depth: int):
         if off:
             raise ExprError("bad_expression", hint=f"派生項目 {name} は当期（[t]）だけ")
         return ("term", name, 0)
-    if name in ITEMS or name in PSEUDO:
-        return ("term", name, off)
     if name in NOT_INGESTED:
         label, where = NOT_INGESTED[name]
         raise ExprError("input_not_ingested", term=name,
                         hint=f"{label}（{name}）は未収録（出所＝{where}）。式ごと計算しない。未収録の項目は改善候補として記録した＝list_metrics の not_ingested")
+    if name in ITEMS or name in PSEUDO:
+        return ("term", name, off)
     raise ExprError("unknown_item", term=name, candidates=difflib.get_close_matches(name, _vocab(), n=5, cutoff=0.6),
                     hint="語彙に無い語。使える項目・型は list_metrics で引く")
 
@@ -237,7 +236,7 @@ def _item(ctx, key: str, off: int) -> dict:
             mine_bl = [c for c in bl if c[0] == ctx["standard"]]
             if mine_bl and Decimal(mine_bl[0][2]) < 0:
                 raise Excluded("not_disclosed_loss_year", term=key, period=p, bottom_line=mine_bl[0][2])
-        raise Excluded("input_not_ingested" if key in PARTIAL else "input_not_disclosed", term=key)
+        raise Excluded("input_not_disclosed", term=key)
     std, el, value, unit, context = mine[0]
     return {"item": key, "label": ITEMS[key][0], "element": el, "period": p, "value": value, "unit": unit, "context": context,
             "doc_id": ctx["doc"]}
@@ -417,10 +416,11 @@ def _definition(metric: str | None, expr: str | None) -> tuple[str, object, dict
             return metric, parse(metric), {"name": metric, "label": label, "expr": e, "note": note, "verified": True}
         if metric in DERIVED:
             return metric, parse(metric), {"name": metric, "label": "海外売上比率", "note": DERIVED[metric], "verified": True}
-        if metric in ITEMS:
-            return metric, parse(metric), {"name": metric, "label": ITEMS[metric][0], "note": "開示値（計算しない）", "verified": True, "disclosed": True}
-        raise ExprError("unknown_item", term=metric, candidates=difflib.get_close_matches(metric, [*PRESETS, *DERIVED, *ITEMS], n=5, cutoff=0.6),
-                        hint="metric は検証済みの型・派生項目・項目のキー（list_metrics）。自由な式は expr で渡す")
+        if metric in ITEMS or metric in PSEUDO:
+            label = ITEMS[metric][0] if metric in ITEMS else PSEUDO[metric]
+            return metric, parse(metric), {"name": metric, "label": label, "note": "開示値（計算しない）", "verified": True, "disclosed": True}
+        raise ExprError("unknown_item", term=metric, candidates=difflib.get_close_matches(metric, [*PRESETS, *DERIVED, *ITEMS, *PSEUDO], n=5, cutoff=0.6),
+                        hint="metric は検証済みの型・派生項目・項目のキー・仮の項目（list_metrics）。自由な式は expr で渡す")
     return expr, parse(expr), {"name": None, "expr": expr, "verified": False,
                                "note": "利用者の式（未検証）＝エンジンの共通の規則（同じ書類・期のずれは 5 期推移・欠けた入力と分母 0 以下は除外）だけで計算した"}
 
@@ -543,15 +543,15 @@ def screen_companies(conditions: list[dict], *, order_by: str | None = None, ord
             "unavailable": unavailable, "population": population, "as_of": a,
             "industry_note": MANUFACTURING_NOTE,
             "note": "values は派生値（検証済みの型・利用者の式）または開示値。行ごとの inputs が入力の開示値と出典。"
-                    "比較できない会社は excluded に理由と件数（黙って落とさない）。決算期は会社ごとに違う＝行の period を見る",
+                    "比較できない会社は excluded に理由と件数（黙って落とさない）。決算期は会社ごとに違う＝行の period を見る。" + RATIO_NOTE,
             "license": {"grade": "○", "terms": "公共データ利用規約（PDL1.0）＝出典の明記と加工の明記（派生値は加工）"}}
 
 
 def list_metrics() -> dict:
-    return {"items": {k: v[0] for k, v in ITEMS.items()}, "pseudo_items": PSEUDO, "derived_items": DERIVED,
+    return {"items": {k: v[0] for k, v in ITEMS.items() if k not in NOT_INGESTED}, "pseudo_items": PSEUDO, "derived_items": DERIVED,
             "presets": {k: {"expr": e, "label": label, "note": note} for k, (e, label, note) in PRESETS.items()},
             "not_ingested": {k: {"label": label, "source": where} for k, (label, where) in NOT_INGESTED.items()},
-            "partially_ingested": PARTIAL, "industries": list(INDUSTRIES), "manufacturing": sorted(MANUFACTURING),
+            "industries": list(INDUSTRIES), "manufacturing": sorted(MANUFACTURING),
             "industry_note": MANUFACTURING_NOTE, "exclusion_reasons": REASON_NOTE,
             "grammar": f"式＝項目のキー・数・+ - * /・括弧・期のずれ x[t]〜x[t-{MAX_OFFSET}]（同じ書類の 5 期推移）。関数・文字列・比較は使えない。"
-                       "比率は 0.1 の形（10% ではない）。派生項目は当期だけ"}
+                       "比率は 0.1 の形（10% ではない）。派生項目は当期だけ", "ratio_note": RATIO_NOTE}

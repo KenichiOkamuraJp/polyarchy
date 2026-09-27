@@ -47,6 +47,8 @@ def check_positive(q: dict, lookup) -> str | None:
         return f"対の値（年／月）が不一致: {r.get('companion')!r} ≠ {q['expected_companion']!r}"
     if q.get("expect_other_standards") and not r.get("other_standards"):
         return "もう一方の会計基準の値（other_standards）が添えられていない"
+    if "expect_ratio_note" in q and bool(r.get("ratio_note")) != q["expect_ratio_note"]:
+        return f"比率の形の案内（ratio_note）が{'無い' if q['expect_ratio_note'] else '付いている（比率ではない項目）'}"
     if q.get("expect_other_documents") and not r["source"].get("other_documents"):
         return "他の書類の値（other_documents）が並んでいない"
     return None

@@ -64,7 +64,7 @@ def check_value(q: dict, ev) -> str | None:
 
 def check_negative(q: dict, ev) -> str | None:
     if q["kind"] == "request":
-        r = ev("E02144", expr=q["expr"], as_of="2026-09-27")  # 式の受付の誤りは会社によらない
+        r = ev("E02144", metric=q.get("metric"), expr=q.get("expr"), as_of="2026-09-27")  # 式の受付の誤りは会社によらない
         if r.get("found") is not False or r.get("reason") != q["reason"]:
             return f"受付の誤りにならない: {r.get('reason')}（期待 {q['reason']}）"
         return None
@@ -85,10 +85,11 @@ def check_query(q: dict, sc) -> str | None:
     r = sc(q["conditions"], **kw)
     e = q["expect"]
     if "reason" in e:
-        return None if r.get("found") is False and r.get("reason") == e["reason"] else f"受付の誤りにならない: {r.get('reason')}（期待 {e['reason']}）"
-    if not r.get("found"):
+        if r.get("found") is not False or r.get("reason") != e["reason"]:
+            return f"受付の誤りにならない: {r.get('reason')}（期待 {e['reason']}）"
+    elif not r.get("found"):
         return f"found=false: {r.get('reason')}"
-    rows = r["rows"]
+    rows = r.get("rows", [])
     if e.get("rows_satisfy"):
         for row in rows:
             for c in q["conditions"]:
@@ -103,6 +104,8 @@ def check_query(q: dict, sc) -> str | None:
         return "業種の絞り込みの外の会社が入った"
     if "top_line_items_only" in e and any(row.get("top_line_item") not in e["top_line_items_only"] for row in rows):
         return f"最上段の収益の項目が期待と違う: {sorted({row.get('top_line_item') for row in rows})}"
+    if "note_includes" in e and e["note_includes"] not in r.get("note", ""):
+        return f"返り値の note に「{e['note_includes']}」が無い"
     if "max_rows" in e and len(rows) > e["max_rows"]:
         return f"行が多い: {len(rows)}"
     if e.get("sorted"):

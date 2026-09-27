@@ -11,7 +11,7 @@ import re
 import unicodedata
 
 from companies.core import store
-from companies.core.items import BASES, COMPANION, ITEMS, STANDARDS, TOP_LINE, TOP_LINE_LABEL, standard_of
+from companies.core.items import BASES, COMPANION, ITEMS, RATIO_ITEMS, RATIO_NOTE, STANDARDS, TOP_LINE, TOP_LINE_LABEL, standard_of
 
 ELEMENT_KEY = {f"jpcrp_cor:{el}": k for k, (_, els) in ITEMS.items() for el in els}  # ラベルは読むときに語彙から引く（語彙を足しても取り込み直さない）
 PERIOD = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
@@ -164,6 +164,8 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
         extra["other_standards"] = others
         extra["note"] = ("この決算期には会計基準ごとに複数の値が開示されている。返したのは書類が宣言する会計基準の値＝"
                          "other_standards にもう一方の値がある（accounting_standard を指定すればその基準の値を返す）")
+    if ELEMENT_KEY.get(f["element"]) in RATIO_ITEMS:
+        extra["ratio_note"] = RATIO_NOTE
     label = ITEMS[ELEMENT_KEY[f["element"]]][0] if f["element"] in ELEMENT_KEY else f["label"]
     return {"found": True, **extra, "accounting_standard": standard_of(f["element"]) if f["element"].startswith("jpcrp_cor:") else co["accounting_standard"], "company": co, "item": item, "item_label": ITEMS[item][0] if item else None,
             "element": f["element"], "label": label, "basis": f["basis"], "period": f["period"], "period_end": f["period_end"],
