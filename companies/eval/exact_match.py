@@ -1,6 +1,6 @@
 """原典完全一致ゲート（参照層）。正例＝値が文字列として一致／負例＝fail-closed（値を返さない・禁止値を返さない）。
 
-  python -m companies.eval.exact_match            # 全問 PASS で exit 0（第 1b 便のセグメント別＝segments_exact・地域別＝regions_exact・第 1c 便の業種＝industries_exact も続けて判定）
+  python -m companies.eval.exact_match            # 全問 PASS で exit 0（第 1b 便のセグメント別＝segments_exact・地域別＝regions_exact・第 1c 便の業種＝industries_exact・横断検索＝screen_exact も続けて判定）
 問＝companies/data/eval/exact_match.jsonl・fail_closed.jsonl（作り方は make_candidates.py）。
 
 判定に使う参照層の契約（実装は `companies.core.lookup`・未実装のあいだは全問 FAIL）：
@@ -124,7 +124,10 @@ def main() -> int:
     # 第 1c 便の業種も続けて判定する
     from companies.eval import industries_exact
     ind_rc = industries_exact.main()
-    return 0 if not fails and seg_rc == 0 and reg_rc == 0 and ind_rc == 0 else 1
+    # 第 1c 便の横断検索（式エンジンの規則・無い入力・検証済みの型）も続けて判定する
+    from companies.eval import screen_exact
+    scr_rc = screen_exact.main()
+    return 0 if not fails and seg_rc == 0 and reg_rc == 0 and ind_rc == 0 and scr_rc == 0 else 1
 
 
 if __name__ == "__main__":

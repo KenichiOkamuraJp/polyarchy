@@ -1,0 +1,17 @@
+{"id": "E01737-ordinary_margin-ifrs", "kind": "excluded", "company": {"edinet_code": "E01737", "name": "株式会社日立製作所"}, "metric": "ordinary_margin", "as_of": "2026-09-27", "reason": "input_not_disclosed", "note": "IFRS に経常利益が無い＝税引前利益で代えない"}
+{"id": "E00431-standard-changed", "kind": "excluded", "company": {"edinet_code": "E00431", "name": "不二製油株式会社"}, "expr": "top_line[t] - top_line[t-2]", "as_of": "2026-09-27", "reason": "standard_changed", "note": "2024-03 は日本基準の値だけ（書類が宣言する IFRS の値が無い）＝基準の違う値を混ぜない"}
+{"id": "E00471-irregular", "kind": "excluded", "company": {"edinet_code": "E00471", "name": "株式会社ウェルディッシュ"}, "metric": "roa", "as_of": "2026-09-27", "reason": "irregular_period", "note": "当期 2025-08 と前期 2025-03 の間が 5 か月＝変則決算"}
+{"id": "E00753-nonpositive-denominator", "kind": "excluded", "company": {"edinet_code": "E00753", "name": "チッソ株式会社"}, "expr": "bottom_line / net_assets", "as_of": "2026-09-27", "reason": "nonpositive_denominator", "note": "純資産がマイナス（債務超過）"}
+{"id": "E00012-operating-profit", "kind": "excluded", "company": {"edinet_code": "E00012", "name": "株式会社極洋"}, "expr": "operating_profit / top_line", "as_of": "2026-09-27", "reason": "input_not_ingested", "note": "営業利益は主要な経営指標等に無い（損益計算書は未取込）＝開示が無いのではなく未収録"}
+{"id": "E01086-stale", "kind": "excluded", "company": {"edinet_code": "E01086", "name": "株式会社ブリヂストン"}, "metric": "net_margin", "as_of": "2027-08-01", "reason": "stale_period", "note": "最新の決算期 2025-12 が基準日から 18 か月より前"}
+{"id": "E00004-overseas-statement", "kind": "excluded", "company": {"edinet_code": "E00004", "name": "カネコ種苗株式会社"}, "metric": "overseas_sales_ratio", "as_of": "2026-09-27", "reason": "overseas_statement_only", "note": "本邦が 90% 超のため省略＝比率は出さない（会社の文で 10% 未満と分かるだけ）"}
+{"id": "E36129-overseas-home-not-in-table", "kind": "excluded", "company": {"edinet_code": "E36129", "name": "クリングルファーマ株式会社"}, "metric": "overseas_sales_ratio", "as_of": "2026-09-27", "reason": "home_not_in_table", "note": "表が「米国｜合計」だけ＝本邦の区分が無い（海外 100% か本邦が一体かは表から決めない）。※当初はミマキを置いたが、最新の書類（2026-03）の表には「日本」の列がある＝棚卸しの型は旧い書類のもの"}
+{"id": "E02274-overseas-us-gaap", "kind": "excluded", "company": {"edinet_code": "E02274", "name": "キヤノン株式会社"}, "metric": "overseas_sales_ratio", "as_of": "2026-09-27", "reason": "regions_not_tagged", "note": "米国基準＝地域別の欄が無い"}
+{"id": "req-unknown", "kind": "request", "expr": "ordinary_proft / top_line", "reason": "unknown_item", "note": "綴りの誤り＝近い語を候補に"}
+{"id": "req-not-ingested", "kind": "request", "expr": "gross_profit / top_line", "reason": "input_not_ingested", "note": "売上総利益は未収録の項目の目録にある＝式ごと計算しない"}
+{"id": "req-func", "kind": "request", "expr": "abs(roa)", "reason": "bad_expression"}
+{"id": "req-offset5", "kind": "request", "expr": "roa[t-5]", "reason": "bad_expression", "note": "5 期推移の外（roa は t-1 も使う＝t-4 まで）"}
+{"id": "req-future", "kind": "request", "expr": "top_line[t+1]", "reason": "bad_expression"}
+{"id": "req-string", "kind": "request", "expr": "'net_sales'", "reason": "bad_expression"}
+{"id": "req-dunder", "kind": "request", "expr": "__import__('os')", "reason": "bad_expression"}
+{"id": "req-derived-offset", "kind": "request", "expr": "overseas_sales_ratio[t-1]", "reason": "bad_expression", "note": "派生項目は当期だけ"}

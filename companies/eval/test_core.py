@@ -17,6 +17,7 @@ SEG_REASONS = {"no_segment_figures", "not_tagged", "no_consolidated_statements",
 SEG_SECTIONS = {"segment_information", "employees", "capex", "research_and_development"}
 MIN_REG_POS, MIN_REG_NEG = 291, 16        # 第 1b 便②（地域別）
 MIN_IND = 13                              # 第 1c 便（業種）
+MIN_SCR_POS, MIN_SCR_NEG, MIN_SCR_Q = 203, 17, 5  # 第 1c 便（横断検索）
 REG_REASONS = {"omitted", "not_tagged", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_company"}
 REG_SECTIONS = {"revenue", "property_plant_and_equipment", "geographic_areas_ifrs"}
 REG_KINDS = {"home", "last_number", "span", "uchi", "multiline", "order", "prose_amount", "omitted_paragraph", "total_two_path", "nested"}
@@ -72,8 +73,18 @@ def main() -> int:
     assert len(ind) >= MIN_IND and len({q["id"] for q in ind}) == len(ind), f"業種の問が減った／id 重複: {len(ind)}"
     assert any(q["expected"]["manufacturing"] for q in ind) and any(not q["expected"]["manufacturing"] for q in ind), "製造業と非製造業の両方"
     assert any(q["expected"]["listing"] == "非上場" for q in ind), "非上場の会社を 1 問以上"
+    scr = [json.loads(l) for f in ("screen.jsonl", "screen_manual.jsonl") for l in (EVAL / f).read_text().splitlines() if l.strip()]
+    scr_neg = [json.loads(l) for l in (EVAL / "screen_fail_closed.jsonl").read_text().splitlines() if l.strip()]
+    scr_q = [json.loads(l) for l in (EVAL / "screen_queries.jsonl").read_text().splitlines() if l.strip()]
+    assert len(scr) >= MIN_SCR_POS and len(scr_neg) >= MIN_SCR_NEG and len(scr_q) >= MIN_SCR_Q, f"横断検索の問が減った: {len(scr)}／{len(scr_neg)}／{len(scr_q)}"
+    assert len({q["id"] for q in scr + scr_neg + scr_q}) == len(scr) + len(scr_neg) + len(scr_q), "横断検索の問の id の重複"
+    from companies.core.screen import PRESETS
+    assert {q["metric"] for q in scr} >= set(PRESETS) | {"overseas_sales_ratio"}, "検証済みの型ごとに正例 1 問以上"
+    assert {q["reason"] for q in scr_neg} >= {"input_not_disclosed", "input_not_ingested", "unknown_item", "bad_expression", "standard_changed",
+                                            "irregular_period", "nonpositive_denominator", "stale_period"}, "規則と無い入力の 3 段ごとに負例 1 問以上"
     print(f"PASS: 語彙 {len(ITEMS)} キー／{len(ELEMENT_TO_KEY)} 要素・正例 {len(pos)}・負例 {len(neg)}・発見層 {len(find)}"
-          f"・セグメント 正例 {len(seg)}／負例 {len(seg_neg)}・地域別 正例 {len(reg)}／負例 {len(reg_neg)}・業種 {len(ind)}")
+          f"・セグメント 正例 {len(seg)}／負例 {len(seg_neg)}・地域別 正例 {len(reg)}／負例 {len(reg_neg)}・業種 {len(ind)}"
+          f"・横断検索 正例 {len(scr)}／負例 {len(scr_neg)}／横断の問 {len(scr_q)}")
     return 0
 
 
