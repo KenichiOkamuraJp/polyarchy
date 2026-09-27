@@ -14,6 +14,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 
+INSTRUCTIONS: list[str] = [""]
 TOOL_NAMES: list[str] = []  # 出力の 1 行目に本数と名前を出す（配布後に手元で本数を確かめられるように）
 
 
@@ -22,10 +23,12 @@ async def run() -> list[str]:
     env = {**os.environ, "COMPANIES_QUERY_LOG": os.path.join(tempfile.mkdtemp(), "q.jsonl")}  # スモークで捕捉ログを汚さない
     params = StdioServerParameters(command=sys.executable, args=["-m", "companies.serving.mcp_server"], env=env)
     async with stdio_client(params) as (r, w), ClientSession(r, w) as s:  # stdout が汚れていればここで壊れる
-        await s.initialize()
+        init = await s.initialize()
+        INSTRUCTIONS[:] = [init.instructions or ""]
         tools = {t.name: t for t in (await s.list_tools()).tools}
         TOOL_NAMES[:] = sorted(tools)
-        if set(tools) != {"find_company", "lookup_company_facts", "lookup_segments", "lookup_regions", "list_items"}:
+        if set(tools) != {"find_company", "lookup_company_facts", "lookup_segments", "lookup_regions", "list_items",
+                          "list_metrics", "screen_companies"}:
             errs.append(f"[1] ツール集合が違う: {sorted(tools)}")
         for t in tools.values():
             if "layer" in (t.inputSchema.get("properties") or {}):
@@ -67,6 +70,34 @@ async def run() -> list[str]:
         # 結合セルを展開して読むと二重に数える＝説明で案内する（契約 §6）
         if "結合セルは展開しない" not in (getattr(tools.get("lookup_regions"), "description", "") or ""):
             errs.append("[14] lookup_regions の説明に、結合セルを展開しない旨が無い")
+        # 第 1c 便：ツールの説明に指標の一覧を書かない（型を足してもツールの定義が変わらない＝ChatGPT のコネクタを作り直さずに済む）
+        from companies.core.screen import PRESETS
+        desc = getattr(tools.get("screen_companies"), "description", "") or ""
+        if "list_metrics" not in desc or any(k in desc for k in PRESETS):
+            errs.append("[15] screen_companies の説明が list_metrics を案内しない／型の名前を並べている")
+        m = await call("list_metrics")
+        if not m.get("presets") or "gross_profit" not in (m.get("not_ingested") or {}) or len(m.get("industries") or []) != 33:
+            errs.append("[16] list_metrics が型・未収録の目録・業種を返さない")
+        r9 = await call("screen_companies", conditions=[{"expr": "gross_profit / top_line"}])
+        if r9.get("found") or r9.get("reason") != "input_not_ingested":
+            errs.append(f"[17] 未収録の項目の式を弾かない: {r9.get('reason')}")
+        r10 = await call("screen_companies", conditions=[{"expr": "secret_word_xyz / top_line"}])
+        if r10.get("found") or r10.get("reason") != "unknown_item":
+            errs.append(f"[18] 語彙に無い語を弾かない: {r10.get('reason')}")
+        r11 = await call("screen_companies", conditions=[{"metric": "roa", "min": 0.3}], limit=3)
+        if not r11.get("found") or len(r11.get("rows") or []) > 3 or "excluded" not in r11:
+            errs.append(f"[19] 横断検索が行と除外を返さない: {str(r11)[:200]}")
+        recs = [json.loads(l) for l in open(env["COMPANIES_QUERY_LOG"]) if l.strip()]
+        scr = [x for x in recs if x.get("tool") == "screen_companies"]
+        vocab = [u for x in scr for u in x.get("unavailable_vocab") or []]
+        if not any(u["term"] == "gross_profit" and u["level"] == "input_not_ingested" for u in vocab):
+            errs.append("[20] 未収録の項目が捕捉ログ（unavailable_vocab）に残らない")
+        if any(u["term"] == "secret_word_xyz" for u in vocab):
+            errs.append("[21] 語彙に無い語（利用者が書いた語）が恒久集計向けの unavailable_vocab に入った")
+        if not any(u.get("term") == "secret_word_xyz" for x in scr for u in x.get("unavailable") or []):
+            errs.append("[22] 語彙に無い語が捕捉ログ（30 日）に残らない＝triage で拾えない")
+        if "横断" not in INSTRUCTIONS[0]:
+            errs.append("[23] サーバの説明に横断検索（派生値を計算する唯一の入口）が無い")
         r4 = await call("find_company", query="")
         if r4.get("found"):
             errs.append("[8] 空の問い合わせで会社を返した")

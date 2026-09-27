@@ -2,7 +2,7 @@
 週次利用レポート（段 1＝ローカル生成・静的 HTML 1 枚）。
 
 設計＝docs/運用設計.md §4.2。管理 Web アプリは作らない＝ログから静的レポートを生成する。
-入力＝両サービス（recommendations / stats）の捕捉ログ JSONL（ローカル＋ `--s3-bucket` 指定時は箱の保護コピーを
+入力＝各サービス（recommendations / stats / companies）の捕捉ログ JSONL（ローカル＋ `--s3-bucket` 指定時は箱の保護コピーを
 ミラーしてマージ）＋ stats freshness の状態＋ /healthz 応答（best-effort）。
 出力＝
   ① `ops/usage/weekly.jsonl` … 週次 1 行の集計（**数字のみ＝検索語・個人を含まない**）。
@@ -12,6 +12,8 @@
   ② `ops/usage/usage_report.html` … 静的 HTML 1 枚（git 外・①から何度でも再生成できる）。
 
 ★検索語（query 文字列）・ヒット文書名は集計 JSON にも HTML にも**載せない**。数だけを数える。
+  例外の 1 つ＝companies の横断検索で使えなかった入力は、サーバ側の固定の語（項目・未収録の目録のキー）を件数のラベルに使う
+  （利用者が書いた語ではない＝companies が捕捉ログの unavailable_vocab に絞って書く・docs/第1c便_計画.md §2-6）。
 
 実行（リポジトリ root・週次目安）：
     python -m polyarchy_common.usage_report                       # ローカルのログのみ
@@ -40,9 +42,10 @@ log = get_logger("polyarchy.usage_report")
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIRS = {"recommendations": ROOT / "recommendations" / "data" / "query_log",
-            "stats": ROOT / "stats" / "data" / "query_log"}
+            "stats": ROOT / "stats" / "data" / "query_log",
+            "companies": ROOT / "companies" / "data" / "query_log"}
 # 箱の保護コピー（polyarchy-fuelsync.service が sync する先）→ ローカルミラー（query_log/ 配下＝git 外）
-S3_PREFIXES = {"recommendations": "data/query_log", "stats": "data/stats/query_log"}
+S3_PREFIXES = {"recommendations": "data/query_log", "stats": "data/stats/query_log", "companies": "data/companies/query_log"}
 OUT_DIR = ROOT / "ops" / "usage"
 WEEKLY_PATH = OUT_DIR / "weekly.jsonl"
 HTML_PATH = OUT_DIR / "usage_report.html"
@@ -114,6 +117,7 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
             "stats_find": 0, "stats_find_zero": 0, "stats_find_filtered": 0,
             "stats_lookup": 0, "stats_found_true": 0, "stats_found_false": 0,
             "stats_nf_reasons": Counter(), "stats_catalog": 0,
+            "companies": 0, "companies_screen": 0, "companies_unavailable": Counter(),
         })
         w["total"] += 1
         w[svc] += 1
@@ -131,6 +135,13 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
                 w["recommendations_orgs_filter"] += 1
             if rec.get("since") is not None or rec.get("until") is not None:
                 w["recommendations_period_filter"] += 1
+        elif svc == "companies":
+            if rec.get("tool") == "screen_companies":
+                w["companies_screen"] += 1
+            # 横断検索で使えなかった入力＝サーバ側の固定の語（項目・未収録の目録のキー）だけ（companies が書き込み時に絞った欄＝
+            # 利用者が書いた語は入らない）。「level:キー」の件数＝取込の改善候補の一次情報
+            for u in rec.get("unavailable_vocab") or []:
+                w["companies_unavailable"][f"{u.get('level')}:{u.get('term')}"] += 1
         else:  # stats
             tool = str(rec.get("tool", ""))
             if tool == "find_statistics":
@@ -155,6 +166,7 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
         w["users"] = len(users.get(key, ()))
         w["by_source"] = dict(sorted(w["by_source"].items()))
         w["stats_nf_reasons"] = dict(sorted(w["stats_nf_reasons"].items()))
+        w["companies_unavailable"] = dict(w["companies_unavailable"].most_common())
         rows.append(w)
     return rows
 
@@ -231,7 +243,7 @@ def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at:
  .wrap {{ overflow-x: auto; }}
 </style></head><body>
 <h1>Polyarchy 週次利用レポート</h1>
-<p class="note">生成 {e(generated_at)}／入力＝recommendations・stats の捕捉ログ（ローカル＋箱の保護コピー）。
+<p class="note">生成 {e(generated_at)}／入力＝recommendations・stats・companies の捕捉ログ（ローカル＋箱の保護コピー）。
 <b>検索語・ヒット文書名・個人を特定する情報は含まない</b>（数字のみ＝恒久蓄積可・プライバシーポリシー整合）。</p>"""
     parts = [head]
     if latest:
@@ -239,7 +251,9 @@ def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at:
 <p>クエリ {latest['total']} 件（recommendations {latest['recommendations']}・stats {latest['stats']}）／
 識別利用者 {latest['users']} 人（user_hash・authless 分は数えない）／
 recommendations 0 件率 {e(pct(latest['recommendations_zero'], latest['recommendations']))}・低ヒット率(&lt;{LOW_HIT}) {e(pct(latest['recommendations_low'], latest['recommendations']))}／
-stats lookup found=false {latest['stats_found_false']} 件（拡充候補の一次情報）</p>""")
+stats lookup found=false {latest['stats_found_false']} 件（拡充候補の一次情報）／
+companies {latest.get('companies', 0)} 件（横断検索 {latest.get('companies_screen', 0)}）・使えなかった入力
+{e("・".join(f"{k} {v}" for k, v in (latest.get('companies_unavailable') or {}).items()) or "—")}（未収録・開示なし＝取込の改善候補）</p>""")
     parts.append("""<h2>週次推移</h2><div class="wrap"><table>
 <tr><th>週</th><th>週初</th><th>計</th><th>recommendations</th><th>stats</th><th>source 内訳</th><th>利用者</th>
 <th>c: 0件</th><th>c: 低ヒット</th><th>c: orgs指定</th><th>c: 期間指定</th>

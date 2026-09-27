@@ -18,7 +18,7 @@ import anyio  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 
-from companies.core import lookup, regions, segments, store  # noqa: E402
+from companies.core import lookup, regions, screen, segments, store  # noqa: E402
 from companies.core.items import ITEMS  # noqa: E402
 from polyarchy_common.capture import append_record  # noqa: E402
 
@@ -38,14 +38,24 @@ SERVER_INSTRUCTIONS = (
     "セグメント別(lookup_segments)は会社が定義した区分をその会社のラベルのまま返し、業種横断の区分や利益の物差しに寄せない"
     "(セグメント利益が営業利益か経常利益か事業利益かは会社の定義=要素とラベルのまま)。"
     "地域別(lookup_regions)は表をセル単位で写して返し、国内/海外への寄せ・比率の計算はしない(表の読み方は返り値の read_note)。"
-    "各値には出典(書類管理番号・提出日・要素・context・URL・引用1行)が付く。派生値(利益率・前年比 等)は計算しない。"
+    "各値には出典(書類管理番号・提出日・要素・context・URL・引用1行)が付く。単社の参照層は派生値(利益率・前年比 等)を計算しない=構成する項目を引いて利用側で計算する。"
+    "横断検索(list_metrics=使える項目・検証済みの型・未収録の項目/screen_companies=条件で会社を絞り並べる)に限り、定義した式で派生値をサーバが計算し、"
+    "行ごとに式と入力の開示値(出典つき)を添えて派生値と明記する。比較できない会社は除外の理由と件数で返し、未収録の入力は未収録と返す(近い項目で埋めない)。"
     "値そのものは各提出会社の開示に帰属し、本サービスは値を保証しない(原典で確認すること)。"
 )
 mcp = FastMCP("polyarchy-companies", instructions=SERVER_INSTRUCTIONS)
 
 
-def _capture(tool: str, args: dict, r: dict) -> None:
-    append_record(QUERY_LOG, {"tool": tool, "args": args, "found": r.get("found"), "reason": r.get("reason")})
+def _capture(tool: str, args: dict, r: dict, **extra) -> None:
+    append_record(QUERY_LOG, {"tool": tool, "args": args, "found": r.get("found"), "reason": r.get("reason"), **extra})
+
+
+def _vocab_only(unavailable: list[dict]) -> list[dict]:
+    """30 日を超えて残す集計（週次の利用集計）に回すのは、サーバ側の固定の語（項目・未収録の目録のキー）だけ＝利用者が書いた語は載せない
+    （docs/第1c便_計画.md §2-6）。polyarchy_common.usage_report はこの欄を件数として数える（サービスのソースは読まない）。"""
+    fixed = set(screen.ITEMS) | set(screen.NOT_INGESTED) | set(screen.PSEUDO) | set(screen.DERIVED)
+    return [{"term": u["term"], "level": u["level"]} for u in unavailable
+            if u.get("level") in ("input_not_ingested", "input_not_disclosed") and u.get("term") in fixed]
 
 
 @mcp.tool(title="企業を同定する", annotations=READ_ONLY)
@@ -141,6 +151,42 @@ def lookup_regions(company: str, period: str, basis: str | None = None, doc_id: 
     return r
 
 
+@mcp.tool(title="横断検索の項目と型を見る", annotations=READ_ONLY)
+def list_metrics() -> dict:
+    """screen_companies の条件・並べ方に使える語の一覧＝項目のキー(開示値)・仮の項目(top_line=最上段の収益/bottom_line=当期純利益)・
+    派生項目・検証済みの型(名前つきの指標＝式と注)・未収録の項目(まだ使えない＝使うと input_not_ingested)・業種(EDINET の提出者業種)・
+    除外の理由の一覧・式の書き方。screen_companies を使う前に引く。
+    """
+    return screen.list_metrics()
+
+
+@mcp.tool(title="条件で会社を絞り込み並べる", annotations=READ_ONLY)
+def screen_companies(conditions: list[dict], order_by: str | None = None, order: str = "desc", industries: list[str] | None = None,
+                     manufacturing: bool | None = None, basis: str | None = None, period_from: str | None = None,
+                     period_to: str | None = None, limit: int = 20) -> dict:
+    """条件で会社を絞り込み、1 つの値で並べて返す(横断検索)。使える語・検証済みの型・未収録の項目は list_metrics で引く。
+
+    conditions=1〜5 個の {"metric": 検証済みの型か項目のキー} または {"expr": 式} に、任意で "min"/"max"(比率は 0.1 の形=10%)。条件は AND。
+    式=項目のキー・数・+ - * /・括弧・期のずれ x[t]〜x[t-4](同じ書類の 5 期推移)だけ(関数・文字列・比較は使えない)。
+    order_by=並べる条件(metric か expr の文字列・省くと最初の条件)・order=desc/asc・limit=1〜100(既定 20)。
+    industries=EDINET の提出者業種(東証 33 業種の表記)の配列・manufacturing=true/false(製造業 16 業種)。basis=consolidated/non_consolidated
+    (省くと会社ごとに連結を優先)。period_from/period_to=決算期末 YYYY-MM の範囲(省くと各社の最新の決算期・基準日から 18 か月より前は除外)。
+    返り値=rows(会社・業種・決算期・書類・values〔条件ごとの値＝派生値か開示値〕・inputs〔入力の開示値と出典。地域別の比率は本邦と合計のセルと分類の基準の文〕)・
+    matched(条件を満たす全件数)・excluded(条件ごと・理由ごとの件数と社名の例＝比較できない会社を黙って落とさない)・
+    judged_by_statement(表が無く会社の文で判定した件数)・unavailable(使えなかった入力＝未収録・開示なし)・definitions(使った式)。
+    決算期は会社ごとに違う(行の period を見る)。業種は登録の業種で事業の実態とずれる会社がある。値の比較・解釈・文章化は利用側で行う。
+    無ければ found=false と reason(unknown_item=語彙に無い語〔candidates〕/input_not_ingested=未収録の項目/bad_expression=式として受け付けない/
+    bad_request/bad_period)。
+    """
+    args = {"conditions": conditions, "order_by": order_by, "order": order, "industries": industries, "manufacturing": manufacturing,
+            "basis": basis, "period_from": period_from, "period_to": period_to, "limit": limit}
+    r = screen.screen_companies(conditions, order_by=order_by, order=order, industries=industries, manufacturing=manufacturing,
+                                basis=basis, period_from=period_from, period_to=period_to, limit=limit)
+    un = r.get("unavailable") or []
+    _capture("screen_companies", args, r, matched=r.get("matched"), unavailable=un, unavailable_vocab=_vocab_only(un))
+    return r
+
+
 @mcp.tool(title="項目の語彙を見る", annotations=READ_ONLY)
 def list_items() -> dict:
     """lookup_company_facts の item に使えるキーの一覧(キー・日本語の呼び名・対応する標準タクソノミの要素)。
@@ -165,7 +211,7 @@ def main() -> int:
     if a.http:
         from polyarchy_common.mcp_http import serve_streamable_http
         serve_streamable_http(mcp, host=a.host, port=a.port, path=os.getenv("MCP_HTTP_PATH", "/mcp"),
-                              tools_desc="find_company / lookup_company_facts / lookup_segments / lookup_regions / list_items", logger_name="polyarchy.companies",
+                              tools_desc="find_company / lookup_company_facts / lookup_segments / lookup_regions / list_items / list_metrics / screen_companies", logger_name="polyarchy.companies",
                               health_check=_health)
         return 0
     log.info("companies MCP（stdio）起動＝収録 %d 社", len(store.registry()))

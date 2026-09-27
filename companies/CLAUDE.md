@@ -22,6 +22,7 @@
   - 企業が同定できない・候補が複数→値を返さず、候補と理由を返す（推測で 1 社に決めない）。
   - その会社に無い項目→`found=false`＋理由。**隣の項目で埋めない**（銀行の経常収益を売上高として返すのは捏造）。
   - 連結と単体は別の系列。単体へ落ちてよいのは連結財務諸表を作成していない会社だけ＝**項目単位では落とさない**（持株会社で「売上高」に単体の営業収益が黙って入る＝[実データ検証](docs/記録/実データ検証_2026-09-20.md) §2）。
+- **派生値を計算するのは横断検索（`core/screen.py`・`screen_companies`）だけ**（2026-09-27）＝式は項目の語彙に閉じる（四則演算と期のずれ）・正しさはエンジンの共通の規則（同じ書類・5 期推移・欠けた入力と分母 0 以下と変則決算と基準の変更は除外）・行ごとに式と入力の開示値と出典・比較できない会社は除外の理由と件数・未収録の入力は `input_not_ingested`＝[第 1c 便 計画](docs/第1c便_計画.md)。単社の参照層は派生値を返さない。検証済みの型・未収録の目録を足すときは評価問（`screen*.jsonl`）を同じ変更に。
 - 期間キーは決算期末（`YYYY-MM`）。同じ決算期の値は後年の書類で遡及修正され得る＝出所の書類を値に刻む。
 - 評価は hit@5 ではなく**原典との完全一致**（`companies.eval.exact_match`）。別名（社名のゆれ・業種別の要素名）は**問を立ててから足す**。
 - 原文は丸ごと再配布しない＝値＋引用 1 行＋出典 URL。EDINET タクソノミ自体は再配布しない（値・要素名の利用は可）。
@@ -44,7 +45,9 @@ python -m companies.ingest.edinet --cached   # 取得済みの書類を値の置
 python -m companies.ops.build_segment_labels  # 取込の後＝セグメントに出る標準要素の公式ラベル表（core/segment_labels.json・git 追跡）を公式 CSV から作り直す
 python -m companies.eval.make_segment_candidates  # 第 1b 便の評価問の素材づくり（★segments*.jsonl を上書きする）
 python -m companies.eval.make_region_candidates   # 第 1b 便②（地域別）の評価問の素材づくり（★regions*.jsonl を上書きする）
-python -m companies.eval.exact_match        # 原典完全一致＝正例・負例とも全問 PASS（第 1b 便の segments_exact・regions_exact も続けて判定）
+python -m companies.ops.build_industries    # 業種（EDINET コードリスト＝data/cache/codelist/ に置いてから・RUNBOOK §5）
+python -m companies.eval.make_screen_candidates  # 第 1c 便（横断検索）の値の正例の素材づくり（★screen.jsonl を上書きする・人手の問は screen_manual／screen_fail_closed／screen_queries）
+python -m companies.eval.exact_match        # 原典完全一致＝正例・負例とも全問 PASS（第 1b 便の segments_exact・regions_exact・第 1c 便の industries_exact・screen_exact も続けて判定）
 python -m companies.eval.find_quality       # 発見層（企業の同定）＝全問 PASS
 python -m companies.ops.population_report   # 母集団の棚卸し（取込のあとに回す＝語彙・契約が標本の外でも成り立つか）
 python -m companies.eval.mcp_smoke          # MCP 疎通・ツール定義・fail-closed・stdout クリーン
