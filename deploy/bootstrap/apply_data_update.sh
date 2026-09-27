@@ -200,9 +200,12 @@ if [[ "$APPLY_RC" == 0 ]]; then
   metric 1
   # 完了の行は更新チェックより先に出す＝更新チェック（上流への取得を含み、終わるまで戻らない）を待たずに CW Logs で適用の完了を確定できる
   log "✅ APPLIED: $NEW_AT（code $NEW_VER・smoke PASS）→ 更新チェックとダッシュボード更新を開始"
-  # 適用直後に更新チェックを回す（polyarchy ユーザで＝ファイル所有を崩さない）＝「新着 N 件」が取込後も翌朝まで残らない。ダッシュボードも更新される
-  systemctl start polyarchy-updatecheck.service || /usr/local/bin/polyarchy-dashboard || true
-  log "ダッシュボード更新済"
+  # ダッシュボードを先に再生成して S3 へ（polyarchy ユーザで＝ファイル所有を崩さない）＝版一致を適用直後に確かめられる。
+  # 更新チェック（上流への取得で長くかかる）の後ろに置くと、S3 のダッシュボードが次の毎時 05 分まで旧版のままだった（2026-09-26・27 staging）
+  systemctl start polyarchy-dashboard.service && log "ダッシュボード更新済（S3 ops/dashboard/）" \
+    || warn "ダッシュボードの再生成に失敗（次の毎時 05 分の生成を待つ）"
+  # 更新チェックは待たずに裏で回す（終われば自分でダッシュボードを再生成する）＝「新着 N 件」が取込後も翌朝まで残らない
+  systemctl start --no-block polyarchy-updatecheck.service || true
   exit 0
 fi
 

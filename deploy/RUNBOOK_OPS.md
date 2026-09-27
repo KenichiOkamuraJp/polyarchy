@@ -190,12 +190,16 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
 | git 外で置くもの | ゲート用のデータの写し（任意） | `deploy/env/<env>.env`・`recommendations/.env`・`stats/.env`・データの原本（`recommendations/data/{pdfs,bm25,qdrant}`・`stats/data/{values,cache}`）・terraform state（terraform を触るとき） |
 | Python 環境 | 任意 | 下表のとおりロックから作る（環境は配布用のクローンを指す editable install にする） |
 
-配布の前に確認する 3 点：
+配布の前に確認する 4 点：
 ```bash
 git status --short && git log origin/main..HEAD --oneline      # どちらも空＝リポジトリのコミットと一致
 docker inspect qdrant-dev --format '{{json .HostConfig.Binds}}'  # マウント元が「配布用のクローン」の recommendations/data/qdrant であること
 curl -s localhost:6333/collections/policy_claims_v7 | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['points_count'])"
+aws sts get-caller-identity                                    # AWS のログインが生きていること
 ```
+- ★ **AWS のログインは配布の直前に取り直す**：`release.sh` はゲート（十数分）の後に upload とマニフェストの書き込みをする。途中で有効期限が切れると upload とマニフェストの間で止まり得る（2026-09-27 staging＝release の直後に切れた）。期限が近ければログインし直してから始める。
+- 配布のたびに qdrant のファイル（約 100MB）が送り直しになる＝`qdrant-dev` の停止・再開でファイルの時刻が変わるため。索引を変えていなくても起きる＝害はない（S3 の同期はサイズと時刻で比べる）。
+- 配布の後の確認＝ダッシュボードは APPLIED の直後に再生成して S3 へ上げる（2026-09-27 の版から。それより前の版の箱では次の毎時 05 分）。捕捉ログは箱から S3 へ毎時の同期＝当日の問は 1 時間ほどで S3 の `query_log/` に見える。
 - ★ **`qdrant-dev` のマウント元は配布用のクローンに置く**：`release.sh` は `qdrant-dev` を止めて `recommendations/data/qdrant` を S3 へ**ミラー（--delete）**する。
   マウント元が別のフォルダ・空・古いと、その内容で箱の索引を上書きする。開発用のフォルダのゲートは同じ `qdrant-dev` に HTTP（:6333）でつながるので、Qdrant の実体は 1 つでよい。
 - Python の editable install は**最後に `pip install -e` したフォルダ**を指す。リポジトリ root 以外を cwd にして動くスクリプトは、その向き先のコードを import する＝フォルダごとに env を分ける。
