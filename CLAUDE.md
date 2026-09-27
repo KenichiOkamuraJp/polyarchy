@@ -51,6 +51,7 @@ bash deploy/scripts/release.sh <env>                # ゲート 9 本（companie
 - ★ **IP 許可リストは使えない**：Claude／ChatGPT のコネクタは利用者の PC ではなく Anthropic／OpenAI のサーバ側から接続してくる。OAuth のディスカバリとログインも別経路で来る。入口の防御＝ログイン＋秘密パス＋レート制限（`cloudflare-guard.sh` は `IP_ALLOWLIST=off` が既定。秘密パスルールは `/.well-known/`・`/cdn-cgi/`・`/healthz` を除外＝認証の生命線）。
 - ★ **認証の三点一致**：IdP の Resource indicator・env の `AUTH_AUD_*`・実 URL（ホスト＋秘密パス）が同一文字列。認証ホストの秘密パスは原則回転しない（RUNBOOK §4）。IdP 側は DCR 有効＋Resource indicator を Default 指定＋JWT に email クレーム（PROD_MIGRATION §2.5）。
 - ★ **bootstrap の再走行はコードを更新しない**（コード反映は tar 再展開＝通常は自動適用がやる）。箱を手で触らない。どうしても手動 apply するときは `systemd-cat -t polyarchy-dataapply` を挟む（監査線に残すため・RUNBOOK §5）。
+- ★ **自動適用のスクリプト（`deploy/bootstrap/apply_data_update.sh` ほか `/usr/local/bin/polyarchy-*` に入るもの）の変更は、次の次の配布から効く**：自動適用の中の bootstrap 再走行で入れ替わる＝その配布自体は旧スクリプトで走る。直したことの確認は 2 回目の配布で行う。
 - ★ **依存を変えたらロックを再生成**（`deploy/scripts/lock_deps.sh`→PR→ゲート＝RUNBOOK §7）。`mcp` は `<2` に固定（2.x は FastMCP が無い）。箱の Qdrant は musl ビルド必須。
 - ★ **ChatGPT（Business）のコネクタ**：利用者ごとの認可は「個人の設定→アプリ→接続」で行う（作成画面では出ない）。公開後にツール定義を更新できない＝変えたら作り直し。
 - ★ **OECD SDMX は 1 時間 60 ダウンロードの制限**（解除手段なし）。取得の UA は curl 相当が既定（IMF／OECD の WAF）。例外は UA 文字列で弾く中小企業白書 PDF だけ＝方針は [stats/README.md](stats/README.md)「取得の作法」（JS チャレンジ・ログイン・レート制限は突破しない）。
