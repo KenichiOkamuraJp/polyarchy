@@ -23,7 +23,7 @@ from functools import lru_cache
 
 from companies.core import store
 from companies.core.industries import INDUSTRIES, MANUFACTURING, MANUFACTURING_NOTE, industry_of
-from companies.core.items import ITEMS, RATIO_NOTE, TOP_LINE, TOP_LINE_LABEL, standard_of
+from companies.core.items import ITEMS, RATIO_ITEMS, RATIO_NOTE, TOP_LINE, TOP_LINE_LABEL, standard_of
 from companies.core.regions import _has_table, _is_value_table
 
 getcontext().prec = 28
@@ -482,7 +482,7 @@ def _fmt(v: Decimal) -> str:
 def evaluate_company(code: str, *, metric: str | None = None, expr: str | None = None, as_of: str | None = None,
                      basis: str | None = None, period_from: str | None = None, period_to: str | None = None, _parsed=None) -> dict:
     try:
-        _, tree, _ = _parsed or _definition(metric, expr)
+        _, tree, d = _parsed or _definition(metric, expr)
     except ExprError as e:
         return {"found": False, "reason": e.reason, **e.extra}
     try:
@@ -492,7 +492,9 @@ def evaluate_company(code: str, *, metric: str | None = None, expr: str | None =
     except Excluded as e:
         return {"ok": False, "reason": e.reason, **e.extra}
     inputs = [v[1] for k, v in sorted(memo.items(), key=lambda kv: (kv[0][1], kv[0][0]))]
-    return {"ok": True, "value": _fmt(value),
+    # 開示値の条件（計算しない）は開示の文字列のまま返す（2026-09-27 staging＝−8.400 を −8.4 と返し、利用側のモデルが「この社だけ桁が不自然」と読んだ）
+    disclosed = d.get("disclosed") and len(inputs) == 1
+    return {"ok": True, "value": inputs[0]["value"] if disclosed else _fmt(value),
             "period": ctx["periods"][0], "doc_id": ctx["doc"], "basis": ctx["basis"], "accounting_standard": ctx["standard"],
             "top_line_item": ctx.get("top_line_item"), "inputs": inputs}
 
@@ -503,6 +505,14 @@ def _brief(code: str) -> dict:
     ind = industry_of(code) or {}
     return {"edinet_code": code, "sec_code": co.get("sec_code"), "name": co["name"], "accounting_standard": co.get("accounting_standard"),
             "industry": ind.get("industry"), "manufacturing": ind.get("manufacturing"), "listing": ind.get("listing")}
+
+
+def _is_ratio(name: str, d: dict) -> bool:
+    """1＝100% の形の値か（比率の項目・検証済みの型・海外売上比率・割り算か比率の項目を含む式）＝ratio_note を付ける範囲"""
+    if d.get("name"):
+        return name in RATIO_ITEMS or name in PRESETS or name in DERIVED
+    terms = set(re.findall(r"[A-Za-z_]\w*", name))
+    return "/" in name or bool(terms & (RATIO_ITEMS | set(PRESETS) | set(DERIVED)))
 
 
 def _miss(reason: str, **extra) -> dict:
@@ -583,12 +593,16 @@ def screen_companies(conditions: list[dict], *, order_by: str | None = None, ord
                                     "url": f"https://disclosure2.edinet-fsa.go.jp/WZEK0040.aspx?{meta['doc_id']}"}})
     rows.sort(key=lambda r: Decimal(r["values"][order_by]), reverse=order == "desc")
     unavailable += [{"term": t, "level": lv, "count": n} for (t, lv), n in sorted(lack.items(), key=lambda kv: -kv[1])]
-    return {"found": True, "matched": len(rows), "rows": rows[:limit], "order_by": order_by, "order": order,
+    ratio = {"ratio_note": RATIO_NOTE} if any(_is_ratio(n, d) for n, _, d, _ in defs) else {}
+    return {"found": True, **ratio, "matched": len(rows), "rows": rows[:limit], "order_by": order_by, "order": order,
             "definitions": [d[2] for d in defs], "excluded": {n: e for n, e in excluded.items() if e}, "judged_by_statement": judged,
             "unavailable": unavailable, "population": population, "as_of": a,
             "industry_note": MANUFACTURING_NOTE,
             "note": "values は派生値（検証済みの型・利用者の式）または開示値。行ごとの inputs が入力の開示値と出典。"
-                    "比較できない会社は excluded に理由と件数（黙って落とさない）。決算期は会社ごとに違う＝行の period を見る。" + RATIO_NOTE,
+                    "比較できない会社は excluded に理由と件数（黙って落とさない）。決算期は会社ごとに違う＝行の period を見る。",
+            # 未収録の項目＝使える語の外（2026-09-27 staging＝返り値に案内が無い問で、利用側のモデルが「営業利益で並べ直せます」と提案した）
+            "not_ingested": {k: label for k, (label, _) in NOT_INGESTED.items()},
+            "not_ingested_note": "未収録の項目（横断検索の条件に使えない＝使うと input_not_ingested）。並べ直しの提案に使わない",
             "license": {"grade": "○", "terms": "公共データ利用規約（PDL1.0）＝出典の明記と加工の明記（派生値は加工）"}}
 
 

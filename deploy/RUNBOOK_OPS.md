@@ -131,7 +131,7 @@ python -m companies.eval.exact_match && python -m companies.eval.find_quality &&
 bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_APP=true の env ならゲート 13 本→配布→自動適用
 ```
 - 6 月（3 月決算の提出集中期）は約 2,400 書類＝約 2 時間。他の月は数十〜数百。
-- ★上流の運営者（開発と運用を 1 人が兼ねる）は、取込を開発用フォルダで行い、値の置き場だけを配布用のクローンへ写してから release する（`data/` は git 外＝pull では届かない）：`rsync -rlp --checksum --delete <開発>/companies/data/store/ <クローン>/companies/data/store/`（中身で比べ、時刻は写さない＝中身の同じファイルの時刻が変わらず、`release.sh` の S3 同期〔サイズと時刻で比べる〕が変わったファイルだけを送る。`-a` だと中身が同じでも時刻が開発側に揃い、置き場の全体〔数百 MB〕を送り直す。`-a --checksum` でも時刻は揃えられる）。★`eval/` は git 追跡＝写さない（先に置くと `git pull` が上書きを拒む）。原本の zip（cache/）も写さない。
+- ★上流の運営者（開発と運用を 1 人が兼ねる）は、取込を開発用フォルダで行い、値の置き場だけを配布用のクローンへ写してから release する（`data/` は git 外＝pull では届かない）：`rsync -rlp --checksum --delete <開発>/companies/data/store/ <クローン>/companies/data/store/`（中身で比べ、時刻は写さない＝中身の同じファイルの時刻が変わらず、`release.sh` の S3 同期〔サイズと時刻で比べる〕が変わったファイルだけを送る。`-a` だと中身が同じでも時刻が開発側に揃い、置き場の全体〔数百 MB〕を送り直す。`-a --checksum` でも時刻は揃えられる）。★写す前の dry-run（`--dry-run --itemize-changes`）の判定は**転送（`>f`・`cd`）と削除（`*deleting`）の行が 0 件**で見る＝時刻を写さないので、一度写したファイルは中身が同じでも毎回 `.f..T....`（時刻だけの差）の行として出る（転送はされない・`-t` を足して消さない＝上の理由で時刻は写さない）。★`eval/` は git 追跡＝写さない（先に置くと `git pull` が上書きを拒む）。原本の zip（cache/）も写さない。
 - 語彙に無い標準要素が出たら、公式 CSV（API type=5）でラベルを確かめてから `companies/core/items.py` に足し、`make_candidates --docids=` で問を足す（companies/CLAUDE.md）。
 
 ### サービスを足す（companies を有効にする・2026-09-22）
@@ -196,10 +196,11 @@ git status --short && git log origin/main..HEAD --oneline      # どちらも空
 docker inspect qdrant-dev --format '{{json .HostConfig.Binds}}'  # マウント元が「配布用のクローン」の recommendations/data/qdrant であること
 curl -s localhost:6333/collections/policy_claims_v7 | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['points_count'])"
 aws sts get-caller-identity                                    # AWS のログインが生きていること
+aws configure export-credentials --format process | python3 -c "import sys,json;print(json.load(sys.stdin).get('Expiration'))"   # 残り時間＝期限だけを出す（資格そのものは画面に出さない）
 ```
 - ★ **AWS のログインは配布の直前に取り直す**：`release.sh` はゲート（十数分）の後に upload とマニフェストの書き込みをする。途中で有効期限が切れると upload とマニフェストの間で止まり得る（2026-09-27 staging＝release の直後に切れた）。期限が近ければログインし直してから始める。
 - 配布のたびに qdrant のファイル（約 100MB）が送り直しになる＝`qdrant-dev` の停止・再開でファイルの時刻が変わるため。索引を変えていなくても起きる＝害はない（S3 の同期はサイズと時刻で比べる）。
-- 配布の後の確認＝ダッシュボードは APPLIED の直後に再生成して S3 へ上げる（2026-09-27 の版から。それより前の版の箱では次の毎時 05 分）。捕捉ログは箱から S3 へ毎時の同期＝当日の問は 1 時間ほどで S3 の `query_log/` に見える。
+- 配布の後の確認＝ダッシュボードは APPLIED の直後に再生成して S3 へ上げる（2026-09-27 の版から。それより前の版の箱では次の毎時 05 分）。捕捉ログは箱から S3 へ毎時の同期（06 分ごろ・変化が無い時間は上げない＝最後の更新時刻が古く見えても止まってはいない）＝当日の問は 1 時間ほどで S3 の `query_log/` に見える。コネクタでの確認の前の Reconnect（Claude Code の `/mcp`）は、**ツールが増減したとき・ツールやサーバの説明が変わったときだけ**要る＝返り値だけの変更は Reconnect なしで新しい振る舞いが返る（ChatGPT のコネクタの作り直しも同じ条件）。
 - ★ **`qdrant-dev` のマウント元は配布用のクローンに置く**：`release.sh` は `qdrant-dev` を止めて `recommendations/data/qdrant` を S3 へ**ミラー（--delete）**する。
   マウント元が別のフォルダ・空・古いと、その内容で箱の索引を上書きする。開発用のフォルダのゲートは同じ `qdrant-dev` に HTTP（:6333）でつながるので、Qdrant の実体は 1 つでよい。
 - Python の editable install は**最後に `pip install -e` したフォルダ**を指す。リポジトリ root 以外を cwd にして動くスクリプトは、その向き先のコードを import する＝フォルダごとに env を分ける。

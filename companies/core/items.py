@@ -14,9 +14,10 @@ S = "SummaryOfBusinessResults"
 _EMP = "InformationAboutReportingCompanyInformationAboutEmployees"
 
 # 1＝100% の形の比率（株価収益率＝倍 は入れない）。分母の小さい会社では絶対値が 1 を超える＝利用側が単位の誤りと読み替えない案内を添える
-# （2026-09-27 staging＝ROE −8.400〔−840% 相当〕を利用側のモデルが「−8.4% の誤入力」と読んだ）
-RATIO_NOTE = ("比率は 1＝100% の形（0.074＝7.4%）。分母（自己資本 等）の小さい会社では絶対値が 1 を超える（例＝−8.4＝−840%）＝開示どおりで"
-              "単位の誤りではない。読み替えず、確かめるなら同じ書類の当期純利益・純資産などを引く")
+# （2026-09-27 staging＝ROE −8.400〔−840% 相当〕を利用側のモデルが「−8.4% の誤入力」と読んだ。2 回目は「この社だけ桁が不自然」と読んだ＝桁も開示どおりと書く）
+RATIO_NOTE = ("比率は 1＝100% の形（0.074＝7.4%）。分母（自己資本 等）の小さい会社では絶対値が 1 を超える（例＝−8.400＝−840%）＝開示どおりで"
+              "単位の誤りではない。値の桁・末尾の 0 も開示の文字列のまま＝見た目から誤りと推測しない。"
+              "読み替えず、確かめるなら同じ書類の当期純利益・純資産などを引く")
 RATIO_ITEMS = {"equity_ratio", "roe", "payout_ratio", "capital_adequacy_ratio_domestic", "net_loss_ratio", "net_operating_expense_ratio",
                "investment_yield_income", "investment_yield_realized"}
 

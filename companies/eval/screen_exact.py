@@ -108,6 +108,16 @@ def check_query(q: dict, sc) -> str | None:
         return f"最上段の収益の項目が期待と違う: {sorted({row.get('top_line_item') for row in rows})}"
     if "note_includes" in e and e["note_includes"] not in r.get("note", ""):
         return f"返り値の note に「{e['note_includes']}」が無い"
+    if "ratio_note" in e and bool(r.get("ratio_note")) != e["ratio_note"]:
+        return f"比率の形の案内（ratio_note）が{'無い' if e['ratio_note'] else '付いている（比率の条件が無い問）'}"
+    for k in e.get("not_ingested_include", []):
+        if k not in (r.get("not_ingested") or {}):
+            return f"未収録の項目の案内に {k} が無い: {r.get('not_ingested')}"
+    for k in e.get("values_verbatim", []):  # 開示値の条件＝値は開示の文字列のまま（末尾の 0 を落とさない）
+        for row in rows:
+            want = row["inputs"][k][0]["value"]
+            if row["values"][k] != want:
+                return f"{row['company']['name']}: 開示値 {want!r} が {row['values'][k]!r} に書き換わった"
     names = {row["company"]["name"] for row in r.get("rows", [])}
     for n in e.get("companies_include", []):
         if n not in names:
