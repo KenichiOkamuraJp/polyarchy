@@ -108,6 +108,33 @@ def value_questions() -> list[dict]:
     return out
 
 
+N_ROE = 20
+
+
+def roe_questions() -> list[dict]:
+    """ROE の変化（roe_change＝roe[t] − roe[t-1]・差）。ROE は開示値＝単社の参照層で当期と前期を引き、差は本ファイルで計算する。"""
+    reg = store.registry()
+    order = sorted(reg, key=lambda k: hashlib.sha1(f"roe-{k}".encode()).hexdigest())
+    order = [k for k in order if reg[k]["accounting_standard"] != "Japan GAAP"][:6] + [k for k in order if reg[k]["accounting_standard"] == "Japan GAAP"]
+    out = []
+    for code in order:
+        if len(out) >= N_ROE:
+            break
+        doc, basis, std = _latest(code)
+        ps = _periods(code, doc, basis)
+        if len(ps) < 3 or any(_months(ps[i], ps[i + 1]) != 12 for i in range(2)) or _months(AS_OF[:7], ps[0]) > 18:
+            continue
+        r0, r1 = (_get(code, "roe", p, doc, basis, std) for p in ps[:2])
+        if not (r0 and r1):
+            continue
+        out.append({"id": f"{code}-roe_change-{ps[0]}", "kind": "value", "metric": "roe_change",
+                    "company": {"edinet_code": code, "name": reg[code]["name"]}, "as_of": AS_OF, "basis": basis, "doc_id": doc, "period": ps[0],
+                    "expected": {"inputs": {"roe[t]": r0, "roe[t-1]": r1}, "value": str(Decimal(r0["value"]) - Decimal(r1["value"]))},
+                    "checked_by": "単社の参照層 lookup_company_facts（書類を固定）で当期と前期の ROE（開示値）を引き、差は本ファイルで計算",
+                    "checked_at": TODAY})
+    return out
+
+
 def _num(s: str) -> Decimal | None:
     s = s.replace("，", ",").strip()
     return Decimal(s.replace(",", "")) if NUM.fullmatch(s) else None
@@ -197,7 +224,7 @@ def overseas_questions() -> list[dict]:
 
 
 def main() -> int:
-    qs = value_questions() + overseas_questions()
+    qs = value_questions() + overseas_questions() + roe_questions()
     (EVAL / "screen.jsonl").write_text("".join(json.dumps(q, ensure_ascii=False) + "\n" for q in qs))
     kinds = {}
     for q in qs:

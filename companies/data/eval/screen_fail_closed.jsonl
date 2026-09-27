@@ -15,3 +15,8 @@
 {"id": "req-string", "kind": "request", "expr": "'net_sales'", "reason": "bad_expression"}
 {"id": "req-dunder", "kind": "request", "expr": "__import__('os')", "reason": "bad_expression"}
 {"id": "req-derived-offset", "kind": "request", "expr": "overseas_sales_ratio[t-1]", "reason": "bad_expression", "note": "派生項目は当期だけ"}
+{"id": "E00240-roe-loss-year", "kind": "excluded", "company": {"edinet_code": "E00240", "name": "株式会社　土屋ホールディングス"}, "metric": "roe", "as_of": "2026-09-27", "reason": "not_disclosed_loss_year", "note": "赤字の年（親会社株主に帰属する当期純利益 −93,275 千円）に ROE を書いていない＝値は計算して埋めない。理由を分けて件数で返す（低い順の並びの偏りを利用側が説明できるように）"}
+{"id": "E00400-roe-loss-year-nonconsolidated", "kind": "excluded", "company": {"edinet_code": "E00400", "name": "養命酒製造株式会社"}, "metric": "roe", "as_of": "2026-09-27", "reason": "not_disclosed_loss_year", "note": "連結なし（単体の当期純利益がマイナス）"}
+{"id": "E04760-roe-loss-year-ifrs", "kind": "excluded", "company": {"edinet_code": "E04760", "name": "株式会社電通グループ"}, "metric": "roe", "as_of": "2026-09-27", "reason": "not_disclosed_loss_year", "note": "IFRS（親会社の所有者に帰属する当期利益がマイナス）"}
+{"id": "E00240-roe_change-loss-year", "kind": "excluded", "company": {"edinet_code": "E00240", "name": "株式会社　土屋ホールディングス"}, "metric": "roe_change", "as_of": "2026-09-27", "reason": "not_disclosed_loss_year", "note": "ROE の変化も、当期が赤字で ROE を書いていなければ同じ理由"}
+{"id": "E04086-roe-not-disclosed-profit", "kind": "excluded", "company": {"edinet_code": "E04086", "name": "株式会社エスポア"}, "metric": "roe", "as_of": "2026-09-27", "reason": "input_not_disclosed", "note": "黒字（11,825 千円）なのに ROE の開示が無い＝赤字の年とは言わない（言い過ぎない）"}

@@ -112,6 +112,11 @@ def check_query(q: dict, sc) -> str | None:
     for reason in e.get("excluded_include", []):
         if not any(reason in d for d in r["excluded"].values()):
             return f"除外の理由 {reason} が返らない: {r['excluded']}"[:300]
+    for cond, reasons in (e.get("excluded_count_min") or {}).items():
+        for reason, n in reasons.items():
+            got = ((r["excluded"].get(cond) or {}).get(reason) or {}).get("count", 0)
+            if got < n:
+                return f"除外の理由 {cond}／{reason} の件数が少ない: {got}（下限 {n}）"
     if "judged_by_statement_min" in e:
         n = sum(d["count"] for d in r.get("judged_by_statement", {}).values())
         if n < e["judged_by_statement_min"]:

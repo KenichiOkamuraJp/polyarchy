@@ -47,6 +47,8 @@ PRESETS = {
     "net_margin": ("bottom_line / top_line", "当期純利益率", "当期純利益 ÷ 最上段の収益"),
     "ordinary_margin": ("ordinary_profit / top_line", "経常利益率", "経常利益 ÷ 最上段の収益（IFRS・米国基準には経常利益が無い＝除外）"),
     "roa_change": ("roa[t] - roa[t-1]", "ROA の変化（差）", "当期の ROA − 前期の ROA（差＝0.01 が 1 ポイント）"),
+    "roe_change": ("roe[t] - roe[t-1]", "ROE の変化（差）",
+                   "当期の ROE − 前期の ROE（どちらも会社が書いた開示値・同じ書類の 5 期推移。差＝0.01 が 1 ポイント）"),
     "top_line_growth": ("top_line[t] / top_line[t-1] - 1", "売上の前年比（伸び率）", "当期の最上段の収益 ÷ 前期 − 1（項目が期で変わる会社は除外）"),
 }
 # 未収録の項目の目録＝改善の backlog を兼ねる（list_metrics で見える・input_not_ingested の件数で需要を測る）
@@ -61,12 +63,16 @@ NOT_INGESTED = {
     "interest_bearing_debt": ("有利子負債", "貸借対照表の借入金・社債・リース債務 等"),
     "research_and_development_expenses": ("研究開発費（会社全体）", "研究開発活動・損益計算書の注記"),
 }
+# 赤字の年は「－」と書いて開示しないことが多い項目（2026-09-27 実測＝ROE の開示が無い 233 社のうち 229 社が赤字の年）。
+# 開示が無く同じ書類・同じ期の当期純利益がマイナスなら、理由を not_disclosed_loss_year に分ける（値は計算して埋めない）
+LOSS_BLANK = {"roe"}
 # 語彙にはあるが、大半の会社で値の置き場に取り込めていない項目（会社は別の場所で開示している＝「開示が無い」ではなく「未収録」）
 PARTIAL = {
     "operating_profit": "営業利益は「主要な経営指標等の推移」に無い（米国基準の会社だけ）＝損益計算書の営業利益は未収録",
 }
 REASON_NOTE = {
     "input_not_disclosed": "入力の項目をこの会社はこの書類・決算期・basis で開示していない（近い項目では埋めない）",
+    "not_disclosed_loss_year": "赤字の年で、会社がこの比率を開示していない（「－」と書く会社が多い）＝低い順の並びにはこの会社が出ない（値は計算して埋めない）",
     "input_not_ingested": "入力の項目が未収録（会社は開示しているが本サービスが取り込んでいない＝改善候補として記録）",
     "period_not_in_document": "式の期のずれが、この書類の 5 期推移の外",
     "irregular_period": "決算期の長さが違う期（変則決算）が入力に入る",
@@ -226,6 +232,11 @@ def _item(ctx, key: str, off: int) -> dict:
     if not mine:
         if cands:
             raise Excluded("standard_changed", term=f"{key}[t-{off}]" if off else f"{key}[t]", period=p)
+        if key in LOSS_BLANK:
+            bl = ctx["values"][p].get("profit_attributable_to_owners" if ctx["basis"] == "consolidated" else "net_income") or []
+            mine_bl = [c for c in bl if c[0] == ctx["standard"]]
+            if mine_bl and Decimal(mine_bl[0][2]) < 0:
+                raise Excluded("not_disclosed_loss_year", term=key, period=p, bottom_line=mine_bl[0][2])
         raise Excluded("input_not_ingested" if key in PARTIAL else "input_not_disclosed", term=key)
     std, el, value, unit, context = mine[0]
     return {"item": key, "label": ITEMS[key][0], "element": el, "period": p, "value": value, "unit": unit, "context": context,
