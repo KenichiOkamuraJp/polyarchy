@@ -21,3 +21,5 @@
 {"id": "E00240-roe_change-loss-year", "kind": "excluded", "company": {"edinet_code": "E00240", "name": "株式会社　土屋ホールディングス"}, "metric": "roe_change", "as_of": "2026-09-27", "reason": "not_disclosed_loss_year", "note": "ROE の変化も、当期が赤字で ROE を書いていなければ同じ理由"}
 {"id": "E04086-roe-not-disclosed-profit", "kind": "excluded", "company": {"edinet_code": "E04086", "name": "株式会社エスポア"}, "metric": "roe", "as_of": "2026-09-27", "reason": "input_not_disclosed", "note": "黒字（11,825 千円）なのに ROE の開示が無い＝赤字の年とは言わない（言い過ぎない）"}
 {"id": "req-operating-profit-metric", "kind": "request", "metric": "operating_profit", "reason": "input_not_ingested", "note": "metric で渡しても式と同じく 1 行で止まる"}
+{"id": "E03851-top_line-ambiguous", "kind": "excluded", "company": {"edinet_code": "E03851", "name": "株式会社Ｔ＆Ｄホールディングス"}, "metric": "top_line", "as_of": "2026-09-27", "reason": "top_line_ambiguous", "note": "会社が定義した項目の候補が 2 つ（保険料等収入・資産運用収益）＝どちらが最上段か決めない（寄せない）"}
+{"id": "E23487-top_line-none", "kind": "excluded", "company": {"edinet_code": "E23487", "name": "株式会社キャンバス"}, "metric": "top_line", "as_of": "2026-09-27", "reason": "input_not_disclosed", "note": "収益の行が経営指標の表に無い（創薬・事業収益なし）＝会社が定義した項目にも候補が無い＝従来どおり開示なし"}

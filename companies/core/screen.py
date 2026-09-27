@@ -23,7 +23,7 @@ from functools import lru_cache
 
 from companies.core import store
 from companies.core.industries import INDUSTRIES, MANUFACTURING, MANUFACTURING_NOTE, industry_of
-from companies.core.items import ITEMS, RATIO_NOTE, TOP_LINE, standard_of
+from companies.core.items import ITEMS, RATIO_NOTE, TOP_LINE, TOP_LINE_LABEL, standard_of
 from companies.core.regions import _has_table, _is_value_table
 
 getcontext().prec = 28
@@ -34,7 +34,9 @@ MAX_EXPR_LEN, MAX_TERMS = 300, 20
 Q = Decimal("1e-12")
 
 PSEUDO = {
-    "top_line": "最上段の収益（会社が開示している売上高・売上収益・営業収益・経常収益 等のうち最初に見つかった項目＝行ごとに明示）",
+    "top_line": "最上段の収益（会社が開示している売上高・売上収益・営業収益・経常収益 等のうち最初に見つかった項目＝行ごとに明示）。"
+                "標準の項目が無い会社は、経営指標の表で会社が定義した収益の項目（候補が 1 つのときだけ＝例 トヨタの営業収益・完成工事高・保険収益）を"
+                "要素とラベルつきで使う（候補が複数なら除外＝top_line_ambiguous）",
     "bottom_line": "親会社株主に帰属する当期純利益（連結）／当期純利益（連結を作成していない会社＝単体）",
 }
 DERIVED = {
@@ -78,6 +80,7 @@ REASON_NOTE = {
     "standard_changed": "入力の期に、書類が宣言する会計基準の値が無い（基準の違う値を混ぜない）",
     "nonpositive_denominator": "分母が 0 以下",
     "top_line_changed": "最上段の収益の項目が期で変わる（例＝売上高→売上収益）",
+    "top_line_ambiguous": "標準の最上段の収益が無く、会社が定義した収益の項目が経営指標の表に複数ある（例＝保険料等収入と資産運用収益）＝どれが最上段か決めない",
     "stale_period": f"最新の決算期が基準日から {STALE_MONTHS} か月より前",
     "no_period_in_window": "指定の期末の範囲に決算期が無い",
     "no_consolidated_statements": "連結財務諸表を作成していない会社（basis=non_consolidated で引く）",
@@ -170,6 +173,15 @@ def _terms(tree) -> list[tuple[str, int]]:
 
 # ── 値の索引（初回に 1 回・標準の項目だけ）────────────────────────
 _EL_KEY = {f"jpcrp_cor:{el}": k for k, (_, els) in ITEMS.items() for el in els}
+# 会社が定義した最上段の収益の候補＝経営指標の表の拡張要素（接尾辞で表を限る）で、会社のラベルが収益の語を含むもの。
+# 標準の最上段の収益が無い会社だけが使う（2026-09-27 実測＝52 社・候補 1 つが 47 社〔トヨタ 営業収益・完成工事高・保険収益 等〕・複数が 5 社）
+COMPANY_TOP = "_company_top_line"
+_TABLE_SUFFIX = ("SummaryOfBusinessResults", "KeyFinancialData")
+
+
+def _company_top_candidate(f: dict) -> bool:
+    return (not f["element"].startswith("jpcrp_cor:") and f["element"].endswith(_TABLE_SUFFIX) and f["unit"] == "JPY"
+            and bool(f.get("label")) and any(w in f["label"] for w in TOP_LINE_LABEL))
 
 
 @lru_cache(maxsize=1)
@@ -182,10 +194,15 @@ def _index() -> dict:
             continue
         per = {}
         for f in json.loads(fp.read_text()):
+            if f["dims"]:
+                continue
             k = _EL_KEY.get(f["element"])
-            if k and not f["dims"]:
+            if k:
                 per.setdefault((f["doc_id"], f["basis"]), {}).setdefault(f["period"], {}).setdefault(k, []).append(
                     (standard_of(f["element"]), f["element"], f["value"], f["unit"], f["context"]))
+            elif _company_top_candidate(f):
+                per.setdefault((f["doc_id"], f["basis"]), {}).setdefault(f["period"], {}).setdefault(COMPANY_TOP, []).append(
+                    (None, f["element"], f["value"], f["unit"], f["context"], f["label"]))
         idx[code] = per
     return idx
 
@@ -219,13 +236,17 @@ def _context(code: str, basis: str | None, as_of: str, period_from: str | None, 
     raise Excluded("no_period_in_window" if (period_from or period_to) else "input_not_disclosed")
 
 
-def _item(ctx, key: str, off: int) -> dict:
+def _period(ctx, key: str, off: int) -> str:
     ps = ctx["periods"]
     if off >= len(ps):
         raise Excluded("period_not_in_document", term=f"{key}[t-{off}]")
     if off + 1 < len(ps) and _months(ps[off], ps[off + 1]) != 12:
         raise Excluded("irregular_period", periods=[ps[off + 1], ps[off]])
-    p = ps[off]
+    return ps[off]
+
+
+def _item(ctx, key: str, off: int) -> dict:
+    p = _period(ctx, key, off)
     cands = ctx["values"][p].get(key, [])
     mine = [c for c in cands if c[0] == ctx["standard"]]
     if not mine:
@@ -247,27 +268,54 @@ def _has(ctx, key: str, off: int) -> bool:
     return off < len(ps) and bool(ctx["values"][ps[off]].get(key))
 
 
+def _company_top(ctx, off: int, fixed: str | None) -> dict:
+    """会社が定義した最上段の収益（標準の項目が無い会社だけ）。候補が 1 つのときだけ使い、期をまたいで同じ要素に限る。"""
+    p = _period(ctx, "top_line", off)
+    cands = {c[1]: c for c in ctx["values"][p].get(COMPANY_TOP, [])}
+    if fixed:
+        if fixed not in cands:
+            raise Excluded("top_line_changed" if cands or any(_has(ctx, k, off) for k in TOP_LINE) else "input_not_disclosed",
+                           term=f"top_line[t-{off}]" if off else "top_line[t]", items=[fixed])
+        cands = {fixed: cands[fixed]}
+    if not cands:
+        raise Excluded("input_not_disclosed", term="top_line")
+    if len(cands) > 1:
+        raise Excluded("top_line_ambiguous", candidates=[{"element": c[1], "label": c[5]} for c in cands.values()])
+    _, el, value, unit, context, label = next(iter(cands.values()))
+    return {"item": None, "label": label, "element": el, "company_defined": True, "period": p, "value": value, "unit": unit,
+            "context": context, "doc_id": ctx["doc"]}
+
+
+def _top_line(ctx, off: int) -> dict:
+    fixed = ctx.get("top_line_item")
+    if fixed and fixed not in TOP_LINE:  # 会社が定義した項目で決めた会社＝他の期も同じ要素だけ
+        return _company_top(ctx, off, fixed)
+    g = None
+    for k in ([fixed] if fixed else TOP_LINE):
+        try:
+            g = _item(ctx, k, off)
+            break
+        except Excluded as e:
+            if e.reason in ("period_not_in_document", "irregular_period") or (fixed and e.reason == "standard_changed"):
+                raise
+    if g is None:
+        others = [c for k in TOP_LINE if k != fixed and _has(ctx, k, off) for c in ctx["values"][ctx["periods"][off]][k]] if fixed else []
+        if others and all(c[0] != ctx["standard"] for c in others):
+            raise Excluded("standard_changed", term=f"top_line[t-{off}]", period=ctx["periods"][off])
+        if others or (fixed and _has(ctx, COMPANY_TOP, off)):
+            raise Excluded("top_line_changed", items=[fixed])
+        if fixed:
+            raise Excluded("input_not_disclosed", term="top_line")
+        g = _company_top(ctx, off, None)
+    ctx["top_line_item"] = g["item"] or g["element"]
+    return g
+
+
 def _resolve(ctx, name: str, off: int, memo: dict) -> tuple[Decimal, dict]:
     if (name, off) in memo:
         return memo[(name, off)]
     if name == "top_line":
-        fixed = ctx.get("top_line_item")
-        g, changed = None, False
-        for k in ([fixed] if fixed else TOP_LINE):
-            try:
-                g = _item(ctx, k, off)
-                break
-            except Excluded as e:
-                if e.reason in ("period_not_in_document", "irregular_period") or (fixed and e.reason == "standard_changed"):
-                    raise
-        if g is None:
-            others = [c for k in TOP_LINE if k != fixed and _has(ctx, k, off) for c in ctx["values"][ctx["periods"][off]][k]] if fixed else []
-            if others and all(c[0] != ctx["standard"] for c in others):
-                raise Excluded("standard_changed", term=f"top_line[t-{off}]", period=ctx["periods"][off])
-            if others:
-                raise Excluded("top_line_changed", items=[fixed])
-            raise Excluded("input_not_disclosed", term="top_line")
-        ctx["top_line_item"] = g["item"]
+        g = _top_line(ctx, off)
     elif name == "bottom_line":
         g = _item(ctx, "profit_attributable_to_owners" if ctx["basis"] == "consolidated" else "net_income", off)
     elif name == "overseas_sales_ratio":
@@ -376,13 +424,10 @@ def _overseas(ctx) -> dict:
         if OVER_90.search(text) and "本邦" in text:
             raise Excluded("overseas_statement_only", quote=text.strip()[:200], upper="0.1")
         raise Excluded("regions_omitted", quote=text.strip()[:200])
-    top = None
-    for k in TOP_LINE:
-        try:
-            top = _item(ctx, k, 0)
-            break
-        except Excluded:
-            continue
+    try:  # 横断の top_line と同じ最上段の収益（会社が定義した項目を含む）。ctx の固定は変えない（写しで引く）
+        top = _top_line({**ctx, "top_line_item": None}, 0)
+    except Excluded:
+        top = None
     if top is None:
         raise Excluded("home_or_total_not_identified", why="照合に使う最上段の収益（タグ）が無い")
     tagged = Decimal(top["value"])

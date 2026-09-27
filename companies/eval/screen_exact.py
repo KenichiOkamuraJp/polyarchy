@@ -47,6 +47,8 @@ def check_value(q: dict, ev) -> str | None:
             g = got.get(term)
             if not g or g.get("value") != want["value"] or g.get("element") != want["element"]:
                 return f"入力 {term} が違う: {g}（期待 {want['element']} {want['value']}）"
+            if "label" in want and g.get("label") != want["label"]:
+                return f"入力 {term} のラベルが違う: {g.get('label')}（期待 {want['label']}）"
         if len(got) != len(e["inputs"]):
             return f"入力の数が違う: {sorted(got)}（期待 {sorted(e['inputs'])}）"
     elif q["kind"] == "overseas":
@@ -106,6 +108,10 @@ def check_query(q: dict, sc) -> str | None:
         return f"最上段の収益の項目が期待と違う: {sorted({row.get('top_line_item') for row in rows})}"
     if "note_includes" in e and e["note_includes"] not in r.get("note", ""):
         return f"返り値の note に「{e['note_includes']}」が無い"
+    names = {row["company"]["name"] for row in r.get("rows", [])}
+    for n in e.get("companies_include", []):
+        if n not in names:
+            return f"{n} が並びに入らない（matched {r.get('matched')}）"
     if "max_rows" in e and len(rows) > e["max_rows"]:
         return f"行が多い: {len(rows)}"
     if e.get("sorted"):

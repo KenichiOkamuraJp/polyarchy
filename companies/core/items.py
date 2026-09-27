@@ -97,7 +97,7 @@ BASES = ("consolidated", "non_consolidated")
 # 最上段の収益の仲間＝どれか 1 つで引いて無かったとき、その会社が開示している仲間のキーを suggest で案内する（値は返さない）
 TOP_LINE = ("net_sales", "revenue", "operating_revenue", "operating_receipts", "gross_operating_revenue", "ordinary_revenue",
             "net_premiums_written")
-TOP_LINE_LABEL = ("売上", "収益", "収入", "完成工事高", "保険料")  # 各社の拡張要素のラベルから仲間を拾う語（案内のためだけに使う）
+TOP_LINE_LABEL = ("売上", "収益", "収入", "完成工事高", "保険料")  # 各社の拡張要素のラベルから仲間を拾う語（単社の参照層では案内だけ。横断検索の top_line は候補が 1 つのときだけ使う＝core/screen.py）
 
 # 「40 歳 5 か月」を年と月の 2 要素で開示する会社がある（2026-09-21 実測＝約 8%）。年だけ返すと端数が黙って落ちる＝対の項目を必ず添える。
 COMPANION = {"average_age_years": "average_age_months", "average_age_months": "average_age_years",
