@@ -95,7 +95,8 @@ sudo systemctl start qdrant polyarchy-mcp
 - ★qdrant の S3 側を更新する（Mac→S3）のは**ローカル qdrant-dev を止めてから**（upload_to_s3.sh がガードする）。
 - ★箱側で bootstrap を再走行すると ⑥ が data/ を sync する＝qdrant 稼働中に走るので、**qdrant データを S3 から入れ直したい時は上の手順（stop→sync→start）を使い、bootstrap 任せにしない**。
 - stats データも同型：`s3://<bucket>/data/stats/` → `stats/data/`（`--delete` は registry/values のみに限定して使う。query_log を消さない）。
-- companies データも同型：`s3://<bucket>/data/companies/` → `companies/data/`（store/ と eval/。query_log を消さない）。手元での復元も同じ sync＝原本の zip（`cache/`）は S3 の別 prefix（任意）か再取得（EDINET API・約 4,300 書類・約 3 時間）。
+- companies データも同型：`s3://<bucket>/data/companies/` → `companies/data/`（store/ と eval/。query_log を消さない）。手元での復元も同じ sync。
+- companies の原本（`companies/data/cache/`＝有報の zip・書類一覧・`csv/`・`codelist/`・`taxonomy/`・約 27GB）は `s3://<bucket>/archive/companies/edinet/`（STANDARD_IA）に退避してある＝`data/` の外なので箱の同期は取りに行かない・ライフサイクルの自動削除の対象外。手元へ戻すときは `aws s3 sync s3://<bucket>/archive/companies/edinet/ companies/data/cache/`。★**EDINET API は提出日で約 10 年前までしか取れない（古い側から毎日消える）**＝範囲の外に出た書類は再取得できず、値の置き場を作り直せる根拠はこの退避だけ。再取得で足りるのは API の範囲内の書類だけ（全量なら約 41,500 書類・1 リクエスト／秒で約 1 日）。★退避先は環境のバケットの中にある＝**その環境を撤去する前に、`archive/` を残す環境の置き場へ移す**（取込を足したら退避も足す＝`aws s3 sync` の差分送信）。
 - 完全な作り直し＝`deploy.sh <env> apply` で EC2 を建て直し（S3/SSM/Cloudflare は残るので upload 不要・約 10 分）。
 
 ## 4. 秘密の再発行
