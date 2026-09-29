@@ -3,6 +3,8 @@
   python -m companies.ingest.edinet --cached                          # 取得済みの書類（data/cache/xbrl/*.zip）を取り込む
   python -m companies.ingest.edinet --docids S100XXXX,S100YYYY
   python -m companies.ingest.edinet --from 2025-06-20 --to 2025-06-30 [--n 50]
+  python -m companies.ingest.edinet --fetch-only --from 2016-09-29 --to 2025-06-15   # zip を取るだけ（古い日から）
+  python -m companies.ingest.edinet --build-index   # 横断検索の索引だけを作り直す（取込の最後にも自動で作る）
 
 取り込むもの＝次元が「連結・個別」だけの context（当期〜四期前）にある、
   ①標準要素の `…SummaryOfBusinessResults`（語彙に無いものも持つ＝「代わりに何が開示されているか」の一覧に使う）
@@ -23,10 +25,10 @@ import zipfile
 from html import unescape
 from pathlib import Path
 
-from companies.core import store
+from companies.core import screen, store
 from companies.core.items import ITEMS
 from companies.core.segments import AXIS, section_of
-from companies.ingest.edinet_api import CACHE, fetch_zip, is_yuho, list_docs, parse_instance
+from companies.ingest.edinet_api import CACHE, NoInstance, fetch_zip, is_yuho, list_docs, parse_instance
 from companies.ingest.regions import region_parts
 
 NONCON = "_NonConsolidatedMember"
@@ -58,7 +60,7 @@ def extension_labels(zip_path: Path) -> dict[str, str]:
     """
     with zipfile.ZipFile(zip_path) as z:
         names = [n for n in z.namelist() if n.startswith("XBRL/PublicDoc/") and n.endswith("_lab.xml")]
-        text = z.read(names[0]).decode("utf-8") if names else ""
+        text = "".join(z.read(n).decode("utf-8") for n in names)  # 古い書類はインスタンスが 2 個＝ラベルも 2 ファイル（parse_instance）
     locs, arcs, labels = {}, {}, {}
     for m in re.finditer(r"<link:loc\b([^>]*)/?>", text):
         href, name = _attr(m.group(1), "xlink:href"), _attr(m.group(1), "xlink:label")
@@ -184,7 +186,29 @@ def main() -> int:
     ap.add_argument("--from", dest="d_from")
     ap.add_argument("--to", dest="d_to")
     ap.add_argument("--n", type=int, default=0, help="上限（0＝範囲内の全部）")
+    ap.add_argument("--build-index", action="store_true", help="横断検索の索引（store/screen_index/）だけを作り直す（取込の最後にも自動で作る）")
+    ap.add_argument("--fetch-only", action="store_true",
+                    help="--from/--to の有報の zip を data/cache/ へ取るだけ（取り込まない）。古い日から 1 日ずつ＝API の取得範囲（提出日で約 10 年）から先に消える側を先に取る")
     a = ap.parse_args()
+    if a.build_index:
+        print(f"横断検索の索引 {screen.build_index()} → {screen.INDEX_DIR}", file=sys.stderr)
+        return 0
+    if a.fetch_only:
+        if not (a.d_from and a.d_to):
+            ap.error("--fetch-only は --from/--to と使う")
+        day, got, ng = dt.date.fromisoformat(a.d_from), 0, 0
+        while day <= dt.date.fromisoformat(a.d_to):
+            for d in (d for d in list_docs(day) if is_yuho(d)):
+                try:
+                    fetch_zip(d["docID"])
+                    got += 1
+                except Exception as e:
+                    ng += 1
+                    print(f"  {day} {d['docID']} ERROR {e!r}", file=sys.stderr)
+            print(f"  {day} 累計 {got} 書類", file=sys.stderr)
+            day += dt.timedelta(days=1)
+        print(f"取得 {got} 書類・失敗 {ng} → {CACHE / 'xbrl'}", file=sys.stderr)
+        return 0 if not ng else 2
     if a.cached:
         docs = sorted(p.stem for p in (CACHE / "xbrl").glob("*.zip"))
     elif a.docids:
@@ -197,15 +221,19 @@ def main() -> int:
         docs = docs[:a.n] if a.n else docs
     else:
         ap.error("--cached か --docids か --from/--to を指定")
-    ng = 0
+    ng, skip = 0, 0
     for d in docs:
         try:
             meta, n = ingest(d)
             print(f"  {d} {meta['name']}: {n} 値", file=sys.stderr)
+        except NoInstance as e:  # XBRL の無い書類（2018 年に HTML だけで出た 2009〜2012 年の有報 4 本＝テムザック）＝取り込むものが無い
+            skip += 1
+            print(f"  {d} SKIP {e}", file=sys.stderr)
         except Exception as e:  # 1 社の失敗で全体を止めない（何が失敗したかは残す）
             ng += 1
             print(f"  {d} ERROR {e!r}", file=sys.stderr)
-    print(f"取込 {len(docs) - ng}/{len(docs)} 書類 → {store.STORE}", file=sys.stderr)
+    print(f"取込 {len(docs) - ng - skip}/{len(docs)} 書類（XBRL なし {skip}・失敗 {ng}）→ {store.STORE}", file=sys.stderr)
+    print(f"横断検索の索引 {screen.build_index()} → {screen.INDEX_DIR}", file=sys.stderr)
     return 0 if docs and not ng else 2
 
 

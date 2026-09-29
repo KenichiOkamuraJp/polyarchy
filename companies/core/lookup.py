@@ -58,6 +58,19 @@ def _miss(reason: str, **extra) -> dict:
     return {"found": False, "reason": reason, **extra}
 
 
+NO_CONSOLIDATED_HINT = ("この決算期に連結の値が無い＝連結財務諸表を作成していない（その期は作成していなかった）。basis=non_consolidated で引く。"
+                        "単体の値を連結として返さない")
+
+
+def consolidated_at(co: dict, period: str, doc_id: str | None = None) -> bool:
+    """その決算期に連結の値があるか＝連結の有無は決算期ごと（2026-09-28）。
+
+    会社の最新の書類の宣言（DEI）で決めない＝連結をやめた会社の 5 期推移には連結の期が残り（日本製麻＝2026 年は連結なし・
+    2022〜2025 年 3 月期は連結）、連結を始めた会社の古い期には単体しか無い（六甲バター）。その期の値が 1 つも無い（収録外）ときは宣言。"""
+    facts = [f for f in store.facts_of(co["edinet_code"]) if f["period"] == period and (doc_id is None or f["doc_id"] == doc_id)]
+    return any(f["basis"] == "consolidated" for f in facts) if facts else bool(co["consolidated"])
+
+
 def _disclosed(facts, basis: str, period: str) -> list[dict]:
     """その会社がその連結／単体の別・その決算期に開示している項目（値は含めない）。"""
     el_key = {f"jpcrp_cor:{el}": k for k, (_, els) in ITEMS.items() for el in els}
@@ -79,7 +92,7 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
         return _miss("unknown_item", hint="語彙に無い項目。派生値は計算しない＝構成する項目を引いて利用側で計算する",
                      items={k: label for k, (label, _) in ITEMS.items()})
     if basis is not None and basis not in BASES:
-        return _miss("bad_request", hint=f"basis は {BASES} のいずれか（省くと、連結を作成している会社は連結・していない会社は単体）")
+        return _miss("bad_request", hint=f"basis は {BASES} のいずれか（省くと、その決算期に連結の値があれば連結・無ければ単体＝連結の有無は決算期ごと）")
     if accounting_standard is not None and accounting_standard not in STANDARDS:
         return _miss("bad_request", hint=f"accounting_standard は {STANDARDS} のいずれか")
     if not PERIOD.fullmatch(period or ""):
@@ -88,9 +101,6 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
     if not found["found"]:
         return _miss(found["reason"], candidates=found["candidates"], **({"hint": found["hint"]} if "hint" in found else {}))
     co = found["company"]
-    if basis == "consolidated" and not co["consolidated"]:
-        return _miss("no_consolidated_statements", company=co, hint="連結財務諸表を作成していない会社。basis=non_consolidated で引く")
-    basis = basis or ("consolidated" if co["consolidated"] else "non_consolidated")
     facts = store.facts_of(co["edinet_code"])
     if doc_id is not None:
         facts = tuple(f for f in facts if f["doc_id"] == doc_id)
@@ -100,6 +110,10 @@ def lookup_company_facts(company: str, *, item: str | None = None, element: str 
     periods = sorted({f["period"] for f in facts})
     if period not in periods:
         return _miss("out_of_range", company=co, available_periods=periods, hint="収録の無い決算期。近い期の値は返さない")
+    con = consolidated_at(co, period, doc_id)
+    if basis == "consolidated" and not con:
+        return _miss("no_consolidated_statements", company=co, period=period, hint=NO_CONSOLIDATED_HINT)
+    basis = basis or ("consolidated" if con else "non_consolidated")
     wanted = {f"jpcrp_cor:{el}" for el in ITEMS[item][1]} if item else {element}
     hits = [f for f in facts if f["element"] in wanted and f["basis"] == basis and f["period"] == period and not f["dims"]]
     if accounting_standard is not None and item:

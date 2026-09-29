@@ -88,18 +88,15 @@ def _section(s: dict) -> dict:
 
 
 def lookup_regions(company: str, period: str, *, basis: str | None = None, doc_id: str | None = None) -> dict:
-    from companies.core.lookup import BASES, PERIOD, _miss, find_company  # 発見層と理由コードは第 1 便と共通
+    from companies.core.lookup import BASES, NO_CONSOLIDATED_HINT, PERIOD, _miss, consolidated_at, find_company  # 発見層と理由コードは第 1 便と共通
     if basis is not None and basis not in BASES:
-        return _miss("bad_request", hint=f"basis は {BASES} のいずれか（省くと、連結を作成している会社は連結・していない会社は単体）")
+        return _miss("bad_request", hint=f"basis は {BASES} のいずれか（省くと、その決算期に連結の値があれば連結・無ければ単体＝連結の有無は決算期ごと）")
     if not PERIOD.fullmatch(period or ""):
         return _miss("bad_period", hint="period は決算期末の YYYY-MM（例＝2025-03）。年度表記は読み替えない")
     found = find_company(company)
     if not found["found"]:
         return _miss(found["reason"], candidates=found["candidates"], **({"hint": found["hint"]} if "hint" in found else {}))
     co = found["company"]
-    if basis == "consolidated" and not co["consolidated"]:
-        return _miss("no_consolidated_statements", company=co, hint="連結財務諸表を作成していない会社。basis=non_consolidated で引く")
-    basis = basis or ("consolidated" if co["consolidated"] else "non_consolidated")
     data = store.regions_of(co["edinet_code"])
     docs = data["docs"]
     if doc_id is not None and doc_id not in docs:
@@ -110,6 +107,10 @@ def lookup_regions(company: str, period: str, *, basis: str | None = None, doc_i
     if not covering:
         return _miss("out_of_range", company=co, available_periods=sorted({p for d in docs.values() for p in d["periods"].values()}),
                      hint="地域別の欄は各書類に当期・前期の 2 期だけ。収録の無い決算期＝近い期の欄から推して返さない")
+    con = consolidated_at(co, period, doc_id)
+    if basis == "consolidated" and not con:
+        return _miss("no_consolidated_statements", company=co, period=period, hint=NO_CONSOLIDATED_HINT)
+    basis = basis or ("consolidated" if con else "non_consolidated")
     with_sec = [k for k in covering if _for_period(data, k, period, basis)]
     if not with_sec:
         latest = covering[-1]

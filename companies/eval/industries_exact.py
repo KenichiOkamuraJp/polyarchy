@@ -3,6 +3,7 @@
   python -m companies.eval.industries_exact
 問＝companies/data/eval/industries.jsonl（コードリストの値をそのまま期待値にした点検）。
 全件の判定＝登録簿の全社に業種がある・業種は東証 33 業種の語彙（コードリストの表記）の中・製造業の定義は 16 業種。
+例外は提出義務が無くなった会社（コードリストの提出者業種が「提出義務者以外」＝業種なし・第 1d 便）だけ。
 """
 from __future__ import annotations
 
@@ -13,7 +14,8 @@ from companies.eval.exact_match import EVAL
 
 
 def main() -> int:
-    qs = [json.loads(l) for l in (EVAL / "industries.jsonl").read_text().splitlines() if l.strip()]
+    qs = [json.loads(l) for name in ("industries.jsonl", "industries_backfill.jsonl") if (EVAL / name).exists()
+          for l in (EVAL / name).read_text().splitlines() if l.strip()]
     try:
         from companies.core.industries import INDUSTRIES, MANUFACTURING, industry_of, unmatched_companies
     except ImportError:
@@ -24,7 +26,7 @@ def main() -> int:
         fails.append(("vocab", f"業種の語彙 {len(INDUSTRIES)}・製造業 {len(MANUFACTURING)}（33・16 のはず）"))
     for q in qs:
         r = industry_of(q["company"]["edinet_code"])
-        got = {k: (r or {}).get(k) for k in ("industry", "listing", "manufacturing")}
+        got = {k: (r or {}).get(k) for k in q["expected"]}
         if got != q["expected"]:
             fails.append((q["id"], f"{got} ≠ {q['expected']}"))
     bad = unmatched_companies()

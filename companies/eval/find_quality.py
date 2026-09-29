@@ -31,7 +31,8 @@ def check(q: dict) -> str | None:
 
 
 def main() -> int:
-    qs = [json.loads(l) for l in (EVAL / "find_quality.jsonl").read_text().splitlines() if l.strip()]
+    qs = [json.loads(l) for name in ("find_quality.jsonl", "find_quality_backfill.jsonl") if (EVAL / name).exists()  # _backfill＝第 1d 便
+          for l in (EVAL / name).read_text().splitlines() if l.strip()]
     fails = [(q["id"], q["query"], e) for q in qs if (e := check(q))]
     for i, query, e in fails:
         print(f"  FAIL {i} {query!r}: {e}")

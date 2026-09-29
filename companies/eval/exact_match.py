@@ -21,7 +21,7 @@ EVAL = Path(__file__).resolve().parent.parent / "data" / "eval"
 
 
 def _load(name: str) -> list[dict]:
-    return [json.loads(l) for l in (EVAL / name).read_text().splitlines() if l.strip()]
+    return [json.loads(l) for l in (EVAL / name).read_text().splitlines() if l.strip()] if (EVAL / name).exists() else []
 
 
 def check_positive(q: dict, lookup) -> str | None:
@@ -32,7 +32,8 @@ def check_positive(q: dict, lookup) -> str | None:
         return f"found=false（reason={r.get('reason')}）"
     if r.get("value") != q["expected_value"]:
         return f"値が不一致: {r.get('value')!r} ≠ {q['expected_value']!r}"
-    if r.get("basis") != q["basis"]:
+    # basis を指定しない問（第 1d 便）＝既定の連結／単体（その期に連結の値があれば連結）を expected_basis で固定
+    if r.get("basis") != q.get("expected_basis", q["basis"]):
         return f"連結／単体が不一致: {r.get('basis')!r}"
     if r.get("element") != q["expected_element"]:
         return f"要素が不一致: {r.get('element')!r}"
@@ -94,7 +95,10 @@ def unlabeled_extensions() -> list[str]:
 
 
 def main() -> int:
-    pos, neg = _load("exact_match.jsonl"), _load("fail_closed.jsonl")
+    # 第 1d 便（遡り）の問は別のファイル（既存のファイルには人手で足した問がある＝再生成しない）
+    # 連結の有無は決算期ごと（period_basis）も別のファイル
+    pos = _load("exact_match.jsonl") + _load("period_basis.jsonl") + _load("backfill.jsonl")
+    neg = _load("fail_closed.jsonl") + _load("period_basis_fail_closed.jsonl") + _load("backfill_fail_closed.jsonl")
     try:
         from companies.core.lookup import lookup_company_facts as lookup
     except ImportError:

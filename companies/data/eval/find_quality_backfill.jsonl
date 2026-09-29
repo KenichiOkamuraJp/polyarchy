@@ -1,0 +1,3 @@
+{"id": "find-bf-01", "query": "ダンロップスポーツ", "expect": "found", "edinet_code": "E02487", "note": "第 1d 便＝提出義務が無くなった会社（2017 年の有報が最後）も社名で引ける"}
+{"id": "find-bf-02", "query": "JSR", "expect": "ambiguous_company", "must_include": "E01003", "note": "第 1d 便＝同じ社名の別の提出者（2024 年までの上場会社 E01003 と、その後の提出者 E39283）＝推測で 1 社に決めない（候補の決算期末で見分けられる）"}
+{"id": "find-bf-03", "query": "きらぼし銀行", "expect": "ambiguous_company", "must_include": "E03558", "note": "第 1d 便＝2018 年の合併で同じ社名の提出者が 2 つ"}

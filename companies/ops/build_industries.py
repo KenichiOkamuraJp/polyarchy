@@ -15,7 +15,7 @@ import json
 import sys
 
 from companies.core import store
-from companies.core.industries import INDUSTRIES
+from companies.core.industries import INDUSTRIES, OUTSIDE_FILER
 from companies.ingest import verify_xbrl as v
 
 CSV_PATH = v.CACHE / "codelist" / "EdinetcodeDlInfo.csv"
@@ -28,8 +28,13 @@ def main() -> int:
     idx = {r[col["ＥＤＩＮＥＴコード"]]: r for r in body}
     reg = store.registry()
     missing = [c for c in reg if c not in idx]
-    comp = {c: {"industry": idx[c][col["提出者業種"]], "listing": idx[c][col["上場区分"]]} for c in reg if c in idx}
-    outside = sorted({x["industry"] for x in comp.values()} - set(INDUSTRIES))
+    comp = {}
+    for c in (c for c in reg if c in idx):
+        ind = idx[c][col["提出者業種"]]
+        # 提出義務が無くなった会社（第 1d 便の遡りで入る上場廃止 等）は業種の欄が「提出義務者以外」＝業種なしとして写す（推して埋めない）
+        comp[c] = ({"industry": None, "listing": idx[c][col["上場区分"]], "filer_status": ind} if ind == OUTSIDE_FILER else
+                   {"industry": ind, "listing": idx[c][col["上場区分"]]})
+    outside = sorted({x["industry"] for x in comp.values() if x["industry"] is not None} - set(INDUSTRIES))
     if missing or outside:
         print(f"停止：コードリストに無い会社 {len(missing)}（例 {missing[:5]}）・語彙の外の業種 {outside}", file=sys.stderr)
         return 1

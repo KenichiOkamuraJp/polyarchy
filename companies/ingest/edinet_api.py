@@ -76,7 +76,9 @@ def fetch_zip(doc_id: str) -> Path:
     p = CACHE / "xbrl" / f"{doc_id}.zip"
     if not p.exists():
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(_get(f"{API}/documents/{doc_id}", {"type": 1}, binary=True))
+        tmp = p.with_suffix(".part")  # 書き込みの途中で止まっても（電源断 等）壊れた zip をキャッシュに残さない
+        tmp.write_bytes(_get(f"{API}/documents/{doc_id}", {"type": 1}, binary=True))
+        tmp.replace(p)
     return p
 
 
@@ -87,12 +89,34 @@ def is_yuho(d: dict) -> bool:
 
 # ---------------------------------------------------------------- XBRL
 
+class NoInstance(RuntimeError):
+    """XBRL のインスタンスが無い書類（書類一覧の xbrlFlag=1 でも HTML だけのことがある）。"""
+
+
 def parse_instance(zip_path: Path) -> dict:
+    """PublicDoc のインスタンスを読む。古い書類には 2 個ある型がある（2017 年の参天製薬＝経営指標等の jpcrp030000 と、
+    IFRS の財務諸表の ifrs-asr が別のインスタンス）＝両方を読んで合わせる（同じ context・要素・値は 1 つに）。"""
     with zipfile.ZipFile(zip_path) as z:
         names = [n for n in z.namelist() if n.startswith("XBRL/PublicDoc/") and n.endswith(".xbrl")]
-        if len(names) != 1:
-            raise RuntimeError(f"{zip_path.name}: PublicDoc の .xbrl が {len(names)} 個（1 個のはず）")
-        root = etree.fromstring(z.read(names[0]))
+        if not names:
+            raise NoInstance(f"{zip_path.name}: PublicDoc に .xbrl が無い（HTML だけの書類）")
+        roots = [etree.fromstring(z.read(n)) for n in sorted(names, key=lambda n: not n.split("/")[-1].startswith("jpcrp"))]
+    ctx, facts, seen = {}, [], set()
+    for root in roots:
+        c, f = _read(root)
+        for k, v in c.items():
+            if k in ctx and ctx[k] != v:
+                raise RuntimeError(f"{zip_path.name}: インスタンスの間で context {k} の中身が違う")
+            ctx[k] = v
+        for x in f:
+            key = (x["prefix"], x["name"], x["context"], x["value"])
+            if key not in seen:
+                seen.add(key)
+                facts.append(x)
+    return {"contexts": ctx, "facts": facts}
+
+
+def _read(root) -> tuple[dict, list]:
     # contexts: id -> (period, dims)
     ctx = {}
     for c in root.iter(f"{{{XBRLI}}}context"):
@@ -116,4 +140,4 @@ def parse_instance(zip_path: Path) -> dict:
             "decimals": el.get("decimals"), "nil": el.get(f"{{{XBRLI}}}nil") == "true",
             "value": text.strip(),
         })
-    return {"contexts": ctx, "facts": facts}
+    return ctx, facts

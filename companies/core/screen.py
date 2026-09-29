@@ -18,6 +18,7 @@ import datetime as dt
 import difflib
 import json
 import re
+import sys
 from decimal import Decimal, getcontext
 from functools import lru_cache
 
@@ -184,27 +185,181 @@ def _company_top_candidate(f: dict) -> bool:
             and bool(f.get("label")) and any(w in f["label"] for w in TOP_LINE_LABEL))
 
 
-@lru_cache(maxsize=1)
-def _index() -> dict:
-    """{EDINET コード: {(doc, basis): {period: {item: [(standard, element, value, unit, context)]}}}}。"""
-    idx = {}
-    for code in store.registry():
-        fp = store.STORE / "facts" / f"{code}.json"
-        if not fp.exists():
+# 索引は 2 種類（第 1d 便＝書類が約 9 倍になる・2026-09-28 本人指示「現状のスナップショットは極力早く・時系列は時間がかかってよい」）
+#   ① 現状（期の指定なし）＝各社の最新の書類だけ・全項目を常駐（_latest.json）＝遡りの前と同じ速さ（2 回目以降 0.05 秒前後）
+#   ② 過去の期・時系列（period_from／period_to）＝全書類の項目ごとのファイル（<項目>.json）を問ごとに使う項目だけ読む
+#      （全項目を常駐させると全量で約 2.7GB の見込み＝2026-09-28 実測 66KB／書類）。1 つの問の間は読んだ項目を手放さない
+# 索引は取込の側（作業用 PC）で作り、値の置き場と一緒に運ぶ
+# ファイルは 1 行 1 社の JSON Lines（[EDINET コード, 中身]）＝1 つの JSON にすると読み込みの一時的なメモリが 4 倍になった
+# （全量の現状の索引＝保持 153MB に対し一時 605MB・2026-09-30 実測）
+#   store/screen_index/_periods.jsonl  中身＝{"<書類>|<basis>": [決算期（新しい順）]}
+#   store/screen_index/_fingerprint.json  鮮度の照合＝{EDINET コード: [書類の一覧, 値のファイルの大きさ]}
+#   store/screen_index/_latest.jsonl   中身＝{"<書類>|<basis>": {決算期: {項目: [[基準, 要素, 値, 単位, context(, ラベル)]]}}}（最新の書類だけ）
+#   store/screen_index/<項目>.jsonl    中身＝{"<書類>|<basis>": {決算期: [[基準, 要素, 値, 単位, context(, ラベル)]]}}
+INDEX_DIR = store.STORE / "screen_index"
+_BASES = ("consolidated", "non_consolidated")
+
+
+def build_index() -> dict:
+    """値の置き場（facts/）から横断検索の索引を作り直す（取込のあと＝ingest.edinet が最後に呼ぶ）。"""
+    periods, cols, fp = {}, {}, {}
+    for code in sorted(store.registry()):
+        path = store.STORE / "facts" / f"{code}.json"
+        if not path.exists():
             continue
         per = {}
-        for f in json.loads(fp.read_text()):
+        for f in json.loads(path.read_text()):
             if f["dims"]:
                 continue
             k = _EL_KEY.get(f["element"])
             if k:
-                per.setdefault((f["doc_id"], f["basis"]), {}).setdefault(f["period"], {}).setdefault(k, []).append(
-                    (standard_of(f["element"]), f["element"], f["value"], f["unit"], f["context"]))
+                row = [standard_of(f["element"]), f["element"], f["value"], f["unit"], f["context"]]
             elif _company_top_candidate(f):
-                per.setdefault((f["doc_id"], f["basis"]), {}).setdefault(f["period"], {}).setdefault(COMPANY_TOP, []).append(
-                    (None, f["element"], f["value"], f["unit"], f["context"], f["label"]))
-        idx[code] = per
-    return idx
+                k, row = COMPANY_TOP, [None, f["element"], f["value"], f["unit"], f["context"], f["label"]]
+            else:
+                continue
+            db = f"{f['doc_id']}|{f['basis']}"
+            per.setdefault(db, set()).add(f["period"])
+            cols.setdefault(k, {}).setdefault(code, {}).setdefault(db, {}).setdefault(f["period"], []).append(row)
+        periods[code] = {db: sorted(ps, reverse=True) for db, ps in per.items()}
+        fp[code] = _fingerprint(code)
+    tmp = INDEX_DIR.with_name(INDEX_DIR.name + ".tmp")
+    tmp.mkdir(parents=True, exist_ok=True)
+    for old in tmp.glob("*.json*"):
+        old.unlink()
+    _write_lines(tmp / "_periods.jsonl", periods)
+    (tmp / "_fingerprint.json").write_text(json.dumps(fp, ensure_ascii=False, separators=(",", ":")))
+    for k, col in cols.items():
+        _write_lines(tmp / f"{k}.jsonl", col)
+    latest = {}
+    for code in periods:
+        docs = store.registry()[code]["documents"]
+        newest = max(docs, key=lambda d: (docs[d]["submitted"], d))
+        for k, col in cols.items():
+            for db, ps in col.get(code, {}).items():
+                if db.split("|")[0] == newest:
+                    for p, rows in ps.items():
+                        latest.setdefault(code, {}).setdefault(db, {}).setdefault(p, {})[k] = rows
+    _write_lines(tmp / "_latest.jsonl", latest)
+    if INDEX_DIR.exists():
+        for old in INDEX_DIR.glob("*.json*"):
+            old.unlink()
+        INDEX_DIR.rmdir()
+    tmp.rename(INDEX_DIR)
+    _periods.cache_clear(); _column.cache_clear(); _latest.cache_clear(); _OVERSEAS.clear()
+    return {"companies": len(periods), "items": len(cols)}
+
+
+def _write_lines(path, data: dict) -> None:
+    with path.open("w") as fh:
+        for code, v in data.items():
+            fh.write(json.dumps([code, v], ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def _read_lines(path):
+    with path.open() as fh:
+        for line in fh:
+            yield json.loads(line)
+
+
+def _fingerprint(code: str) -> list:
+    """鮮度の照合＝登録簿の書類の一覧と値のファイルの大きさ（取り込み直すと変わる）。"""
+    path = store.STORE / "facts" / f"{code}.json"
+    return [sorted(store.registry()[code]["documents"]), path.stat().st_size if path.exists() else 0]
+
+
+def index_status() -> list[str]:
+    """索引が値の置き場と合っているか（ゲートで照合する）。合わない会社の EDINET コード（最大 20）。"""
+    path = INDEX_DIR / "_fingerprint.json"
+    if not path.exists():
+        return ["索引が無い（python -m companies.ingest.edinet --build-index）"]
+    fp = json.loads(path.read_text())
+    bad = [c for c in store.registry() if (store.STORE / "facts" / f"{c}.json").exists() and fp.get(c) != _fingerprint(c)]
+    return bad[:20] + ([f"…ほか {len(bad) - 20} 社"] if len(bad) > 20 else [])
+
+
+@lru_cache(maxsize=1)
+def _periods() -> dict:
+    """{EDINET コード: {(書類, basis): (決算期, …新しい順)}}。"""
+    I = sys.intern
+    return {I(code): {tuple(I(x) for x in db.split("|")): tuple(I(p) for p in ps) for db, ps in per.items()}
+            for code, per in _read_lines(INDEX_DIR / "_periods.jsonl")}
+
+
+@lru_cache(maxsize=1)
+def _latest() -> dict:
+    """① 現状＝{EDINET コード: {(書類, basis): {決算期: {項目: 値の組}}}}（最新の書類だけ・常駐）。"""
+    I = sys.intern
+    out = {}
+    for code, per in _read_lines(INDEX_DIR / "_latest.jsonl"):
+        m = out[I(code)] = {}
+        for db, ps in per.items():
+            doc, basis = db.split("|")
+            m[(I(doc), I(basis))] = {I(p): {I(k): _rows(rows) for k, rows in items.items()} for p, items in ps.items()}
+    return out
+
+
+def _rows(rows: list) -> tuple:
+    I = sys.intern
+    return tuple(tuple(x if i == 2 or x is None else I(x) for i, x in enumerate(r)) for r in rows)
+
+
+@lru_cache(maxsize=8)
+def _column(key: str) -> dict:
+    """1 項目の索引＝{EDINET コード: {(書類, basis, 決算期): ((基準, 要素, 値, 単位, context(, ラベル)), …)}}。
+    値の文字列以外（書類・期・要素・単位・context・ラベル）は共有の文字列にする＝全量（約 4 万書類）で 1 項目 数十 MB に収める。"""
+    path = INDEX_DIR / f"{key}.jsonl"
+    if not path.exists():
+        return {}
+    I = sys.intern
+    out = {}
+    for code, per in _read_lines(path):
+        m = out[I(code)] = {}
+        for db, ps in per.items():
+            doc, basis = db.split("|")
+            for p, rows in ps.items():
+                m[(I(doc), I(basis), I(p))] = _rows(rows)
+    return out
+
+
+class _Period:
+    """② の ctx["values"][決算期]＝.get(項目) で、その書類・basis・期の値の組を返す。項目の索引は問ごとの cols に持つ
+    （1 つの問の間は手放さない＝最上段の収益だけで 9 項目を見る・LRU で途中に追い出すと読み直しで 10 倍以上遅くなった＝2026-09-28 実測）。"""
+    __slots__ = ("code", "key", "cols")
+
+    def __init__(self, code: str, doc: str, basis: str, period: str, cols: dict):
+        self.code, self.key, self.cols = code, (doc, basis, period), cols
+
+    def get(self, item: str, default=None):
+        col = self.cols.get(item)
+        if col is None:
+            col = self.cols[item] = _column(item)
+        rows = col.get(self.code, {}).get(self.key)
+        return rows if rows else default
+
+    def __getitem__(self, item: str):
+        return self.get(item, ())
+
+
+class _Values:
+    __slots__ = ("code", "doc", "basis", "cols")
+
+    def __init__(self, code: str, doc: str, basis: str, cols: dict):
+        self.code, self.doc, self.basis, self.cols = code, doc, basis, cols
+
+    def __getitem__(self, period: str) -> _Period:
+        return _Period(self.code, self.doc, self.basis, period, self.cols)
+
+
+class _LatestValues:
+    """① の ctx["values"]＝最新の書類の索引（常駐）をそのまま引く。"""
+    __slots__ = ("per",)
+
+    def __init__(self, per: dict):
+        self.per = per
+
+    def __getitem__(self, period: str) -> dict:
+        return self.per.get(period, {})
 
 
 def _months(a: str, b: str) -> int:
@@ -217,21 +372,27 @@ class Excluded(Exception):
         self.reason, self.extra = reason, extra
 
 
-def _context(code: str, basis: str | None, as_of: str, period_from: str | None, period_to: str | None):
+def _context(code: str, basis: str | None, as_of: str, period_from: str | None, period_to: str | None, cols: dict | None = None):
+    """書類を選ぶ＝期の指定が無ければ最新の書類・あれば当期がその範囲に入る最新の書類。連結の有無はその書類の当期で決める
+    （会社の最新の宣言ではない＝連結をやめた・始めた会社がある・2026-09-28）。"""
     co = store.registry()[code]
-    if basis == "consolidated" and not co["consolidated"]:
-        raise Excluded("no_consolidated_statements")
-    basis = basis or ("consolidated" if co["consolidated"] else "non_consolidated")
-    per = _index().get(code, {})
-    docs = sorted(((co["documents"][d]["submitted"], d) for d in co["documents"] if (d, basis) in per), reverse=True)
+    per = _periods().get(code, {})
+    docs = sorted(((co["documents"][d]["submitted"], d) for d in co["documents"] if any((d, b) in per for b in _BASES)), reverse=True)
     for _, doc in docs:
-        ps = sorted(per[(doc, basis)], reverse=True)
-        t = ps[0]
+        t = max(per[(doc, b)][0] for b in _BASES if (doc, b) in per)  # 書類の当期
         if (period_from and t < period_from) or (period_to and t > period_to):
             continue
+        con = t in per.get((doc, "consolidated"), ())
+        if basis == "consolidated" and not con:
+            raise Excluded("no_consolidated_statements")
         if not (period_from or period_to) and _months(as_of[:7], t) > STALE_MONTHS:
             raise Excluded("stale_period", period=t)
-        return {"code": code, "co": co, "doc": doc, "basis": basis, "periods": ps, "values": per[(doc, basis)],
+        b = basis or ("consolidated" if con else "non_consolidated")
+        if (doc, b) not in per:
+            break
+        window = period_from or period_to
+        vals = _Values(code, doc, b, {} if cols is None else cols) if window else _LatestValues(_latest().get(code, {}).get((doc, b), {}))
+        return {"code": code, "co": co, "doc": doc, "basis": b, "periods": list(per[(doc, b)]), "values": vals,
                 "standard": co["documents"][doc]["accounting_standard"]}
     raise Excluded("no_period_in_window" if (period_from or period_to) else "input_not_disclosed")
 
@@ -319,7 +480,7 @@ def _resolve(ctx, name: str, off: int, memo: dict) -> tuple[Decimal, dict]:
     elif name == "bottom_line":
         g = _item(ctx, "profit_attributable_to_owners" if ctx["basis"] == "consolidated" else "net_income", off)
     elif name == "overseas_sales_ratio":
-        g = _overseas(ctx)
+        g = _overseas_cached(ctx)
     else:
         g = _item(ctx, name, off)
     term = f"{name}[t-{off}]" if off else f"{name}[t]"
@@ -405,6 +566,23 @@ def _pairs(t: dict) -> list[tuple]:
     return out
 
 
+_OVERSEAS: dict = {}  # (会社, 書類, basis) → 値 か 除外（地域別の欄は書類ごとに決まる＝問をまたいで使い回す）
+
+
+def _overseas_cached(ctx) -> dict:
+    """地域別の欄のファイルは全書類ぶん（第 1d 便で約 9 倍）＝全社の欄を問のたびに読み直すと現状の問が 3 倍遅くなった（2026-09-30 実測）。"""
+    key = (ctx["code"], ctx["doc"], ctx["basis"])
+    if key not in _OVERSEAS:
+        try:
+            _OVERSEAS[key] = _overseas(ctx)
+        except Excluded as e:
+            _OVERSEAS[key] = e
+    r = _OVERSEAS[key]
+    if isinstance(r, Excluded):
+        raise r
+    return dict(r)
+
+
 def _overseas(ctx) -> dict:
     data = store.regions_of(ctx["code"])
     want = "geographic_areas_ifrs" if ctx["standard"] == "IFRS" else "revenue"
@@ -480,13 +658,14 @@ def _fmt(v: Decimal) -> str:
 
 
 def evaluate_company(code: str, *, metric: str | None = None, expr: str | None = None, as_of: str | None = None,
-                     basis: str | None = None, period_from: str | None = None, period_to: str | None = None, _parsed=None) -> dict:
+                     basis: str | None = None, period_from: str | None = None, period_to: str | None = None, _parsed=None,
+                     _cols: dict | None = None) -> dict:
     try:
         _, tree, d = _parsed or _definition(metric, expr)
     except ExprError as e:
         return {"found": False, "reason": e.reason, **e.extra}
     try:
-        ctx = _context(code, basis, _as_of(as_of), period_from, period_to)
+        ctx = _context(code, basis, _as_of(as_of), period_from, period_to, _cols)
         memo = {}
         value = _eval(tree, ctx, memo)
     except Excluded as e:
@@ -554,6 +733,7 @@ def screen_companies(conditions: list[dict], *, order_by: str | None = None, ord
     if order_by not in names:
         return _miss("bad_request", hint="order_by は条件の metric か expr のどれか（並べる値も条件に入れる）")
     a = _as_of(as_of)
+    cols = {}  # ② 過去の期の問＝読んだ項目の索引をこの問の間は手放さない
     rows, excluded, judged, lack = [], {n: {} for n in names}, {}, {}
     population = 0
     for code in store.registry():
@@ -565,7 +745,8 @@ def screen_companies(conditions: list[dict], *, order_by: str | None = None, ord
         population += 1
         vals, ins, ok, top_item, meta = {}, {}, True, None, None
         for name, tree, d, c in defs:
-            r = evaluate_company(code, as_of=a, basis=basis, period_from=period_from, period_to=period_to, _parsed=(name, tree, d))
+            r = evaluate_company(code, as_of=a, basis=basis, period_from=period_from, period_to=period_to, _parsed=(name, tree, d),
+                                 _cols=cols)
             if not r.get("ok"):
                 ok = False
                 reason = r["reason"]

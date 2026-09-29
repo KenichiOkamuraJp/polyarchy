@@ -33,21 +33,24 @@ def main() -> int:
                  ("EquityToAssetRatio", "EquityToAssetRatioIFRS")):
         ka, kb = (ELEMENT_TO_KEY[f"{x}SummaryOfBusinessResults"] for x in (a, b))
         assert ka != kb, f"{a} と {b} が同じキー {ka}"
-    pos = [json.loads(l) for l in (EVAL / "exact_match.jsonl").read_text().splitlines() if l.strip()]
-    neg = [json.loads(l) for l in (EVAL / "fail_closed.jsonl").read_text().splitlines() if l.strip()]
+    # 第 1d 便の問（連結の有無は決算期ごと・遡り）は別のファイル＝同じ整合の検査にかける
+    pos = [json.loads(l) for f in ("exact_match.jsonl", "period_basis.jsonl", "backfill.jsonl") for l in (EVAL / f).read_text().splitlines() if l.strip()]
+    neg = [json.loads(l) for f in ("fail_closed.jsonl", "period_basis_fail_closed.jsonl", "backfill_fail_closed.jsonl")
+           for l in (EVAL / f).read_text().splitlines() if l.strip()]
     assert len(pos) >= MIN_POS and len(neg) >= MIN_NEG, f"問が減った: 正例 {len(pos)}・負例 {len(neg)}"
     assert len({q["id"] for q in pos + neg}) == len(pos) + len(neg), "id の重複"
     for q in pos:
         assert (q["item"] is None) != (q["element"] is None), f"{q['id']}: item か element のどちらか一方"
         assert q["item"] is None or q["item"] in ITEMS, f"{q['id']}: 語彙に無い項目"
-        assert q["basis"] in BASES and re.fullmatch(r"\d{4}-\d{2}", q["period"]), q["id"]
+        # basis を指定しない問（第 1d 便）は expected_basis で既定を固定する
+        assert (q["basis"] in BASES or (q["basis"] is None and q.get("expected_basis") in BASES)) and re.fullmatch(r"\d{4}-\d{2}", q["period"]), q["id"]
         assert isinstance(q["expected_value"], str) and q["expected_value"], f"{q['id']}: 期待値は文字列"
         if q["item"]:
             assert ELEMENT_TO_KEY[q["expected_element"].split(":")[1]] == q["item"], f"{q['id']}: 要素とキーの対応"
     for q in neg:
         assert q["expect"] == "not_found" and q["reason"] in REASONS, q["id"]
     assert {q["reason"] for q in neg} >= REASONS - {"ambiguous_item"}, "理由の種類ごとに最低 1 問"  # ambiguous_item は書類の宣言基準で定まらないときだけ
-    find = [json.loads(l) for l in (EVAL / "find_quality.jsonl").read_text().splitlines() if l.strip()]
+    find = [json.loads(l) for f in ("find_quality.jsonl", "find_quality_backfill.jsonl") for l in (EVAL / f).read_text().splitlines() if l.strip()]
     assert len(find) >= MIN_FIND and len({q["id"] for q in find}) == len(find), f"発見層の問が減った／id 重複: {len(find)}"
     assert all(q["expect"] in ("found", "ambiguous_company", "unknown_company") for q in find)
     seg = [json.loads(l) for l in (EVAL / "segments.jsonl").read_text().splitlines() if l.strip()]
@@ -69,12 +72,12 @@ def main() -> int:
         assert q["kind"] in REG_KINDS and q["expected"]["section"] in REG_SECTIONS, q["id"]
     assert {q["kind"] for q in reg} == REG_KINDS, "地域別の問の型ごとに最低 1 問"
     assert {q["reason"] for q in reg_neg} == REG_REASONS, "地域別の理由の種類ごとに最低 1 問"
-    ind = [json.loads(l) for l in (EVAL / "industries.jsonl").read_text().splitlines() if l.strip()]
+    ind = [json.loads(l) for f in ("industries.jsonl", "industries_backfill.jsonl") for l in (EVAL / f).read_text().splitlines() if l.strip()]
     assert len(ind) >= MIN_IND and len({q["id"] for q in ind}) == len(ind), f"業種の問が減った／id 重複: {len(ind)}"
     assert any(q["expected"]["manufacturing"] for q in ind) and any(not q["expected"]["manufacturing"] for q in ind), "製造業と非製造業の両方"
     assert any(q["expected"]["listing"] == "非上場" for q in ind), "非上場の会社を 1 問以上"
-    scr = [json.loads(l) for f in ("screen.jsonl", "screen_manual.jsonl") for l in (EVAL / f).read_text().splitlines() if l.strip()]
-    scr_neg = [json.loads(l) for l in (EVAL / "screen_fail_closed.jsonl").read_text().splitlines() if l.strip()]
+    scr = [json.loads(l) for f in ("screen.jsonl", "screen_manual.jsonl", "screen_backfill.jsonl") for l in (EVAL / f).read_text().splitlines() if l.strip()]
+    scr_neg = [json.loads(l) for f in ("screen_fail_closed.jsonl", "screen_backfill_fail_closed.jsonl") for l in (EVAL / f).read_text().splitlines() if l.strip()]
     scr_q = [json.loads(l) for l in (EVAL / "screen_queries.jsonl").read_text().splitlines() if l.strip()]
     assert len(scr) >= MIN_SCR_POS and len(scr_neg) >= MIN_SCR_NEG and len(scr_q) >= MIN_SCR_Q, f"横断検索の問が減った: {len(scr)}／{len(scr_neg)}／{len(scr_q)}"
     assert len({q["id"] for q in scr + scr_neg + scr_q}) == len(scr) + len(scr_neg) + len(scr_q), "横断検索の問の id の重複"

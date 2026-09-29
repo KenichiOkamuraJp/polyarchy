@@ -16,7 +16,9 @@ INDUSTRIES = ("水産・農林業", "鉱業", "建設業", "食料品", "繊維�
               "電気・ガス業", "陸運業", "海運業", "空運業", "倉庫・運輸関連", "情報・通信業", "卸売業", "小売業", "銀行業",
               "証券、商品先物取引業", "保険業", "その他金融業", "不動産業", "サービス業")
 MANUFACTURING = frozenset(INDUSTRIES[3:19])  # 食料品〜その他製品
-MANUFACTURING_NOTE = "製造業＝東証の業種区分の製造業 16 業種（食料品〜その他製品）。業種は EDINET コードリストの提出者業種（登録の業種＝事業の実態とずれる会社がある）"
+MANUFACTURING_NOTE = ("製造業＝東証の業種区分の製造業 16 業種（食料品〜その他製品）。業種は EDINET コードリストの提出者業種（登録の業種＝事業の実態とずれる会社がある）。"
+                      "業種は現在のコードリストの値＝提出義務が無くなった会社（上場廃止 等）は業種が無く、業種・製造業の絞り込みに出ない")
+OUTSIDE_FILER = "内国法人・組合（有価証券報告書等の提出義務者以外）"  # コードリストの提出者業種の欄の値（業種ではない）
 
 
 @lru_cache(maxsize=1)
@@ -31,10 +33,13 @@ def source() -> dict | None:
 
 def industry_of(edinet_code: str) -> dict | None:
     r = _data()["companies"].get(edinet_code)
-    return None if r is None else {**r, "manufacturing": r["industry"] in MANUFACTURING}
+    if r is None:
+        return None
+    return {**r, "manufacturing": None if r["industry"] is None else r["industry"] in MANUFACTURING}
 
 
 def unmatched_companies() -> list[str]:
     """登録簿の会社のうち、業種が無い・語彙の外の会社。0 社であること。"""
     comp = _data()["companies"]
-    return [c for c in store.registry() if comp.get(c, {}).get("industry") not in INDUSTRIES]
+    return [c for c in store.registry() if comp.get(c, {}).get("industry") not in INDUSTRIES
+            and comp.get(c, {}).get("filer_status") != OUTSIDE_FILER]

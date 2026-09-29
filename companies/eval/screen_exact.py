@@ -35,7 +35,8 @@ def _close(a: str, b: str) -> bool:
 
 
 def check_value(q: dict, ev) -> str | None:
-    r = ev(q["company"]["edinet_code"], metric=q["metric"], as_of=q["as_of"], basis=q.get("basis"))
+    r = ev(q["company"]["edinet_code"], metric=q["metric"], as_of=q["as_of"], basis=q.get("basis"),
+           period_from=q.get("period_from"), period_to=q.get("period_to"))  # 過去の期の問（第 1d 便）
     if not r.get("ok"):
         return f"計算されなかった: {r.get('reason')}"
     if r["doc_id"] != q["doc_id"] or r["period"] != q["period"]:
@@ -70,7 +71,8 @@ def check_negative(q: dict, ev) -> str | None:
         if r.get("found") is not False or r.get("reason") != q["reason"]:
             return f"受付の誤りにならない: {r.get('reason')}（期待 {q['reason']}）"
         return None
-    r = ev(q["company"]["edinet_code"], metric=q.get("metric"), expr=q.get("expr"), as_of=q["as_of"])
+    r = ev(q["company"]["edinet_code"], metric=q.get("metric"), expr=q.get("expr"), as_of=q["as_of"],
+           period_from=q.get("period_from"), period_to=q.get("period_to"))
     if r.get("ok"):
         return f"除外されずに値を返した: {r.get('value')}（期待 {q['reason']}）"
     if r.get("reason") != q["reason"]:
@@ -149,14 +151,19 @@ def check_query(q: dict, sc) -> str | None:
 
 
 def main() -> int:
-    pos = _load("screen.jsonl") + _load("screen_manual.jsonl")
-    neg, qs = _load("screen_fail_closed.jsonl"), _load("screen_queries.jsonl")
+    pos = _load("screen.jsonl") + _load("screen_manual.jsonl") + _load("screen_backfill.jsonl")  # _backfill＝第 1d 便（過去の期）
+    neg, qs = _load("screen_fail_closed.jsonl") + _load("screen_backfill_fail_closed.jsonl"), _load("screen_queries.jsonl")
     try:
         from companies.core.screen import evaluate_company, screen_companies
     except ImportError:
         print(f"FAIL: 横断検索（companies.core.screen）が未実装＝正例 0/{len(pos)}・負例 0/{len(neg)}・横断の問 0/{len(qs)}")
         return 1
     fails = []
+    # 索引（store/screen_index/）が値の置き場と合っていること＝取り込み直して索引を作り直し忘れると、古い値で並べる（2026-09-28・第 1d 便）
+    from companies.core.screen import index_status
+    stale = index_status()
+    if stale:
+        fails.append(("index", f"横断検索の索引が値の置き場と合わない（python -m companies.ingest.edinet --build-index）: {stale[:5]}"))
     for items, check, fn in ((pos, check_value, evaluate_company), (neg, check_negative, evaluate_company), (qs, check_query, screen_companies)):
         for q in items:
             try:
