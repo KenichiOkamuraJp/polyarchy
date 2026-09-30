@@ -323,6 +323,136 @@ def nonpositive_start() -> dict:
     raise AssertionError("nonpositive_start の会社が見つからない")
 
 
+# ── 段②：海外売上比率の時系列 ─────────────────────────────
+N_OVERSEAS_JGAAP, N_OVERSEAS_IFRS = 6, 3
+
+
+def _top_at(d: dict, basis: str, std: str, t: str):
+    for k in TOP_LINE:
+        got = item_values([d], k, basis, std).get(t)
+        if got:
+            return k, Decimal(got[0][3])
+    return None
+
+
+def _overseas_year(d: dict, t: str, std: str):
+    """その書類の地域別の表（本文 inline XBRL を別のパーサで）から、年 t の本邦と合計のセル。形の単純な表だけ・合計×単位＝その書類の
+    公式 CSV の最上段の収益（t）。取れなければ None。"""
+    from companies.eval.make_region_candidates import ix_blocks
+    from companies.eval.make_screen_candidates import UNITS, _num, _pair_jgaap, _pairs_ifrs
+    top = _top_at(d, "consolidated", std, t)
+    if not top:
+        return None
+    ctx = "CurrentYearDuration" if d["current"] == t else "Prior1YearDuration"
+    want = "geographic_areas_ifrs" if std == "IFRS" else "revenue"
+    blocks = [b for b in ix_blocks(d["doc_id"]) if b["section"] == want and "NonConsolidated" not in b["context"]
+              and b["context"].startswith("CurrentYearDuration" if std == "IFRS" else ctx)]
+    if len(blocks) != 1:
+        return None
+    cands = set()
+    for tb in (x for x in blocks[0]["content"] if x["type"] == "table"):
+        for pr in ([_pair_jgaap(tb)] if std != "IFRS" else _pairs_ifrs(tb)):
+            if not pr:
+                continue
+            hv, tv = _num(pr[0]), _num(pr[1])
+            if hv is None or not tv:
+                continue
+            if any(abs(tv * u - top[1]) < u for u in UNITS):
+                cands.add(pr)
+    if len(cands) != 1:
+        return None
+    home, total = next(iter(cands))
+    return {"home_text": home, "total_text": total, "value": str((_num(total) - _num(home)) / _num(total)), "top_line_item": top[0]}
+
+
+def _run(code: str, co: dict, std: str, secs: list[dict]) -> list[str] | None:
+    """絞り込みだけ（置き場の欄で見る）＝地域別の欄が形の単純な表で続いている、最新側の書類の並び（古い順）。
+    IFRS の地域別の欄のタグは古い書類に無い（2026-09-30＝10 書類すべてにある IFRS の会社は 236 社のうち 1 社）＝並びは最新側から数える。"""
+    from companies.eval.make_screen_candidates import _pair_jgaap, _pairs_ifrs
+    want = "geographic_areas_ifrs" if std == "IFRS" else "revenue"
+    ok = {}
+    for x in secs:
+        if x["section"] == want and x["basis"] == "consolidated":
+            tabs = [c for c in x["content"] if c["type"] == "table"]
+            ok[(x["doc_id"], x["context"][:6])] = any(_pairs_ifrs(t) if std == "IFRS" else _pair_jgaap(t) for t in tabs)
+    docs = sorted(co["documents"], key=lambda d: co["documents"][d]["submitted"])
+    run = []
+    for d in reversed(docs):
+        if ok.get((d, "Curren")) and (std == "IFRS" or ok.get((d, "Prior1"))):
+            run.insert(0, d)
+        else:
+            break
+    return run if len(run) >= 5 else None
+
+
+def overseas_positives() -> list[dict]:
+    """案 B＝年 t の表は、t の表が載る書類のうち最新＝翌年の書類（日本基準は前期の欄・IFRS は表の前期の列）。最新の年だけはその年の書類。"""
+    reg = store.registry()
+    out, n = [], {"Japan GAAP": 0, "IFRS": 0}
+    for code in sorted(reg, key=lambda k: hashlib.sha1(f"trend-overseas-{k}".encode()).hexdigest()):
+        co = reg[code]
+        std = co["accounting_standard"]
+        if std not in n or n[std] >= (N_OVERSEAS_IFRS if std == "IFRS" else N_OVERSEAS_JGAAP) or not co["consolidated"] or len(co["documents"]) < 8:
+            continue
+        if max(co["documents"][d]["submitted"] for d in co["documents"]) > AS_OF:
+            continue
+        run = _run(code, co, std, store.regions_of(code).get("sections", []))
+        if not run:
+            continue  # 置き場の欄の形で先に絞る（公式 CSV を取る前に＝外れる会社の取得で 10 分以上かかった）。期待値は別のパーサと公式 CSV で取る
+        ds = [d for d in docs_of(code) if d["doc_id"] in run]
+        if any(d["standard"] != std for d in ds) or any(_months(b["current"], a["current"]) != 12 for a, b in zip(ds, ds[1:])):
+            continue
+        years = [f"{int(ds[0]['current'][:4]) - 1}{ds[0]['current'][4:]}"] + [d["current"] for d in ds]
+        rows = []
+        for i, t in enumerate(years):
+            src = ds[i] if i < len(ds) else ds[-1]  # years[i] の翌年の書類＝ds[i]（最新の年 years[-1]＝ds[-1] の当期は ds[-1] 自身）
+            y = _overseas_year(src, t, std)
+            if not y:
+                rows = None
+                break
+            rows.append({"period": t, "doc_id": src["doc_id"], **y})
+        if not rows or len({r["top_line_item"] for r in rows}) != 1:
+            continue
+        n[std] += 1
+        out.append({"id": f"{code}-overseas_sales_ratio-{years[0]}-{years[-1]}", "kind": "series_overseas", "metric": "overseas_sales_ratio",
+                    "company": {"edinet_code": code, "name": co["name"]}, "basis": None, "expected_basis": "consolidated",
+                    "period_from": years[0], "period_to": years[-1], "as_of": AS_OF,
+                    "expected": {"accounting_standard": std, "series": [{k: r[k] for k in ("period", "doc_id", "home_text", "total_text", "value")} for r in rows],
+                                 "aggregates": aggregates(rows)},
+                    "checked_by": "本文 inline XBRL の表（取込とは別のパーサ・形の単純な表だけ）で本邦と合計のセル＋合計×単位＝その書類の公式 CSV の最上段の収益（2 経路）。"
+                                  "出所の書類（翌年の書類）と集約は本ファイルで決めた",
+                    "checked_at": TODAY,
+                    "note": "日本基準は翌年の書類の前期の欄・IFRS は翌年の書類の表の前期の列（最新の年だけはその年の書類）"
+                            + ("・IFRS の地域別の欄のタグは古い書類に無い＝欄が続く最新側の書類から" if std == "IFRS" else "")})
+        if all(n[k] >= (N_OVERSEAS_IFRS if k == "IFRS" else N_OVERSEAS_JGAAP) for k in n):
+            break
+    return out
+
+
+def overseas_negatives() -> list[dict]:
+    out = [neg("E03752", "野村ホールディングス", "overseas_sales_ratio", "regions_not_tagged", window=("2016-03", "2026-03"),
+               note="米国基準＝地域別の要素でタグ付けしていない（第 1c 便と同じ）")]
+    reg = store.registry()
+    for code in sorted(reg, key=lambda k: hashlib.sha1(f"trend-overseas-stmt-{k}".encode()).hexdigest()):
+        co = reg[code]
+        if co["accounting_standard"] != "Japan GAAP" or not co["consolidated"] or len(co["documents"]) != 10:
+            continue
+        cur = {}
+        for x in store.regions_of(code).get("sections", []):
+            if x["section"] == "revenue" and x["context"] == "CurrentYearDuration" and x["basis"] == "consolidated":
+                text = " ".join(c.get("text", "") for c in x["content"] if c["type"] == "text")
+                cur[x["period"]] = "table" if any(c["type"] == "table" and len(c["rows"]) > 1 for c in x["content"]) else (
+                    "stmt" if "本邦" in text and ("90" in text or "９０" in text) else "other")
+        ps = sorted(cur)
+        seq = [cur[p] for p in ps]
+        if len(seq) >= 8 and seq[-1] == "table" and set(seq) == {"table", "stmt"}:
+            k = seq.index("stmt")
+            out.append(neg(code, co["name"], "overseas_sales_ratio", "overseas_statement_only", window=(ps[k], ps[-1]),
+                           note=f"{ps[k]} は「本邦が 90% 超」の文だけ（その年の欄）＝その年の比率は出さない（期間を表のある年に絞れば引ける）"))
+            break
+    return out
+
+
 def main() -> int:
     pos = [positive(*x) for x in POSITIVE] + [roa_positive(*x) for x in ROA]
     negs = fixed_negatives() + [insufficient_history(), top_line_changed()]
@@ -330,6 +460,8 @@ def main() -> int:
     negs.append(q)
     pos.append(p)
     negs.append(nonpositive_start())
+    pos += overseas_positives()
+    negs += overseas_negatives()
     (EVAL / "trend.jsonl").write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in pos))
     (EVAL / "trend_fail_closed.jsonl").write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in negs))
     print(f"trend.jsonl: 正例 {len(pos)}（年の値 {sum(len(x['expected']['series']) for x in pos)}）・trend_fail_closed.jsonl: 負例 {len(negs)}"

@@ -14,11 +14,13 @@
         "restated_years": [決算期 …], "aggregate"?: str, "value"?: str}   # aggregate を指定したときだけ value（派生値）
      | {"ok": False, "reason": str, …}（会社ごとの除外）| {"found": False, "reason": str, …}（受付の誤り）
   各年の値＝その年の入力がすべて載る書類のうち提出日が最新の書類の値（案 B＝単社の参照の既定と同じ）。
-  期間の既定＝trend_company はその会社の収録の最古〜最新・screen_trend は基準日の 4 か月前までの 13 年（全社で同じ 13 年＝年数の違う集約を並べない）。
+  期間の既定＝trend_company はその会社の収録の最古〜最新・screen_trend は基準日の 4 か月前までの 13 年（海外売上比率は 11 年＝地域別の欄は最古の書類の前期から）＝全社で同じ年数（年数の違う集約を並べない）。
   期のずれのある式（ROA の前期の総資産 等）は、入力がそろう最古の年から（指定した期間の最初の年の入力がそろわなければ insufficient_history）。
   restated＝出所の書類と同じ期・同じ項目・同じ会計基準の値が違う他の書類（表示単位の粗い方の 1 単位以内の差は丸め＝数えない）。
   stock_split＝1 株当たりの項目で、系列の出所の書類が株式分割の前と後にまたがる（隣り合う書類の重なる期で 1 株当たりの値だけが一定の比率でずれる）。
               出所がすべて分割の後の書類なら除外しない（古い書類の分割の前の値は restated に並ぶだけ）。
+  海外売上比率（段②）の年 t＝t の地域別の表が載る書類のうち最新＝翌年の書類（日本基準は前期の欄・IFRS は表の前期の列）。最新の年はその年の書類。
+    本邦と合計のセルの特定は第 1c 便と同じ（合計×単位＝その書類のタグの付いた最上段の収益 t）。表が無く文だけの年は overseas_statement_only で除外。
   集約＝cagr（(終/始)^(1/(年数−1))−1）・change（終−始）・ratio（終/始）・mean・min・max・streak_up／streak_down
         （期間の終わりから数えた連続増加／減少の回数）・years_meeting（year_min／year_max を満たした年数）。
   screen_trend(conditions, *, order_by=None, order="desc", industries=None, manufacturing=None, basis=None,
@@ -79,6 +81,12 @@ def check_series(q: dict, tc) -> str | None:
             have = {(y["doc_id"], y["value"]) for y in g.get("restated", [])}
             if want != have:
                 return f"{x['period']} の restated が違う: {sorted(have)}（期待 {sorted(want)}）"
+        elif q["kind"] == "series_overseas":
+            i = next((y for y in g["inputs"] if y["term"] == "overseas_sales_ratio[t]"), {})
+            if (i.get("home_text"), i.get("total_text")) != (x["home_text"], x["total_text"]):
+                return f"{x['period']} の本邦と合計のセルが違う: {i.get('home_text')}／{i.get('total_text')}（期待 {x['home_text']}／{x['total_text']}）"
+            if not _close(g["value"], x["value"]):
+                return f"{x['period']} の値が違う: {g['value']}（期待 {x['value']}）"
         else:
             if not _close(g["value"], x["value"]):
                 return f"{x['period']} の値が違う: {g['value']}（期待 {x['value']}）"

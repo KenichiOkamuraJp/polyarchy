@@ -575,7 +575,7 @@ _OVERSEAS: dict = {}  # (会社, 書類, basis) → 値 か 除外（地域別�
 
 def _overseas_cached(ctx) -> dict:
     """地域別の欄のファイルは全書類ぶん（第 1d 便で約 9 倍）＝全社の欄を問のたびに読み直すと現状の問が 3 倍遅くなった（2026-09-30 実測）。"""
-    key = (ctx["code"], ctx["doc"], ctx["basis"])
+    key = (ctx["code"], ctx["doc"], ctx["basis"], ctx["periods"][0])  # 期も鍵に＝時系列（第 1e 便）は同じ書類の前期の欄も使う
     if key not in _OVERSEAS:
         try:
             _OVERSEAS[key] = _overseas(ctx)
@@ -591,8 +591,16 @@ def _overseas(ctx) -> dict:
     data = store.regions_of(ctx["code"])
     want = "geographic_areas_ifrs" if ctx["standard"] == "IFRS" else "revenue"
     t = ctx["periods"][0]
-    secs = [s for s in data["sections"] if s["doc_id"] == ctx["doc"] and s["basis"] == ctx["basis"] and s["section"] == want
-            and s["context"].startswith("CurrentYear") and (s["period"] == t or want == "geographic_areas_ifrs")]
+    mine = [s for s in data["sections"] if s["doc_id"] == ctx["doc"] and s["basis"] == ctx["basis"] and s["section"] == want]
+    if ctx.get("trend"):
+        # 時系列（第 1e 便）＝年 t の欄＝日本基準は期が t の欄（翌年の書類なら前期の欄）・IFRS は当期が t か t の翌年の欄（表に前期の列）。
+        # どの列・行が t かは合計のセル＝この書類のタグの付いた最上段の収益（t）との一致で決まる
+        secs = [s for s in mine if s["period"] == t or (want == "geographic_areas_ifrs" and s["context"].startswith("CurrentYear")
+                                                        and _months(s["period"], t) == 12)]
+        if not secs:
+            raise Excluded("regions_not_in_document", tagged=bool(mine))
+    else:
+        secs = [s for s in mine if s["context"].startswith("CurrentYear") and (s["period"] == t or want == "geographic_areas_ifrs")]
     if not secs:
         raise Excluded("regions_not_tagged")
     sec = secs[0]

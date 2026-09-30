@@ -21,7 +21,7 @@ from decimal import Decimal
 from companies.core import store
 from companies.core.industries import INDUSTRIES, MANUFACTURING_NOTE, industry_of
 from companies.core.items import RATIO_NOTE, TOP_LINE
-from companies.core.screen import (COMPANY_TOP, DERIVED, MAX_LIMIT, NOT_INGESTED, REASON_NOTE, Excluded, ExprError, _brief,
+from companies.core.screen import (COMPANY_TOP, MAX_LIMIT, NOT_INGESTED, REASON_NOTE, Excluded, ExprError, _brief,
                                    _column, _definition, _eval, _fmt, _is_ratio, _months, _periods, _Values)
 
 PER_SHARE = {"eps_basic", "eps_diluted", "net_assets_per_share", "dividend_per_share", "interim_dividend_per_share",
@@ -44,12 +44,14 @@ TREND_REASONS = {
     "nonpositive_start": "始めの年の値が 0 以下＝比・年平均成長率を計算しない",
     "negative_end": "終わりの年の値がマイナス＝年平均成長率を計算しない",
     "irregular_period": "期間の中に、前の決算期との間隔が 12 か月でない年（変則決算・決算期の変更）がある",
+    "regions_not_in_document": "期間の中に、地域別の欄が載る書類の無い年がある（最古の書類の前期より前＝期間を後ろにずらせば引ける）",
     "standard_changed": "期間の中に、系列の会計基準（期間の最新の書類が宣言する基準）の値が無い年がある（基準の違う値をつながない）",
 }
 NOTE = ("values は派生値（集約）。各年の値は、その年の入力がすべて載る書類のうち提出日が最新の書類の値（単社の参照の既定と同じ）＝series の "
         "doc_id が出所。後年の書類で同じ期の値が組み替えられた年は、系列の行の restated に他の書類の値が並ぶ（除外はしない＝段差は "
         "restated_years で確かめる）。★売上系は収益認識基準の適用（2022 年 3 月期前後）で不連続になる会社がある（遡及適用した会社は "
-        "restated に出る・しなかった会社は出ない）＝その年をまたぐ集約は系列の行を見る。比較できない会社は excluded に理由と件数。")
+        "restated に出る・しなかった会社は出ない）＝その年をまたぐ集約は系列の行を見る。海外売上比率の各年は、その年の地域別の表が載る最新の書類"
+        "（翌年の書類の前期の欄・IFRS は表の前期の列）の本邦と合計の 2 セルから。比較できない会社は excluded に理由と件数。")
 _SPLIT_MIN, _SPLIT_SPREAD = Decimal("0.05"), Decimal("1.02")
 
 
@@ -79,8 +81,6 @@ def _request(aggregate, year_min, year_max, period_from, period_to, metric) -> d
     for p in (period_from, period_to):
         if p is not None and not (isinstance(p, str) and re.fullmatch(r"\d{4}-\d{2}", p)):
             return _miss("bad_period", hint="period_from／period_to は決算期末の YYYY-MM")
-    if metric in DERIVED:
-        return _miss("bad_request", hint="海外売上比率の時系列は準備中（第 1e 便の段②）")
     return None
 
 
@@ -106,13 +106,13 @@ class _Company:
     def ctx(self, doc: str, basis: str, period: str, standard: str, top_item) -> dict:
         ps = list(self.per[(doc, basis)])
         return {"code": self.code, "co": self.co, "doc": doc, "basis": basis, "periods": ps[ps.index(period):],
-                "values": _Values(self.code, doc, basis, self.cols), "standard": standard,
+                "values": _Values(self.code, doc, basis, self.cols), "standard": standard, "trend": True,
                 **({"top_line_item": top_item} if top_item else {})}
 
 
 def _year(c: _Company, tree, basis: str, p: str, std: str, top_item) -> tuple[Decimal, dict, str]:
     """その年の値＝入力がすべて載る書類のうち提出日が最新の書類で計算する。どの書類でも計算できなければ、最新の書類での理由で除外。"""
-    first = None
+    first, tagged = None, False
     for doc in c.docs:
         if not c.has(doc, basis, p):
             continue
@@ -120,11 +120,22 @@ def _year(c: _Company, tree, basis: str, p: str, std: str, top_item) -> tuple[De
         try:
             v = _eval(tree, ctx, memo)
         except Excluded as e:
+            if e.reason == "regions_not_in_document":
+                tagged = tagged or e.extra.get("tagged", False)
+                continue
+            if _uses_regions(tree):  # 海外売上比率＝その年の欄が載る最新の書類の判定で決める（読めなければ古い書類の表へ落ちない）
+                raise
             if first is None or (first.reason == "period_not_in_document" and e.reason != "period_not_in_document"):
                 first = e
             continue
         return v, memo, ctx.get("top_line_item")
+    if first is None and _uses_regions(tree):
+        raise Excluded("regions_not_in_document" if tagged else "regions_not_tagged", period=p)
     raise first or Excluded("input_not_disclosed", period=p)
+
+
+def _uses_regions(tree) -> bool:
+    return "overseas_sales_ratio" in repr(tree)
 
 
 def _key_of(inp: dict) -> str:
@@ -170,6 +181,7 @@ def _split(c: _Company, old: str, new: str, basis: str, std: str) -> bool:
 
 
 DEFAULT_YEARS, FILING_LAG_MONTHS = 13, 4
+DEFAULT_YEARS_REGIONS = 11  # 地域別の欄は最古の書類（提出日で約 10 年前）の前期から＝海外売上比率の横断の既定は 11 年
 
 
 def _shift(ym: str, months: int) -> str:
@@ -177,11 +189,11 @@ def _shift(ym: str, months: int) -> str:
     return f"{n // 12:04d}-{n % 12 + 1:02d}"
 
 
-def default_window(as_of: str) -> tuple[str, str]:
+def default_window(as_of: str, years: int = DEFAULT_YEARS) -> tuple[str, str]:
     """横断の期間の既定＝基準日の 4 か月前（有報の提出期限は決算期末から 3 か月）までの 13 年＝決算月によらず全社で同じ 13 年。
     置き場で最も古い決算期は外れ値（2008-03 等）があり、基準日を終わりにすると未提出の決算月の会社が足りない扱いになる（2026-09-30 実装時）。"""
     to = _shift(as_of[:7], -FILING_LAG_MONTHS)
-    return _shift(to, -12 * DEFAULT_YEARS + 1), to
+    return _shift(to, -12 * years + 1), to
 
 
 def _series(c: _Company, tree, d: dict, *, basis, period_from, period_to, trim: bool = False) -> dict:
@@ -213,15 +225,20 @@ def _series(c: _Company, tree, d: dict, *, basis, period_from, period_to, trim: 
         try:
             v, memo, top_item = _year(c, tree, b, p, std, top_item)
         except Excluded as e:
-            if e.reason == "period_not_in_document" and (trim or not period_from) and i > 0:
-                break  # 期間の指定が無い＝期のずれのある式は入力がそろう最古の年から
+            # 期間の指定が無い＝入力がそろう最古の年から。横断の既定の期間（trim）で切り詰めてよいのは期のずれ（全社で同じ 1 年）だけ＝
+            # 地域別の欄の有無は会社で違う（IFRS のタグは古い書類に無い）＝切り詰めると年数の違う集約が並ぶ（2026-09-30 実装時）
+            if i > 0 and (not period_from or (trim and e.reason == "period_not_in_document")) and e.reason in (
+                    "period_not_in_document", "regions_not_in_document"):
+                break
             if e.reason == "period_not_in_document":
                 raise Excluded("insufficient_history", period=p, term=e.extra.get("term"))
+            if e.reason == "regions_not_in_document":
+                raise Excluded("regions_not_in_document", period=p)
             if e.reason == "top_line_changed" and _other_standard_only(c, b, p, std):
                 raise Excluded("standard_changed", period=p, term="top_line")
             raise Excluded(e.reason, **{"period": p, **e.extra})
         inputs = [x[1] for _, x in sorted(memo.items(), key=lambda kv: (kv[0][1], kv[0][0]))]
-        restated = [r for inp in inputs for r in _restated(c, inp, b, std)]
+        restated = [r for inp in inputs if inp.get("element") for r in _restated(c, inp, b, std)]  # 海外売上比率は表のセル＝突き合わせない
         disclosed = d.get("disclosed") and len(inputs) == 1
         rows.append({"period": p, "value": inputs[0]["value"] if disclosed else _fmt(v), "_raw": v, "doc_id": inputs[0]["doc_id"],
                      "inputs": inputs, **({"restated": restated} if restated else {})})
@@ -353,7 +370,8 @@ def screen_trend(conditions: list[dict], *, order_by: str | None = None, order: 
     # 期のずれのある式は入力がそろう最古の年から（trim）
     trim = period_from is None
     if period_from is None or period_to is None:
-        d_from, d_to = default_window(a)
+        regions = any(_uses_regions(p[1]) for _, p, _ in defs)
+        d_from, d_to = default_window(a, DEFAULT_YEARS_REGIONS if regions else DEFAULT_YEARS)
         period_from, period_to = period_from or d_from, period_to or d_to
     cols = {}  # 読んだ項目の索引をこの問の間は手放さない
     reg = store.registry()
