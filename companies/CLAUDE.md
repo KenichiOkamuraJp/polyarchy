@@ -23,7 +23,7 @@
   - その会社に無い項目→`found=false`＋理由。**隣の項目で埋めない**（銀行の経常収益を売上高として返すのは捏造）。
   - 連結と単体は別の系列。単体へ落ちてよいのは連結財務諸表を作成していない会社だけ＝**項目単位では落とさない**（持株会社で「売上高」に単体の営業収益が黙って入る＝[実データ検証](docs/記録/実データ検証_2026-09-20.md) §2）。
   - **連結の有無は決算期ごと**（2026-09-28）＝会社の最新の書類の宣言（DEI）ではなく、その期に連結の値があるか（`lookup.consolidated_at`・横断検索は選んだ書類の当期）。連結をやめた会社の 5 期推移には連結の期が残る（日本製麻）・始めた会社の古い期は単体だけ（六甲バター）＝いまの置き場で 60 社と 291 社。
-- **派生値を計算するのは横断検索（`core/screen.py`・`screen_companies`）だけ**（2026-09-27）＝式は項目の語彙に閉じる（四則演算と期のずれ）・正しさはエンジンの共通の規則（同じ書類・5 期推移・欠けた入力と分母 0 以下と変則決算と基準の変更は除外）・行ごとに式と入力の開示値と出典・比較できない会社は除外の理由と件数・未収録の入力は `input_not_ingested`＝[第 1c 便 計画](docs/第1c便_計画.md)。単社の参照層は派生値を返さない。検証済みの型・未収録の目録を足すときは評価問（`screen*.jsonl`）を同じ変更に。
+- **派生値を計算するのは横断検索（`core/screen.py`・`screen_companies`）と時系列（`core/trend.py`＝第 1e 便・年ごとの値はその年を載せた最新の書類・集約は固定の語彙）だけ**（2026-09-27・2026-09-30）＝式は項目の語彙に閉じる（四則演算と期のずれ）・正しさはエンジンの共通の規則（同じ書類・5 期推移・欠けた入力と分母 0 以下と変則決算と基準の変更は除外）・行ごとに式と入力の開示値と出典・比較できない会社は除外の理由と件数・未収録の入力は `input_not_ingested`＝[第 1c 便 計画](docs/第1c便_計画.md)。単社の参照層は派生値を返さない。検証済みの型・未収録の目録を足すときは評価問（`screen*.jsonl`）を同じ変更に。
 - 期間キーは決算期末（`YYYY-MM`）。同じ決算期の値は後年の書類で遡及修正され得る＝出所の書類を値に刻む。
 - 評価は hit@5 ではなく**原典との完全一致**（`companies.eval.exact_match`）。別名（社名のゆれ・業種別の要素名）は**問を立ててから足す**。
 - 原文は丸ごと再配布しない＝値＋引用 1 行＋出典 URL。EDINET タクソノミ自体は再配布しない（値・要素名の利用は可）。
@@ -51,6 +51,7 @@ python -m companies.eval.make_segment_candidates  # 第 1b 便の評価問の素
 python -m companies.eval.make_region_candidates   # 第 1b 便②（地域別）の評価問の素材づくり（★regions*.jsonl を上書きする）
 python -m companies.ops.build_industries    # 業種（EDINET コードリスト＝data/cache/codelist/ に置いてから・RUNBOOK §5）
 python -m companies.eval.make_screen_candidates  # 第 1c 便（横断検索）の値の正例の素材づくり（★screen.jsonl を上書きする・人手の問は screen_manual／screen_fail_closed／screen_queries）
+python -m companies.eval.make_trend_candidates  # 第 1e 便（時系列）の評価問（★trend.jsonl・trend_fail_closed.jsonl を上書き・全書類の公式 CSV を API から取る・人手の問は trend_queries）
 python -m companies.eval.exact_match        # 原典完全一致＝正例・負例とも全問 PASS（第 1b 便の segments_exact・regions_exact・第 1c 便の industries_exact・screen_exact も続けて判定）
 python -m companies.eval.find_quality       # 発見層（企業の同定）＝全問 PASS
 python -m companies.ops.population_report   # 母集団の棚卸し（取込のあとに回す＝語彙・契約が標本の外でも成り立つか）
@@ -65,6 +66,7 @@ python -m companies.serving.mcp_server      # stdio（--http --port 8767 で配�
 - ★ **XBRL のリンクベースは名前を決め打ちしない**＝ラベルは loc（要素の id）→ labelArc → label の順にたどる。`xlink:label` の名前は書類ごとに任意（`<接頭辞>_<要素>_label` と `label_<要素>` の 2 通りを実測）＝決め打ちで 243 社の拡張要素のラベルが空だった（2026-09-23・[人手の目視](docs/記録/人手の目視_2026-09-23.md) §3）。公式 CSV の「項目名」も拡張要素で空になる書類がある＝ラベルの突き合わせ先は本文（`0101010_honbun_*.htm`）。
 - ★ **既存の `exact_match.jsonl`／`fail_closed.jsonl` を `make_candidates` で再生成しない**＝人手で足した問がある（ソニーの接頭辞なし・E03160 の ROE 等＝再生成すると消えることを 2026-09-28 に確かめた）。新しい便の問は別のファイル（`period_basis*`・`backfill*`・`*_backfill`）に置き、ゲートが続けて読む。
 - ★ **横断検索の索引は「問の間は手放さない」**＝項目ごとのファイルを LRU だけで持つと、最上段の収益の判定だけで 9 項目を見るため問の途中で追い出しと読み直しが起き、現状の問が 0.05 秒→12〜22 秒になった（ゲートは通る＝速さは測らないと気づかない・2026-09-28）。索引のファイルは 1 行 1 社（1 つの JSON にすると読み込みの一時的なメモリが 4 倍）。
+- ★ **横断検索の索引の形式を変えたら `core/screen.py` の `INDEX_VERSION` を上げる**＝古い形式の索引を新しいコードが黙って読まない（ゲートの `index_status` が版の違いで FAIL・2026-09-30 に行へ decimals を足して版 2）。
 - ★ **書類一覧の `xbrlFlag=1` でも XBRL が無い書類がある**（HTML だけ＝テムザックの 2018 年提出の古い有報 4 本）・**PublicDoc のインスタンスが 2 個の書類がある**（参天製薬 2017 年＝jpcrp030000 と ifrs-asr）＝`parse_instance` は両方を合わせる・無ければ `NoInstance`（失敗に数えない）。
 - ★ **値の置き場の退避・一時ファイルは `data/cache/` の下に**＝`upload_to_s3.sh` は `data/` を `cache/`・`verify/`・`logs/`・`query_log/` 以外すべて S3（→箱）へ運ぶ。
 - ★ **配信側（`core/`・`serving/`）に lxml など取込用の依存を import しない**＝箱のロックに入っていない（取込は作業用 PC だけ・`pip install -e ".[companies]"`）。

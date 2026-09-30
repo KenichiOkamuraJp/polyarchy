@@ -194,9 +194,11 @@ def _company_top_candidate(f: dict) -> bool:
 # （全量の現状の索引＝保持 153MB に対し一時 605MB・2026-09-30 実測）
 #   store/screen_index/_periods.jsonl  中身＝{"<書類>|<basis>": [決算期（新しい順）]}
 #   store/screen_index/_fingerprint.json  鮮度の照合＝{EDINET コード: [書類の一覧, 値のファイルの大きさ]}
-#   store/screen_index/_latest.jsonl   中身＝{"<書類>|<basis>": {決算期: {項目: [[基準, 要素, 値, 単位, context(, ラベル)]]}}}（最新の書類だけ）
-#   store/screen_index/<項目>.jsonl    中身＝{"<書類>|<basis>": {決算期: [[基準, 要素, 値, 単位, context(, ラベル)]]}}
+#   store/screen_index/_latest.jsonl   中身＝{"<書類>|<basis>": {決算期: {項目: [[基準, 要素, 値, 単位, context, ラベル, decimals]]}}}（最新の書類だけ）
+#   store/screen_index/<項目>.jsonl    中身＝{"<書類>|<basis>": {決算期: [[基準, 要素, 値, 単位, context, ラベル, decimals]]}}
+#   （ラベルは会社が定義した最上段の収益の候補だけ・他は null。decimals は時系列のつなぎ目で丸めの差を修正と数えないため＝第 1e 便）
 INDEX_DIR = store.STORE / "screen_index"
+INDEX_VERSION = 2  # 2＝行に decimals を足した（2026-09-30・第 1e 便）。形式を変えたら上げる＝古い索引は index_status が検出する
 _BASES = ("consolidated", "non_consolidated")
 
 
@@ -213,9 +215,9 @@ def build_index() -> dict:
                 continue
             k = _EL_KEY.get(f["element"])
             if k:
-                row = [standard_of(f["element"]), f["element"], f["value"], f["unit"], f["context"]]
+                row = [standard_of(f["element"]), f["element"], f["value"], f["unit"], f["context"], None, f.get("decimals")]
             elif _company_top_candidate(f):
-                k, row = COMPANY_TOP, [None, f["element"], f["value"], f["unit"], f["context"], f["label"]]
+                k, row = COMPANY_TOP, [None, f["element"], f["value"], f["unit"], f["context"], f["label"], f.get("decimals")]
             else:
                 continue
             db = f"{f['doc_id']}|{f['basis']}"
@@ -228,7 +230,7 @@ def build_index() -> dict:
     for old in tmp.glob("*.json*"):
         old.unlink()
     _write_lines(tmp / "_periods.jsonl", periods)
-    (tmp / "_fingerprint.json").write_text(json.dumps(fp, ensure_ascii=False, separators=(",", ":")))
+    (tmp / "_fingerprint.json").write_text(json.dumps({"__version__": INDEX_VERSION, **fp}, ensure_ascii=False, separators=(",", ":")))
     for k, col in cols.items():
         _write_lines(tmp / f"{k}.jsonl", col)
     latest = {}
@@ -274,6 +276,8 @@ def index_status() -> list[str]:
     if not path.exists():
         return ["索引が無い（python -m companies.ingest.edinet --build-index）"]
     fp = json.loads(path.read_text())
+    if fp.get("__version__") != INDEX_VERSION:
+        return [f"索引の形式が古い（版 {fp.get('__version__', 1)}→{INDEX_VERSION}・python -m companies.ingest.edinet --build-index）"]
     bad = [c for c in store.registry() if (store.STORE / "facts" / f"{c}.json").exists() and fp.get(c) != _fingerprint(c)]
     return bad[:20] + ([f"…ほか {len(bad) - 20} 社"] if len(bad) > 20 else [])
 
@@ -306,7 +310,7 @@ def _rows(rows: list) -> tuple:
 
 @lru_cache(maxsize=8)
 def _column(key: str) -> dict:
-    """1 項目の索引＝{EDINET コード: {(書類, basis, 決算期): ((基準, 要素, 値, 単位, context(, ラベル)), …)}}。
+    """1 項目の索引＝{EDINET コード: {(書類, basis, 決算期): ((基準, 要素, 値, 単位, context, ラベル, decimals), …)}}。
     値の文字列以外（書類・期・要素・単位・context・ラベル）は共有の文字列にする＝全量（約 4 万書類）で 1 項目 数十 MB に収める。"""
     path = INDEX_DIR / f"{key}.jsonl"
     if not path.exists():
@@ -419,7 +423,7 @@ def _item(ctx, key: str, off: int) -> dict:
             if mine_bl and Decimal(mine_bl[0][2]) < 0:
                 raise Excluded("not_disclosed_loss_year", term=key, period=p, bottom_line=mine_bl[0][2])
         raise Excluded("input_not_disclosed", term=key)
-    std, el, value, unit, context = mine[0]
+    std, el, value, unit, context = mine[0][:5]
     return {"item": key, "label": ITEMS[key][0], "element": el, "period": p, "value": value, "unit": unit, "context": context,
             "doc_id": ctx["doc"]}
 
@@ -442,7 +446,7 @@ def _company_top(ctx, off: int, fixed: str | None) -> dict:
         raise Excluded("input_not_disclosed", term="top_line")
     if len(cands) > 1:
         raise Excluded("top_line_ambiguous", candidates=[{"element": c[1], "label": c[5]} for c in cands.values()])
-    _, el, value, unit, context, label = next(iter(cands.values()))
+    _, el, value, unit, context, label = next(iter(cands.values()))[:6]
     return {"item": None, "label": label, "element": el, "company_defined": True, "period": p, "value": value, "unit": unit,
             "context": context, "doc_id": ctx["doc"]}
 
