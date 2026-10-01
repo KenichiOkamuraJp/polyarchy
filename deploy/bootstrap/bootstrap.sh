@@ -276,6 +276,7 @@ UNIT_SRC="$REPO_DIR/deploy/systemd"
 install -m 644 "$UNIT_SRC/polyarchy-mcp.service" /etc/systemd/system/polyarchy-mcp.service
 install -m 644 "$UNIT_SRC/polyarchy-fuelsync.service" /etc/systemd/system/polyarchy-fuelsync.service
 install -m 644 "$UNIT_SRC/polyarchy-fuelsync.timer" /etc/systemd/system/polyarchy-fuelsync.timer
+install -m 755 "$REPO_DIR/deploy/bootstrap/fuelsync.sh" /usr/local/bin/polyarchy-fuelsync  # unit の ExecStart（2026-10-01）
 # 捕捉ログの保持期間（既定30日）を守る削除ジョブ（プライバシーポリシーの約束）。
 install -m 644 "$UNIT_SRC/polyarchy-logprune.service" /etc/systemd/system/polyarchy-logprune.service
 install -m 644 "$UNIT_SRC/polyarchy-logprune.timer" /etc/systemd/system/polyarchy-logprune.timer

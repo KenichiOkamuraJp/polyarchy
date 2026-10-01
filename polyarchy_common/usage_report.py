@@ -255,7 +255,7 @@ def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at:
 recommendations 0 件率 {e(pct(latest['recommendations_zero'], latest['recommendations']))}・低ヒット率(&lt;{LOW_HIT}) {e(pct(latest['recommendations_low'], latest['recommendations']))}／
 stats lookup found=false {latest['stats_found_false']} 件（拡充候補の一次情報）／
 companies {latest.get('companies', 0)} 件（横断検索 {latest.get('companies_screen', 0)}・時系列 {latest.get('companies_trend', 0)}）・使えなかった入力
-{e("・".join(f"{k} {v}" for k, v in (latest.get('companies_unavailable') or {}).items()) or "—")}（未収録・開示なし＝取込の改善候補）</p>""")
+{e("・".join(f"{k} {v}" for k, v in (latest.get('companies_unavailable') or {}).items()) or "—")}（未収録・開示なし＝取込の改善候補／unknown_aggregate:aggregate＝語彙に無い集約を求められた回数）</p>""")
     parts.append("""<h2>週次推移</h2><div class="wrap"><table>
 <tr><th>週</th><th>週初</th><th>計</th><th>recommendations</th><th>stats</th><th>source 内訳</th><th>利用者</th>
 <th>c: 0件</th><th>c: 低ヒット</th><th>c: orgs指定</th><th>c: 期間指定</th>

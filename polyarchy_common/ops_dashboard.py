@@ -6,7 +6,8 @@
 S3 コンソールから開くだけで、稼働・鮮度・バージョン・利用の現況を確認できる。
 
 載せるもの（すべて数字・状態のみ＝検索語・文書名・個人を含まない＝usage_report と同じ約束）：
-  ① 稼働：systemd ユニットの状態・/healthz 応答・ディスク使用率
+  ① 稼働：systemd ユニットの状態・/healthz 応答・ディスク使用率・メモリ（サービスごとの現在と起動からの最大・箱全体）・
+           捕捉ログの S3 同期（サービスごとの最終成功＝fuelsync が ops/dashboard/fuelsync/ に残す）
   ② バージョン：コード版（VERSION＝upload 時に git describe を刻印）・検索構成・データ規模
   ③ 鮮度：recommendations 団体別 last_ingested・stats freshness・QE edition
   ④ 利用：直近 4 週の集計（ops/usage/weekly.jsonl＝usage_report が恒久蓄積している数字のみ）
@@ -47,6 +48,11 @@ UPDATE_CHECK_PATH = ROOT / "recommendations" / "data" / "cache" / "update_check.
 FRESHNESS_RUN_PATH = ROOT / "stats" / "data" / "cache" / "freshness_last_run.json"
 APPLIED_RELEASE_PATH = ROOT / "ops" / "dashboard" / "applied_data_release.json"
 COMPANIES_REGISTRY_PATH = ROOT / "companies" / "data" / "store" / "companies.json"
+FUELSYNC_DIR = ROOT / "ops" / "dashboard" / "fuelsync"  # deploy/bootstrap/fuelsync.sh が書く（2026-10-01）
+CGROUP_ROOT = Path("/sys/fs/cgroup")
+MEMINFO_PATH = Path("/proc/meminfo")
+MEMORY_UNITS = ("polyarchy-mcp", "polyarchy-stats", "qdrant")  # ＋ companies（有効な箱のみ）
+FUELSYNC_SERVICES = ("recommendations", "stats", "companies")
 UNITS = ("qdrant", "polyarchy-mcp", "polyarchy-stats", "cloudflared",
          "polyarchy-health.timer", "polyarchy-fuelsync.timer",
          "polyarchy-logprune.timer", "polyarchy-usagereport.timer", "polyarchy-dashboard.timer",
@@ -76,6 +82,62 @@ def disk_usage() -> str:
         return f"{100 * du.used / du.total:.0f}%（{du.free // 2**30} GB 空き）"
     except Exception:  # noqa: BLE001
         return "—"
+
+
+def _gb(n: int) -> str:
+    return f"{n / 2**30:.2f} GB"
+
+
+def service_memory() -> list[tuple[str, str, str, str]]:
+    """サービスごとの (ユニット, 現在, 起動からの最大, 起動時刻)。現在＝systemd の MemoryCurrent。最大＝cgroup v2 の memory.peak
+    （箱の Ubuntu 22.04 の systemd 249 には MemoryPeak が無い＝cgroup のファイルを読む・カーネル 5.19 以降）。取れない値は「—」。
+    時系列の横断の重い問（手元で 1 問 最大約 800MB・2026-10-01）の後も、毎時の生成で山が見える。"""
+    if not shutil.which("systemctl"):
+        return []
+    out = []
+    for u in MEMORY_UNITS + (("polyarchy-companies",) if companies_enabled() else ()):
+        try:
+            rc = subprocess.run(["systemctl", "show", u, "-p", "ActiveState,MemoryCurrent,ControlGroup,ActiveEnterTimestamp"],
+                                capture_output=True, text=True, timeout=5)
+            kv = dict(line.split("=", 1) for line in rc.stdout.splitlines() if "=" in line)
+        except Exception:  # noqa: BLE001
+            kv = {}
+        if kv.get("ActiveState") != "active":
+            continue
+        cur = kv.get("MemoryCurrent", "")
+        cur = _gb(int(cur)) if cur.isdigit() and int(cur) < 2**63 else "—"  # 未計測は [not set] か 2^64−1
+        peak = "—"
+        try:
+            cg = kv.get("ControlGroup", "")
+            if cg:
+                peak = _gb(int((CGROUP_ROOT / cg.lstrip("/") / "memory.peak").read_text().strip()))
+        except Exception:  # noqa: BLE001
+            pass
+        out.append((u, cur, peak, kv.get("ActiveEnterTimestamp", "") or "—"))
+    return out
+
+
+def box_memory() -> str:
+    """箱全体の使用量＝MemTotal − MemAvailable（/proc/meminfo）。"""
+    try:
+        m = {k: int(v.split()[0]) * 1024 for k, v in (line.split(":", 1) for line in MEMINFO_PATH.read_text().splitlines() if ":" in line)}
+        used, total = m["MemTotal"] - m["MemAvailable"], m["MemTotal"]
+        return f"{_gb(used)} ／ {_gb(total)}（{100 * used / total:.0f}%）"
+    except Exception:  # noqa: BLE001
+        return "—"
+
+
+def fuelsync_status() -> dict:
+    """捕捉ログの S3 同期の結果（サービス → {result, last_ok}・last_run）。fuelsync.sh が書く前の箱では空。"""
+    def rd(name: str) -> str:
+        try:
+            return (FUELSYNC_DIR / name).read_text(encoding="utf-8").strip()
+        except Exception:  # noqa: BLE001
+            return ""
+    if not FUELSYNC_DIR.is_dir():
+        return {}
+    return {"last_run": rd("last_run"),
+            "services": {s: {"result": rd(f"{s}.result") or "—", "last_ok": rd(f"{s}.last_ok") or "—"} for s in FUELSYNC_SERVICES}}
 
 
 def code_version() -> str:
@@ -225,7 +287,21 @@ def render(generated_at: str, env_name: str) -> str:
         else:
             cls, txt = ("ok", "ok") if h["ok"] else ("ng", "NG")
             parts.append(f"<tr><td>{e(h['url'])}（{e(h['service'])}）</td><td class=\"{cls}\">{txt}</td></tr>")
-    parts.append(f"</table></div><p>ディスク使用率：{e(disk_usage())}</p>")
+    parts.append(f"</table></div><p>ディスク使用率：{e(disk_usage())}／メモリ（箱全体）：{e(box_memory())}</p>")
+    mem = service_memory()
+    if mem:
+        parts.append("<table><tr><th>メモリ</th><th>現在</th><th>起動からの最大</th><th>起動</th></tr>")
+        for u, cur, peak, since in mem:
+            parts.append(f"<tr><td>{e(u)}</td><td>{e(cur)}</td><td>{e(peak)}</td><td>{e(since)}</td></tr>")
+        parts.append("</table>")
+    fs = fuelsync_status()
+    if fs:
+        parts.append("<table><tr><th>捕捉ログの S3 同期</th><th>結果</th><th>最終成功</th></tr>")
+        for svc, v in fs["services"].items():
+            cls = "ok" if v["result"] == "ok" else "ng" if v["result"] == "failed" else "note"
+            parts.append(f"<tr><td>{e(svc)}</td><td class=\"{cls}\">{e(v['result'])}</td><td>{e(v['last_ok'])}</td></tr>")
+        parts.append(f"</table><p class=\"note\">同期は前の実行から 1 時間ごと（時刻は固定でない）・最終実行 {e(fs['last_run'] or '—')}。"
+                     "absent＝その箱でサービスが無い。</p>")
 
     # ② バージョン
     parts.append(f"""<h2>② バージョン・規模</h2>

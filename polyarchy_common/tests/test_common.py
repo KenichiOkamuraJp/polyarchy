@@ -281,6 +281,50 @@ def test_usage_report_aggregate():
     assert shrunk[0]["total"] == 100                                   # 痩せた再計算は既存優先
 
 
+
+def test_ops_dashboard_memory_and_fuelsync():
+    """ダッシュボード①のメモリ（サービスごとの現在と起動からの最大・箱全体）と捕捉ログの S3 同期（2026-10-01）。
+    箱の Ubuntu 22.04 の systemd 249 には MemoryPeak が無い＝最大は cgroup v2 の memory.peak を読む。"""
+    import tempfile
+    from pathlib import Path
+    from types import SimpleNamespace
+    from polyarchy_common import ops_dashboard as od
+
+    d = Path(tempfile.mkdtemp())
+    (d / "meminfo").write_text("MemTotal:       16000000 kB\nMemFree:  1000 kB\nMemAvailable:   12000000 kB\n")
+    (d / "cg" / "system.slice" / "polyarchy-companies.service").mkdir(parents=True)
+    (d / "cg" / "system.slice" / "polyarchy-companies.service" / "memory.peak").write_text(str(800 * 2**20) + "\n")
+    (d / "fs").mkdir()
+    (d / "fs" / "companies.result").write_text("failed\n")
+    (d / "fs" / "companies.last_ok").write_text("2026-10-01T12:28:00+00:00\n")
+    (d / "fs" / "stats.result").write_text("absent\n")
+    (d / "fs" / "last_run").write_text("2026-10-01T13:28:00+00:00\n")
+
+    def fake_run(cmd, **kw):
+        u = cmd[2]
+        if u == "polyarchy-companies":
+            out = ("ActiveState=active\nMemoryCurrent=" + str(300 * 2**20) + "\nControlGroup=/system.slice/polyarchy-companies.service\n"
+                   "ActiveEnterTimestamp=Thu 2026-10-01 01:35:40 UTC\n")
+        elif u == "qdrant":
+            out = "ActiveState=active\nMemoryCurrent=[not set]\nControlGroup=\nActiveEnterTimestamp=\n"
+        else:
+            out = "ActiveState=inactive\n"
+        return SimpleNamespace(stdout=out, returncode=0)
+
+    saved = (od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR, od.subprocess.run, od.shutil.which, od.companies_enabled)
+    try:
+        od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR = d / "meminfo", d / "cg", d / "fs"
+        od.subprocess.run, od.shutil.which, od.companies_enabled = fake_run, (lambda _: "/bin/systemctl"), (lambda: True)
+        assert od.box_memory().startswith("3.81 GB ／ 15.26 GB（25%）"), od.box_memory()
+        mem = {u: (cur, peak) for u, cur, peak, _ in od.service_memory()}
+        assert mem == {"polyarchy-companies": ("0.29 GB", "0.78 GB"), "qdrant": ("—", "—")}, mem   # 止まっているユニットは載せない
+        fs = od.fuelsync_status()
+        assert fs["services"]["companies"] == {"result": "failed", "last_ok": "2026-10-01T12:28:00+00:00"}
+        assert fs["services"]["recommendations"]["result"] == "—" and fs["last_run"].startswith("2026-10-01T13:28")
+    finally:
+        od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR, od.subprocess.run, od.shutil.which, od.companies_enabled = saved
+
+
 if __name__ == "__main__":
     import sys
 

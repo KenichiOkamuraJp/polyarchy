@@ -8,7 +8,8 @@
   ③ 系列が途切れる会社は黙ってつながず除外の理由へ＝standard_changed（系列の会計基準＝期間の最新の書類の宣言）・irregular_period
      （その年と前の決算期の間隔が 12 か月でない）・basis_changed（期間の途中で連結を作成していない年がある）・insufficient_history
      （指定した期間の端まで年がそろわない）・top_line_changed（最上段の収益の項目が年で変わる）・stock_split（1 株当たりの項目で、
-     出所の書類が株式分割の前と後にまたがる）
+     出所の書類が株式分割の前と後にまたがる）・share_count_changed（1 株当たりの項目で、隣り合う年の 1 株の大きさが大きくずれる＝
+     同じ書類の中で分割・併合の前と後の値が混ざる・restated の出ない段差を含む）
   ④ 集約は固定の語彙（AGGREGATES）＝派生値と明記し、年ごとの系列（値・出所の書類・入力の開示値）を添える
 基準日（as_of）より後に提出された書類は使わない（問の答えを基準日で固定する）。
 """
@@ -20,7 +21,7 @@ from decimal import Decimal
 
 from companies.core import store
 from companies.core.industries import INDUSTRIES, MANUFACTURING_NOTE, industry_of
-from companies.core.items import RATIO_NOTE, TOP_LINE
+from companies.core.items import RATIO_NOTE, RATIO_NOTE_SHARE, TOP_LINE
 from companies.core.screen import (COMPANY_TOP, MAX_LIMIT, NOT_INGESTED, REASON_NOTE, Excluded, ExprError, _brief,
                                    _column, _definition, _eval, _fmt, _is_ratio, _months, _periods, _Values)
 
@@ -41,6 +42,9 @@ TREND_REASONS = {
     "basis_changed": "期間の途中で連結財務諸表を作成していない年がある（連結と単体の系列をつながない）",
     "insufficient_history": "指定した期間の端まで年がそろわない（上場の前・有報の提出が無い年・期のずれのある式の入力がそろわない年）",
     "stock_split": "1 株当たりの項目で、系列の出所の書類が株式分割の前と後にまたがる（段差が数倍規模＝期間を分割の後にすれば引ける）",
+    "share_count_changed": ("1 株当たりの項目で、隣り合う年の株式数の目安（各年の出所の書類の自己資本 ÷ 1 株当たり純資産・当期純利益 ÷ "
+                            "1 株当たり当期純利益）が 1.45 倍以上ずれる＝株式分割・併合の前と後の値が系列に混ざる（後年の書類も古い年を"
+                            "組み替えないことがある＝restated の有無では見えない）。大きな増資・合併の年もここに入る"),
     "nonpositive_start": "始めの年の値が 0 以下＝比・年平均成長率を計算しない",
     "negative_end": "終わりの年の値がマイナス＝年平均成長率を計算しない",
     "irregular_period": "期間の中に、前の決算期との間隔が 12 か月でない年（変則決算・決算期の変更）がある",
@@ -53,6 +57,11 @@ NOTE = ("values は派生値（集約）。各年の値は、その年の入力�
         "restated に出る・しなかった会社は出ない）＝その年をまたぐ集約は系列の行を見る。海外売上比率の各年は、その年の地域別の表が載る最新の書類"
         "（翌年の書類の前期の欄・IFRS は表の前期の列）の本邦と合計の 2 セルから。比較できない会社は excluded に理由と件数。")
 _SPLIT_MIN, _SPLIT_SPREAD = Decimal("0.05"), Decimal("1.02")
+_SHARES_JUMP = Decimal("1.45")  # 分割・併合は 1.5 倍〜（2・10・100 倍）・増資と自己株式の取得はほぼ 1.4 倍まで（全社の実測・2026-10-01）
+# 株式数の目安＝(全体の額の項目, 1 株当たりの項目)。自己資本は日本基準に項目が無い＝自己資本比率 × 総資産（純資産額は非支配株主持分を含み揺れる）
+_SHARE_BASES = ((("equity_ratio", "total_assets"), "net_assets_per_share"),
+                (("equity_attributable_to_owners",), "equity_per_share_attributable_to_owners"),
+                (("profit_attributable_to_owners",), "eps_basic"), (("net_income",), "eps_basic"))
 
 
 def _unit(dec) -> Decimal:
@@ -180,6 +189,37 @@ def _split(c: _Company, old: str, new: str, basis: str, std: str) -> bool:
     return max(rs) / min(rs) < _SPLIT_SPREAD and abs(min(rs) - 1) > _SPLIT_MIN
 
 
+def _one(c: _Company, key: str, doc: str, basis: str, p: str, std: str) -> tuple[Decimal, Decimal] | None:
+    r = next((r for r in _col(c, key).get((doc, basis, p), ()) if r[0] == std), None)
+    return (Decimal(r[2]), _unit(r[6])) if r else None
+
+
+def _share_counts(c: _Company, doc: str, basis: str, p: str, std: str) -> list[Decimal | None]:
+    """その年の出所の書類での株式数の目安（_SHARE_BASES の順）。全体と 1 株当たりの符号が違う・1 株当たりが表示単位の 20 倍に
+    満たない（丸めで 5% 以上揺れる）ときは None＝0 に近い自己資本・利益は目安にならない。"""
+    out = []
+    for totals, per in _SHARE_BASES:
+        xs = [_one(c, k, doc, basis, p, std) for k in totals]
+        y = _one(c, per, doc, basis, p, std)
+        if y is None or any(x is None for x in xs) or y[0] == 0 or (y[1] and abs(y[0]) < 20 * y[1]):
+            out.append(None)
+            continue
+        t = xs[0][0] * (xs[1][0] if len(xs) > 1 else 1)
+        out.append(t / y[0] if t and (t > 0) == (y[0] > 0) else None)
+    return out
+
+
+def _share_jump(c: _Company, rows: list[dict], basis: str, std: str) -> dict | None:
+    """隣り合う年で、計算できる株式数の目安のすべてが同じ向きに _SHARES_JUMP 倍以上ずれる最初の年（どれも計算できない組は判定しない）。"""
+    counts = [_share_counts(c, r["doc_id"], basis, r["period"], std) for r in rows]
+    for i in range(1, len(rows)):
+        qs = [b / a for a, b in zip(counts[i - 1], counts[i]) if a and b]
+        if qs and (all(q >= _SHARES_JUMP for q in qs) or all(q <= 1 / _SHARES_JUMP for q in qs)):
+            return {"periods": [rows[i - 1]["period"], rows[i]["period"]], "documents": [rows[i - 1]["doc_id"], rows[i]["doc_id"]],
+                    "share_count_ratio": _fmt(sum(qs) / len(qs))}
+    return None
+
+
 DEFAULT_YEARS, FILING_LAG_MONTHS = 13, 4
 DEFAULT_YEARS_REGIONS = 11  # 地域別の欄は最古の書類（提出日で約 10 年前）の前期から＝海外売上比率の横断の既定は 11 年
 
@@ -251,6 +291,9 @@ def _series(c: _Company, tree, d: dict, *, basis, period_from, period_to, trim: 
         for old, new in zip(srcs, srcs[1:]):
             if _split(c, old, new, b, std):
                 raise Excluded("stock_split", documents=[old, new])
+        jump = _share_jump(c, rows, b, std)
+        if jump:
+            raise Excluded("share_count_changed", **jump)
     return {"basis": b, "accounting_standard": std, "top_line_item": top_item, "series": rows,
             "restated_years": [r["period"] for r in rows if "restated" in r]}
 
@@ -347,8 +390,9 @@ def _compact(series: list[dict], disclosed: bool) -> tuple[dict, dict]:
     if rest:
         out["restated"] = rest
     last = series[-1]["inputs"] if series else []
-    elements = {i["term"]: (i.get("label") if i.get("company_defined") else None) or i.get("element") or "本邦と合計のセル（地域別の表）"
-                for i in last}
+    # 会社が定義した項目はラベルと要素 ID の両方（ラベルだけでは出典を引き直せない＝2026-10-01 staging）
+    elements = {i["term"]: (f"{i['label']}（{i['element']}）" if i.get("company_defined") and i.get("label") and i.get("element") else None)
+                or i.get("element") or "本邦と合計のセル（地域別の表）" for i in last}
     return out, elements
 
 
@@ -444,7 +488,8 @@ def screen_trend(conditions: list[dict], *, order_by: str | None = None, order: 
                 row["elements"] = els
             rows.append(row)
     rows.sort(key=lambda r: Decimal(r["values"][order_by]), reverse=order == "desc")
-    ratio = {"ratio_note": RATIO_NOTE} if any(_is_ratio(c.get("metric") or c.get("expr"), p[2]) for _, p, c in defs) else {}
+    rs = [_uses_regions(p[1]) for _, p, c in defs if _is_ratio(c.get("metric") or c.get("expr"), p[2])]
+    ratio = {"ratio_note": RATIO_NOTE_SHARE if all(rs) else RATIO_NOTE} if rs else {}
     return {"found": True, **ratio, "matched": len(rows), "rows": rows[:limit], "order_by": order_by, "order": order,
             "definitions": [{"name": n, "aggregate": c["aggregate"], "aggregate_note": AGGREGATES[c["aggregate"]], **p[2]} for n, p, c in defs],
             "excluded": {n: e for n, e in excluded.items() if e}, "unavailable": [], "population": population, "as_of": a,

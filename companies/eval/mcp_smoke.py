@@ -128,6 +128,10 @@ async def run() -> list[str]:
         recs = [json.loads(l) for l in open(env["COMPANIES_QUERY_LOG"]) if l.strip()]
         if not any(u["term"] == "gross_profit" for x in recs if x.get("tool") == "screen_trend" for u in x.get("unavailable_vocab") or []):
             errs.append("[31] screen_trend の未収録の項目が捕捉ログ（unavailable_vocab）に残らない")
+        un_agg = [u for x in recs if x.get("tool") == "screen_trend" and x.get("reason") == "unknown_aggregate"
+                  for u in x.get("unavailable_vocab") or []]
+        if {"term": "aggregate", "level": "unknown_aggregate"} not in un_agg or any("median" in json.dumps(u) for u in un_agg):
+            errs.append("[36] 語彙に無い集約の回数が恒久集計向けの unavailable_vocab に残らない（固定の語 aggregate で・利用者が書いた語は入れない）")
         if "screen_trend" not in json.dumps(r11, ensure_ascii=False):
             errs.append("[32] screen_companies の返り値に、複数年の条件は screen_trend の案内が無い")
         if "時系列" not in INSTRUCTIONS[0] or "screen_trend" not in INSTRUCTIONS[0]:

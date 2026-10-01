@@ -19,6 +19,9 @@
   restated＝出所の書類と同じ期・同じ項目・同じ会計基準の値が違う他の書類（表示単位の粗い方の 1 単位以内の差は丸め＝数えない）。
   stock_split＝1 株当たりの項目で、系列の出所の書類が株式分割の前と後にまたがる（隣り合う書類の重なる期で 1 株当たりの値だけが一定の比率でずれる）。
               出所がすべて分割の後の書類なら除外しない（古い書類の分割の前の値は restated に並ぶだけ）。
+  share_count_changed＝1 株当たりの項目で、隣り合う年の 1 株の大きさ（各年の出所の書類の自己資本 ÷ 1 株当たり純資産・当期純利益 ÷ 1 株当たり
+              当期純利益＝株式数の目安）が、計算できる目安のすべてで同じ向きに 1.45 倍以上ずれる（株式分割・併合の前と後の値が混ざる＝
+              同じ書類の中の段差・restated の出ない段差を含む。大きな増資・合併もここに入る）。
   海外売上比率（段②）の年 t＝t の地域別の表が載る書類のうち最新＝翌年の書類（日本基準は前期の欄・IFRS は表の前期の列）。最新の年はその年の書類。
     本邦と合計のセルの特定は第 1c 便と同じ（合計×単位＝その書類のタグの付いた最上段の収益 t）。表が無く文だけの年は overseas_statement_only で除外。
   段③＝lookup_segments／lookup_regions に期間（period_from・period_to）＝1 社の区分・地域別の年ごとの並び：
@@ -221,6 +224,8 @@ def check_query(q: dict, st) -> str | None:
                     return f"{row['company']['name']}: 細い返り値に入力の要素（elements）が無い"
             if e.get("detail") and not (isinstance(s_, list) and all(isinstance(y.get("inputs"), list) and all("element" in i or "home_text" in i for i in y["inputs"]) for y in s_)):
                 return f"{row['company']['name']}: detail=true で各年の入力の出典一式が無い"
+    if set(e.get("companies_exclude", [])) & {row["company"]["edinet_code"] for row in r.get("rows", [])}:
+        return f"並びに出てはいけない会社が入った: {sorted(set(e['companies_exclude']) & {row['company']['edinet_code'] for row in rows})}"
     if "companies_only" in e and {row["company"]["edinet_code"] for row in rows} - set(e["companies_only"]):
         return "companies の指定の外の会社が入った"
     if e.get("no_manufacturing") and any(row["company"]["manufacturing"] for row in rows):
@@ -239,6 +244,12 @@ def check_query(q: dict, st) -> str | None:
     for nm in e.get("companies_include", []):
         if nm not in names:
             return f"{nm} が並びに入らない（matched {r.get('matched')}）"
+    for w in e.get("ratio_note_includes", []):
+        if w not in (r.get("ratio_note") or ""):
+            return f"ratio_note に「{w}」が無い"
+    for w in e.get("ratio_note_excludes", []):
+        if w in (r.get("ratio_note") or ""):
+            return f"ratio_note に問と関係の無い「{w}」が付いている"
     if "note_includes" in e:
         for w in e["note_includes"]:
             if w not in json.dumps(r.get("note", ""), ensure_ascii=False):

@@ -24,7 +24,7 @@ from functools import lru_cache
 
 from companies.core import store
 from companies.core.industries import INDUSTRIES, MANUFACTURING, MANUFACTURING_NOTE, industry_of
-from companies.core.items import ITEMS, RATIO_ITEMS, RATIO_NOTE, TOP_LINE, TOP_LINE_LABEL, standard_of
+from companies.core.items import ITEMS, RATIO_ITEMS, RATIO_NOTE, RATIO_NOTE_SHARE, TOP_LINE, TOP_LINE_LABEL, standard_of
 from companies.core.regions import _has_table, _is_value_table
 
 getcontext().prec = 28
@@ -788,7 +788,8 @@ def screen_companies(conditions: list[dict], *, order_by: str | None = None, ord
                                     "url": f"https://disclosure2.edinet-fsa.go.jp/WZEK0040.aspx?{meta['doc_id']}"}})
     rows.sort(key=lambda r: Decimal(r["values"][order_by]), reverse=order == "desc")
     unavailable += [{"term": t, "level": lv, "count": n} for (t, lv), n in sorted(lack.items(), key=lambda kv: -kv[1])]
-    ratio = {"ratio_note": RATIO_NOTE} if any(_is_ratio(n, d) for n, _, d, _ in defs) else {}
+    rs = ["overseas_sales_ratio" in n for n, _, d, _ in defs if _is_ratio(n, d)]  # 海外売上比率だけなら分母の小さい会社の例は付けない
+    ratio = {"ratio_note": RATIO_NOTE_SHARE if all(rs) else RATIO_NOTE} if rs else {}
     return {"found": True, **ratio, "matched": len(rows), "rows": rows[:limit], "order_by": order_by, "order": order,
             "definitions": [d[2] for d in defs], "excluded": {n: e for n, e in excluded.items() if e}, "judged_by_statement": judged,
             "unavailable": unavailable, "population": population, "as_of": a,

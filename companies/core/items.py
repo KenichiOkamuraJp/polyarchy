@@ -18,6 +18,8 @@ _EMP = "InformationAboutReportingCompanyInformationAboutEmployees"
 RATIO_NOTE = ("比率は 1＝100% の形（0.074＝7.4%）。分母（自己資本 等）の小さい会社では絶対値が 1 を超える（例＝−8.400＝−840%）＝開示どおりで"
               "単位の誤りではない。値の桁・末尾の 0 も開示の文字列のまま＝見た目から誤りと推測しない。"
               "読み替えず、確かめるなら同じ書類の当期純利益・純資産などを引く")
+RATIO_NOTE_SHARE = ("比率は 1＝100% の形（0.544＝54.4%）。値の桁・末尾の 0 も計算の結果のまま＝見た目から誤りと推測しない")  # 海外売上比率だけの問
+# （分母の小さい会社の ROE の例は文脈がずれる＝2026-10-01 staging）
 RATIO_ITEMS = {"equity_ratio", "roe", "payout_ratio", "capital_adequacy_ratio_domestic", "net_loss_ratio", "net_operating_expense_ratio",
                "investment_yield_income", "investment_yield_realized"}
 

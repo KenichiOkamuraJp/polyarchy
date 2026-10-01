@@ -232,7 +232,9 @@ def screen_trend(conditions: list[dict], order_by: str | None = None, order: str
     r = trend.screen_trend(conditions, order_by=order_by, order=order, industries=industries, manufacturing=manufacturing,
                            basis=basis, period_from=period_from, period_to=period_to, limit=limit, companies=companies, detail=detail)
     un = r.get("unavailable") or []
-    _capture("screen_trend", args, r, matched=r.get("matched"), unavailable=un, unavailable_vocab=_vocab_only(un))
+    # 語彙に無い集約は回数だけを恒久集計へ＝固定の語 aggregate で（利用者が書いた語〔median 等〕は 30 日の捕捉ログの args にだけ残る）
+    agg = [{"term": "aggregate", "level": "unknown_aggregate"}] if r.get("reason") == "unknown_aggregate" else []
+    _capture("screen_trend", args, r, matched=r.get("matched"), unavailable=un, unavailable_vocab=_vocab_only(un) + agg)
     return _compact_json(r)
 
 
