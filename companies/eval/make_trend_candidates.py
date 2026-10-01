@@ -232,6 +232,33 @@ def fixed_negatives() -> list[dict]:
     ]
 
 
+ISSUED = "jpcrp_cor:TotalNumberOfIssuedSharesSummaryOfBusinessResults"
+
+
+def share_count_comparable(q: dict) -> dict:
+    """share_count_changed の負例に、比べられる事実の期待値を添える（2026-10-01 本人決定＝株数をそろえた EPS は作らない）：
+    同じ期間・同じ basis の当期純利益（bottom_line）の同じ集約と、1 株当たりの系列の最初と最後の年の発行済株式総数（その年を載せた最新の書類）。
+    期待値は公式 CSV の 2 経路一致の値から＝エンジンの索引とは別の経路。"""
+    code = q["company"]["edinet_code"]
+    ds = [d for d in docs_of(code) if d["submitted"] <= q["as_of"]]
+    last = [d for d in ds if not q["period_to"] or d["current"] <= q["period_to"]][-1]
+    b = q["basis"] or ("consolidated" if item_values([last], "total_assets", "consolidated", last["standard"]).get(last["current"])
+                       else "non_consolidated")
+    eps, _, _ = series(code, q["metric"], basis=b, period_from=q["period_from"], period_to=q["period_to"])
+    bl, _, _ = series(code, "profit_attributable_to_owners" if b == "consolidated" else "net_income", basis=b,
+                      period_from=q["period_from"], period_to=q["period_to"])
+    shares = []
+    for p in (eps[0]["period"], eps[-1]["period"]):
+        cand = [(d["submitted"], d["doc_id"], val) for d in ds for (e, _b, pp), (val, _dec) in d["values"].items() if e == ISSUED and pp == p]
+        sub, doc_id, val = max(cand)
+        shares.append({"period": p, "value": val, "doc_id": doc_id})
+    agg = aggregates(bl)
+    return {**q, "expect_comparable": {"bottom_line": {"aggregate": q["aggregate"], "value": agg.get(q["aggregate"]),
+                                                       "periods": [bl[0]["period"], bl[-1]["period"]]},
+                                       "issued_shares": shares},
+            "checked_by": q.get("checked_by") or "比べられる事実＝全書類の公式 CSV と自前のパーサの 2 経路一致の値から本ファイルで決めた"}
+
+
 def insufficient_history() -> dict:
     reg = store.registry()
     for code in sorted(reg, key=lambda k: hashlib.sha1(f"trend-short-{k}".encode()).hexdigest()):
@@ -612,7 +639,8 @@ LOOKUP_NEGATIVES = [
 
 def main() -> int:
     pos = [positive(*x) for x in POSITIVE] + [roa_positive(*x) for x in ROA]
-    negs = fixed_negatives() + [insufficient_history(), top_line_changed()]
+    negs = [share_count_comparable(q) if q["reason"] == "share_count_changed" else q for q in fixed_negatives()]
+    negs += [insufficient_history(), top_line_changed()]
     q, p = split_questions()
     negs.append(q)
     pos.append(p)

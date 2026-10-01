@@ -19,6 +19,10 @@
   restated＝出所の書類と同じ期・同じ項目・同じ会計基準の値が違う他の書類（表示単位の粗い方の 1 単位以内の差は丸め＝数えない）。
   stock_split＝1 株当たりの項目で、系列の出所の書類が株式分割の前と後にまたがる（隣り合う書類の重なる期で 1 株当たりの値だけが一定の比率でずれる）。
               出所がすべて分割の後の書類なら除外しない（古い書類の分割の前の値は restated に並ぶだけ）。
+  share_count_changed の行は comparable＝{"bottom_line": {"aggregate", "value", "periods"}（同じ期間・basis の当期純利益の同じ集約・
+              years_meeting は value なし・計算できなければ reason）, "issued_shares": [{"period", "value", "doc_id"}]（系列の最初と最後の年・
+              その年を載せた最新の書類）}。株数をそろえた EPS は作らない（2026-10-01 本人決定）。screen_trend は companies を指定したときだけ
+              excluded_companies（会社ごとの理由と comparable）。
   share_count_changed＝1 株当たりの項目で、隣り合う年の 1 株の大きさ（各年の出所の書類の自己資本 ÷ 1 株当たり純資産・当期純利益 ÷ 1 株当たり
               当期純利益＝株式数の目安）が、計算できる目安のすべてで同じ向きに 1.45 倍以上ずれる（株式分割・併合の前と後の値が混ざる＝
               同じ書類の中の段差・restated の出ない段差を含む。大きな増資・合併もここに入る）。
@@ -126,6 +130,24 @@ def check_negative(q: dict, tc) -> str | None:
         return f"除外されずに返した: {r.get('value') or len(r.get('series', []))}（期待 {q['reason']}）"
     if r.get("reason") != q["reason"]:
         return f"除外の理由が違う: {r.get('reason')}（期待 {q['reason']}）"
+    return _check_comparable(q.get("expect_comparable"), r.get("comparable"))
+
+
+def _check_comparable(want: dict | None, got: dict | None) -> str | None:
+    """share_count_changed に添える比べられる事実＝当期純利益の同じ集約と、最初と最後の年の発行済株式総数（株数をそろえた EPS は作らない）。"""
+    if want is None:
+        return None
+    if not got:
+        return "比べられる事実（comparable）が無い"
+    bl, wb = got.get("bottom_line") or {}, want["bottom_line"]
+    if bl.get("aggregate") != wb["aggregate"] or bl.get("periods") != wb["periods"]:
+        return f"当期純利益の集約・期間が違う: {bl.get('aggregate')} {bl.get('periods')}（期待 {wb['aggregate']} {wb['periods']}）"
+    if wb["value"] is not None and (bl.get("value") is None or not _close(bl["value"], wb["value"], TOL_CAGR)):
+        return f"当期純利益の {wb['aggregate']} が違う: {bl.get('value')}（期待 {wb['value']}）"
+    have = [(x.get("period"), x.get("value"), x.get("doc_id")) for x in got.get("issued_shares") or []]
+    need = [(x["period"], x["value"], x["doc_id"]) for x in want["issued_shares"]]
+    if have != need:
+        return f"発行済株式総数が違う: {have}（期待 {need}）"
     return None
 
 
@@ -226,6 +248,14 @@ def check_query(q: dict, st) -> str | None:
                 return f"{row['company']['name']}: detail=true で各年の入力の出典一式が無い"
     if set(e.get("companies_exclude", [])) & {row["company"]["edinet_code"] for row in r.get("rows", [])}:
         return f"並びに出てはいけない会社が入った: {sorted(set(e['companies_exclude']) & {row['company']['edinet_code'] for row in rows})}"
+    for code in e.get("excluded_companies_comparable", []):  # companies を指定した問は除外した会社ごとに理由と比べられる事実
+        x = next((x for x in r.get("excluded_companies") or [] if x.get("company", {}).get("edinet_code") == code), None)
+        if not x or x.get("reason") != "share_count_changed" or not (x.get("comparable") or {}).get("issued_shares"):
+            return f"{code}: excluded_companies に share_count_changed と比べられる事実が無い"
+    for reason, words in e.get("excluded_note_includes", {}).items():
+        notes = " ".join(d.get(reason, {}).get("note", "") for d in (r.get("excluded") or {}).values())
+        if not all(w in notes for w in words):
+            return f"除外の理由 {reason} の note に {words} の案内が無い"
     if "companies_only" in e and {row["company"]["edinet_code"] for row in rows} - set(e["companies_only"]):
         return "companies の指定の外の会社が入った"
     if e.get("no_manufacturing") and any(row["company"]["manufacturing"] for row in rows):

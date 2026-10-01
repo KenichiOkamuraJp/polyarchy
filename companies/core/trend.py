@@ -44,7 +44,9 @@ TREND_REASONS = {
     "stock_split": "1 株当たりの項目で、系列の出所の書類が株式分割の前と後にまたがる（段差が数倍規模＝期間を分割の後にすれば引ける）",
     "share_count_changed": ("1 株当たりの項目で、隣り合う年の株式数の目安（各年の出所の書類の自己資本 ÷ 1 株当たり純資産・当期純利益 ÷ "
                             "1 株当たり当期純利益）が 1.45 倍以上ずれる＝株式分割・併合の前と後の値が系列に混ざる（後年の書類も古い年を"
-                            "組み替えないことがある＝restated の有無では見えない）。大きな増資・合併の年もここに入る"),
+                            "組み替えないことがある＝restated の有無では見えない）。大きな増資・合併の年もここに入る。"
+                            "比べるなら同じ期間の当期純利益（bottom_line）の同じ集約と発行済株式総数（issued_shares）＝companies に "
+                            "EDINET コードを指定すると会社ごとに comparable で返る（株数をそろえた 1 株当たりの値は作らない）"),
     "nonpositive_start": "始めの年の値が 0 以下＝比・年平均成長率を計算しない",
     "negative_end": "終わりの年の値がマイナス＝年平均成長率を計算しない",
     "irregular_period": "期間の中に、前の決算期との間隔が 12 か月でない年（変則決算・決算期の変更）がある",
@@ -216,7 +218,7 @@ def _share_jump(c: _Company, rows: list[dict], basis: str, std: str) -> dict | N
         qs = [b / a for a, b in zip(counts[i - 1], counts[i]) if a and b]
         if qs and (all(q >= _SHARES_JUMP for q in qs) or all(q <= 1 / _SHARES_JUMP for q in qs)):
             return {"periods": [rows[i - 1]["period"], rows[i]["period"]], "documents": [rows[i - 1]["doc_id"], rows[i]["doc_id"]],
-                    "share_count_ratio": _fmt(sum(qs) / len(qs))}
+                    "share_count_ratio": _fmt(sum(qs) / len(qs)), "_span": (rows[0]["period"], rows[-1]["period"]), "_basis": basis}
     return None
 
 
@@ -336,6 +338,33 @@ def _aggregate(rows: list[dict], agg: str, year_min, year_max) -> str:
     return str(sum(1 for y in x if (lo is None or y >= lo) and (hi is None or y <= hi)))
 
 
+def _issued(c: _Company, p: str) -> dict | None:
+    """その期の発行済株式総数＝その期を載せた最新の書類の値（提出会社の表＝basis・会計基準を問わない・期末の実数で分割・併合では組み替えない）。"""
+    rows = _col(c, "issued_shares")
+    for doc in c.docs:
+        for b in ("non_consolidated", "consolidated"):
+            r = next(iter(rows.get((doc, b, p), ())), None)
+            if r:
+                return {"period": p, "value": r[2], "doc_id": doc}
+    return None
+
+
+def _comparable(c: _Company, e: Excluded, aggregate, period_from, period_to, as_of, cols, reg) -> dict:
+    """1 株当たりで比べられない会社に添える事実（2026-10-01 本人決定＝株数をそろえた 1 株当たりの値は作らない）：
+    同じ期間・同じ basis の当期純利益の同じ集約（years_meeting は 1 株当たりの閾値＝値を付けない）と、系列の最初と最後の年の発行済株式総数。"""
+    first, last = e.extra.pop("_span")
+    basis = e.extra.pop("_basis")
+    agg = aggregate if aggregate != "years_meeting" else None
+    bl = trend_company(c.code, metric="bottom_line", aggregate=agg, basis=basis, period_from=period_from, period_to=period_to,
+                       as_of=as_of, _cols=cols, _reg=reg)
+    if bl.get("ok"):
+        out = {"aggregate": agg, "value": bl.get("value"), "periods": [bl["series"][0]["period"], bl["series"][-1]["period"]], "basis": basis}
+    else:
+        out = {"aggregate": agg, "reason": bl.get("reason")}
+    return {"bottom_line": out, "issued_shares": [x for x in (_issued(c, first), _issued(c, last)) if x],
+            "note": "当期純利益は派生値（同じ集約）・発行済株式総数は各年の期末の開示値（分割・併合で組み替えない）"}
+
+
 def trend_company(code: str, *, metric: str | None = None, expr: str | None = None, aggregate: str | None = None,
                   year_min=None, year_max=None, basis: str | None = None, period_from: str | None = None,
                   period_to: str | None = None, as_of: str | None = None, _parsed=None, _cols: dict | None = None,
@@ -365,6 +394,8 @@ def trend_company(code: str, *, metric: str | None = None, expr: str | None = No
             out.update(aggregate=aggregate, value=value)
         return out
     except Excluded as e:
+        if e.reason == "share_count_changed":
+            e.extra["comparable"] = _comparable(c, e, aggregate, period_from, period_to, _as_of(as_of), c.cols, reg)
         return {"ok": False, "reason": e.reason, **e.extra}
 
 
@@ -452,7 +483,7 @@ def screen_trend(conditions: list[dict], *, order_by: str | None = None, order: 
     cols = {}  # 読んだ項目の索引をこの問の間は手放さない
     reg = store.registry()
     defs_d = {n: p[2] for n, p, _ in defs}
-    rows, excluded, population = [], {n: {} for n in names}, 0
+    rows, excluded, population, ex_companies = [], {n: {} for n in names}, 0, []
     for code in (companies if companies is not None else reg):
         if code not in reg:
             continue
@@ -473,6 +504,8 @@ def screen_trend(conditions: list[dict], *, order_by: str | None = None, order: 
                 e["count"] += 1
                 if len(e["examples"]) < 5:
                     e["examples"].append(reg[code]["name"])
+                if companies is not None:  # 会社を指定した問＝会社ごとの理由（share_count_changed は比べられる事実つき）
+                    ex_companies.append({"company": _brief(code), "condition": name, **{k: v for k, v in r.items() if k != "ok"}})
                 break
             v = Decimal(r["value"])
             if ("min" in c and v < Decimal(str(c["min"]))) or ("max" in c and v > Decimal(str(c["max"]))):
@@ -492,7 +525,8 @@ def screen_trend(conditions: list[dict], *, order_by: str | None = None, order: 
     ratio = {"ratio_note": RATIO_NOTE_SHARE if all(rs) else RATIO_NOTE} if rs else {}
     return {"found": True, **ratio, "matched": len(rows), "rows": rows[:limit], "order_by": order_by, "order": order,
             "definitions": [{"name": n, "aggregate": c["aggregate"], "aggregate_note": AGGREGATES[c["aggregate"]], **p[2]} for n, p, c in defs],
-            "excluded": {n: e for n, e in excluded.items() if e}, "unavailable": [], "population": population, "as_of": a,
+            "excluded": {n: e for n, e in excluded.items() if e}, **({"excluded_companies": ex_companies} if companies is not None else {}),
+            "unavailable": [], "population": population, "as_of": a,
             "period_from": period_from, "period_to": period_to, "industry_note": MANUFACTURING_NOTE, "note": NOTE,
             "series_note": ("series は細い列の形＝periods・values・doc_ids（出所の書類）は同じ並び・inputs は項目ごとの各年の開示値・"
                             "restated は組み替えのあった年と他の書類の値。要素は行の elements。"
