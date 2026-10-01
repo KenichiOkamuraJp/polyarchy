@@ -117,6 +117,11 @@ async def run() -> list[str]:
         t2 = await call("screen_trend", conditions=[{"metric": "top_line", "aggregate": "streak_up", "min": 12}], limit=3)
         if not t2.get("found") or "excluded" not in t2 or len(t2.get("rows") or []) > 3:
             errs.append(f"[29] screen_trend が行と除外を返さない: {str(t2)[:200]}")
+        res = await s.call_tool("screen_trend", {"conditions": [{"metric": "top_line", "aggregate": "cagr"}], "limit": 20})
+        if len(res.content[0].text.encode()) > 50_000:  # 伝送路の上の文字列で測る（字下げも数える）
+            errs.append(f"[34] screen_trend の返り値が大きい（上位 20 社で {len(res.content[0].text.encode()) // 1000}KB・上限 50KB）")
+        if not {"companies", "detail"} <= set((tools["screen_trend"].inputSchema.get("properties") or {}) if "screen_trend" in tools else {}):
+            errs.append("[35] screen_trend に companies／detail の引数が無い（細い返り値の詳細を引き直す入口）")
         t3 = await call("screen_trend", conditions=[{"metric": "gross_profit", "aggregate": "cagr"}])
         if t3.get("found") or t3.get("reason") != "input_not_ingested":
             errs.append(f"[30] screen_trend：未収録の項目を弾かない: {t3.get('reason')}")

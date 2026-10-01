@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -47,6 +48,12 @@ SERVER_INSTRUCTIONS = (
     "値そのものは各提出会社の開示に帰属し、本サービスは値を保証しない(原典で確認すること)。"
 )
 mcp = FastMCP("polyarchy-companies", instructions=SERVER_INSTRUCTIONS)
+
+
+def _compact_json(r: dict) -> str:
+    """字下げなしの JSON 文字列で返す＝FastMCP は辞書を字下げ 2 の JSON にする（返り値は利用側のモデルの文脈に入る＝
+    時系列の横断で同じ中身が 25KB→40KB に膨らんだ・2026-10-01）。中身は辞書を返すときと同じ。"""
+    return json.dumps(r, ensure_ascii=False, separators=(",", ":"))
 
 
 def _capture(tool: str, args: dict, r: dict, **extra) -> None:
@@ -105,7 +112,7 @@ def lookup_company_facts(company: str, period: str, item: str | None = None, ele
 
 @mcp.tool(title="セグメント別の値を参照する", annotations=READ_ONLY)
 def lookup_segments(company: str, period: str | None = None, basis: str | None = None, doc_id: str | None = None,
-                    period_from: str | None = None, period_to: str | None = None, elements: list[str] | None = None) -> dict:
+                    period_from: str | None = None, period_to: str | None = None, elements: list[str] | None = None) -> str:
     """企業×決算期のセグメント別の値を、有価証券報告書に書かれたとおりに表ごと返す(完全一致参照)。期間を指定すれば年ごとに並べる。
 
     company=EDINET コード・証券コード・社名。period=決算期末の YYYY-MM(各書類に当期・前期の 2 期だけ載る)。
@@ -136,12 +143,12 @@ def lookup_segments(company: str, period: str | None = None, basis: str | None =
     r = segments.lookup_segments(company, period, basis=basis, doc_id=doc_id, period_from=period_from, period_to=period_to, elements=elements)
     _capture("lookup_segments", {"company": company, "period": period, "basis": basis, "doc_id": doc_id, "period_from": period_from,
                                  "period_to": period_to, "elements": elements}, r)
-    return r
+    return _compact_json(r)
 
 
 @mcp.tool(title="地域別の表を参照する", annotations=READ_ONLY)
 def lookup_regions(company: str, period: str | None = None, basis: str | None = None, doc_id: str | None = None,
-                   period_from: str | None = None, period_to: str | None = None) -> dict:
+                   period_from: str | None = None, period_to: str | None = None) -> str:
     """企業×決算期の地域別(国・地域ごと)の売上高・有形固定資産(IFRS は売上収益・非流動資産)の欄を、有価証券報告書に書かれたとおりに返す。
 
     company=EDINET コード・証券コード・社名。period=決算期末の YYYY-MM(各書類に当期・前期の 2 期)。
@@ -162,7 +169,7 @@ def lookup_regions(company: str, period: str | None = None, basis: str | None = 
     r = regions.lookup_regions(company, period, basis=basis, doc_id=doc_id, period_from=period_from, period_to=period_to)
     _capture("lookup_regions", {"company": company, "period": period, "basis": basis, "doc_id": doc_id, "period_from": period_from,
                                 "period_to": period_to}, r)
-    return r
+    return _compact_json(r)
 
 
 @mcp.tool(title="横断検索の項目と型を見る", annotations=READ_ONLY)
@@ -204,7 +211,7 @@ def screen_companies(conditions: list[dict], order_by: str | None = None, order:
 @mcp.tool(title="複数年の条件で会社を絞り込み並べる", annotations=READ_ONLY)
 def screen_trend(conditions: list[dict], order_by: str | None = None, order: str = "desc", industries: list[str] | None = None,
                  manufacturing: bool | None = None, basis: str | None = None, period_from: str | None = None,
-                 period_to: str | None = None, limit: int = 20) -> dict:
+                 period_to: str | None = None, limit: int = 20, companies: list[str] | None = None, detail: bool = False) -> str:
     """複数年の条件で会社を絞り込み、1 つの集約値で並べて返す(時系列の横断検索)。集約の語彙・使える項目と型は list_metrics で引く。
 
     conditions=1〜5 個の {"metric": 検証済みの型か項目のキー} または {"expr": 式} に "aggregate"(集約=list_metrics の aggregates のどれか)と、
@@ -215,17 +222,18 @@ def screen_trend(conditions: list[dict], order_by: str | None = None, order: str
     各年の値=その年の入力がすべて載る書類のうち提出日が最新の書類の値(単社の参照の既定と同じ)。後年の書類で組み替えられた年は除外せず、
     行の series の restated に他の書類の値・restated_years に年が並ぶ=段差は利用側が系列で確かめる。
     系列が途切れる会社(会計基準・決算期・連結の有無・最上段の収益の項目の変更・株式分割をまたぐ 1 株当たりの項目 等)は除外の理由と件数で返す。
-    返り値=rows(会社・values〔集約＝派生値〕・series〔年ごとの値・出所の書類・入力の開示値〕・restated_years)・matched・excluded・definitions・note。
+    返り値=rows(会社・values〔集約＝派生値〕・series〔年ごとの値・出所の書類・入力の開示値〕・elements〔入力の要素〕・restated_years)・matched・excluded・definitions・note。
+    companies=EDINET コードの配列(1〜10 社＝その会社だけ)・detail=true で各年の入力の出典一式(要素・context・単位)と restated の詳細(既定は細い形)。
     無ければ found=false と reason(unknown_aggregate/unknown_item/input_not_ingested/bad_expression/bad_request/bad_period)。
     1 年の条件(最新の決算期で絞る)は screen_companies。
     """
     args = {"conditions": conditions, "order_by": order_by, "order": order, "industries": industries, "manufacturing": manufacturing,
-            "basis": basis, "period_from": period_from, "period_to": period_to, "limit": limit}
+            "basis": basis, "period_from": period_from, "period_to": period_to, "limit": limit, "companies": companies, "detail": detail}
     r = trend.screen_trend(conditions, order_by=order_by, order=order, industries=industries, manufacturing=manufacturing,
-                           basis=basis, period_from=period_from, period_to=period_to, limit=limit)
+                           basis=basis, period_from=period_from, period_to=period_to, limit=limit, companies=companies, detail=detail)
     un = r.get("unavailable") or []
     _capture("screen_trend", args, r, matched=r.get("matched"), unavailable=un, unavailable_vocab=_vocab_only(un))
-    return r
+    return _compact_json(r)
 
 
 @mcp.tool(title="項目の語彙を見る", annotations=READ_ONLY)

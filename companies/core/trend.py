@@ -326,13 +326,40 @@ def trend_company(code: str, *, metric: str | None = None, expr: str | None = No
 
 
 # ── 横断 ─────────────────────────────────────────────────
+MAX_COMPANIES = 10
+
+
+def _compact(series: list[dict], disclosed: bool) -> tuple[dict, dict]:
+    """横断の行の系列を細い列の形に（返り値は利用側のモデルの文脈に入る＝各年に出典一式を付けると上位 20 社で約 100〜250KB、
+    各年の辞書のままでも ROA で約 66KB だった・2026-10-01）。
+    {"periods": [期], "values": [値], "doc_ids": [出所の書類], "inputs": {項目: [各年の開示値]}（開示値の条件は省く）,
+     "restated": [{"period", "term", "doc_id", "value"}]}。要素は行に 1 回（最新の年の入力から）。"""
+    out = {"periods": [y["period"] for y in series], "values": [y["value"] for y in series], "doc_ids": [y["doc_id"] for y in series]}
+    if not disclosed:
+        ins: dict[str, list] = {}
+        for k, y in enumerate(series):
+            for i in y["inputs"]:
+                pairs = (("home", i["home_text"]), ("total", i["total_text"])) if "home_text" in i else ((i["term"], i["value"]),)
+                for term, v in pairs:
+                    ins.setdefault(term, [None] * len(series))[k] = v
+        out["inputs"] = ins
+    rest = [{"period": y["period"], "term": r["term"], "doc_id": r["doc_id"], "value": r["value"]} for y in series for r in y.get("restated", [])]
+    if rest:
+        out["restated"] = rest
+    last = series[-1]["inputs"] if series else []
+    elements = {i["term"]: (i.get("label") if i.get("company_defined") else None) or i.get("element") or "本邦と合計のセル（地域別の表）"
+                for i in last}
+    return out, elements
+
+
 def _name(c: dict) -> str:
     return f"{c['aggregate']}:{c.get('metric') or c.get('expr')}"
 
 
 def screen_trend(conditions: list[dict], *, order_by: str | None = None, order: str = "desc", industries: list[str] | None = None,
                  manufacturing: bool | None = None, basis: str | None = None, period_from: str | None = None,
-                 period_to: str | None = None, limit: int = 20, as_of: str | None = None) -> dict:
+                 period_to: str | None = None, limit: int = 20, as_of: str | None = None, companies: list[str] | None = None,
+                 detail: bool = False) -> dict:
     if not isinstance(conditions, list) or not conditions or len(conditions) > 5:
         return _miss("bad_request", hint="conditions は 1〜5 個の {metric または expr, aggregate, min?, max?, year_min?, year_max?}")
     if not isinstance(limit, int) or not 1 <= limit <= MAX_LIMIT:
@@ -343,6 +370,11 @@ def screen_trend(conditions: list[dict], *, order_by: str | None = None, order: 
         return _miss("bad_request", hint="basis は consolidated か non_consolidated（省くと会社ごとに期間の最新の年で連結を優先）")
     if industries is not None and (not isinstance(industries, list) or set(industries) - set(INDUSTRIES)):
         return _miss("bad_request", hint="industries は EDINET の提出者業種（list_metrics の industries）", industries=list(INDUSTRIES))
+    if companies is not None and (not isinstance(companies, list) or not 1 <= len(companies) <= MAX_COMPANIES
+                                  or not all(isinstance(x, str) for x in companies)):
+        return _miss("bad_request", hint=f"companies は EDINET コードの配列（1〜{MAX_COMPANIES} 社＝find_company で同定してから）")
+    if not isinstance(detail, bool):
+        return _miss("bad_request", hint="detail は true か false")
     defs = []
     for c in conditions:
         if not isinstance(c, dict) or (("metric" in c) == ("expr" in c)):
@@ -375,8 +407,11 @@ def screen_trend(conditions: list[dict], *, order_by: str | None = None, order: 
         period_from, period_to = period_from or d_from, period_to or d_to
     cols = {}  # 読んだ項目の索引をこの問の間は手放さない
     reg = store.registry()
+    defs_d = {n: p[2] for n, p, _ in defs}
     rows, excluded, population = [], {n: {} for n in names}, 0
-    for code in reg:
+    for code in (companies if companies is not None else reg):
+        if code not in reg:
+            continue
         ind = industry_of(code) or {}
         if industries is not None and ind.get("industry") not in industries:
             continue
@@ -401,12 +436,22 @@ def screen_trend(conditions: list[dict], *, order_by: str | None = None, order: 
                 break
             vals[name], series[name], rest[name] = r["value"], r["series"], r["restated_years"]
         if ok:
-            rows.append({"company": _brief(code), "values": vals, "series": series, "restated_years": rest})
+            row = {"company": _brief(code), "values": vals, "series": series, "restated_years": rest}
+            if not detail:
+                els = {}
+                for name, _, c in defs:
+                    row["series"][name], els[name] = _compact(series[name], bool(defs_d[name].get("disclosed")))
+                row["elements"] = els
+            rows.append(row)
     rows.sort(key=lambda r: Decimal(r["values"][order_by]), reverse=order == "desc")
     ratio = {"ratio_note": RATIO_NOTE} if any(_is_ratio(c.get("metric") or c.get("expr"), p[2]) for _, p, c in defs) else {}
     return {"found": True, **ratio, "matched": len(rows), "rows": rows[:limit], "order_by": order_by, "order": order,
             "definitions": [{"name": n, "aggregate": c["aggregate"], "aggregate_note": AGGREGATES[c["aggregate"]], **p[2]} for n, p, c in defs],
             "excluded": {n: e for n, e in excluded.items() if e}, "unavailable": [], "population": population, "as_of": a,
             "period_from": period_from, "period_to": period_to, "industry_note": MANUFACTURING_NOTE, "note": NOTE,
+            "series_note": ("series は細い列の形＝periods・values・doc_ids（出所の書類）は同じ並び・inputs は項目ごとの各年の開示値・"
+                            "restated は組み替えのあった年と他の書類の値。要素は行の elements。"
+                            "入力の出典一式（要素・context・単位）は companies に EDINET コードを指定して detail=true で引き直す。"
+                            "書類の URL＝https://disclosure2.edinet-fsa.go.jp/WZEK0040.aspx?<doc_id>") if not detail else None,
             "not_ingested": {k: label for k, (label, _) in NOT_INGESTED.items()},
             "license": {"grade": "○", "terms": "公共データ利用規約（PDL1.0）＝出典の明記と加工の明記（集約は加工）"}}

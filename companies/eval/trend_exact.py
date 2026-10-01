@@ -33,7 +33,10 @@
   集約＝cagr（(終/始)^(1/(年数−1))−1）・change（終−始）・ratio（終/始）・mean・min・max・streak_up／streak_down
         （期間の終わりから数えた連続増加／減少の回数）・years_meeting（year_min／year_max を満たした年数）。
   screen_trend(conditions, *, order_by=None, order="desc", industries=None, manufacturing=None, basis=None,
-               period_from=None, period_to=None, limit=20, as_of=None)
+               period_from=None, period_to=None, limit=20, as_of=None, companies=None, detail=False)
+    行の series は細い列の形＝{"periods", "values", "doc_ids", "inputs": {項目: [各年の開示値]}（開示値の条件は省く）, "restated"?:
+    [{"period", "term", "doc_id", "value"}]} と行の elements（項目→要素）。companies（EDINET コード・10 社まで）で会社を指定し detail=true で各年の入力の出典一式（trend_company と同じ形）。
+    上位 20 社で 50KB 以下（返り値は利用側のモデルの文脈に入る・MCP では字下げなしの JSON 文字列）
     conditions＝[{"metric" または "expr", "aggregate", "min"?, "max"?, "year_min"?, "year_max"?}]・条件の名前＝"<aggregate>:<metric または expr>"
     -> {"found": True, "rows": [{"company", "values": {条件の名前: str}, "series": {条件の名前: [...]}, "restated_years": {条件の名前: [...]}}],
         "excluded": {条件の名前: {理由: {"count", "examples"}}}, "unavailable", "matched", "note"} | {"found": False, "reason": str}
@@ -148,14 +151,26 @@ def _agg(values: list[Decimal], agg: str, c: dict) -> Decimal:
     return Decimal(sum(1 for y in x if (lo is None or y >= Decimal(str(lo))) and (hi is None or y <= Decimal(str(hi)))))
 
 
+def _years(s_) -> list[tuple[str, str]]:
+    """行の系列の (期, 値)＝細い列の形（periods・values）と detail の形（各年の辞書の並び）の両方を読む。"""
+    if isinstance(s_, dict):
+        return list(zip(s_["periods"], s_["values"]))
+    return [(y["period"], y["value"]) for y in s_]
+
+
 def _name(c: dict) -> str:
     return f"{c['aggregate']}:{c.get('metric') or c.get('expr')}"
 
 
 def check_query(q: dict, st) -> str | None:
-    kw = {k: q[k] for k in ("order_by", "order", "industries", "manufacturing", "basis", "period_from", "period_to", "limit", "as_of") if k in q}
+    kw = {k: q[k] for k in ("order_by", "order", "industries", "manufacturing", "basis", "period_from", "period_to", "limit", "as_of",
+                             "companies", "detail") if k in q}
     r = st(q["conditions"], **kw)
     e = q["expect"]
+    if "max_kb" in e:  # 返り値は利用側のモデルの文脈に入る＝大きさに上限（2026-10-01）
+        kb = len(json.dumps(r, ensure_ascii=False).encode()) / 1000
+        if kb > e["max_kb"]:
+            return f"返り値が大きい: {kb:.0f}KB（上限 {e['max_kb']}KB）"
     if "reason" in e:
         if r.get("found") is not False or r.get("reason") != e["reason"]:
             return f"受付の誤りにならない: {r.get('reason')}（期待 {e['reason']}）"
@@ -177,10 +192,10 @@ def check_query(q: dict, st) -> str | None:
             if ("min" in c and Decimal(v) < Decimal(str(c["min"]))) or ("max" in c and Decimal(v) > Decimal(str(c["max"]))):
                 return f"{row['company']['name']}: 条件 {n} を満たさない値 {v}"
             if e.get("recompute", True):  # 行の系列から集約を計算し直して一致すること
-                again = _agg([Decimal(y["value"]) for y in s], c["aggregate"], c)
+                again = _agg([Decimal(v_) for _, v_ in _years(s)], c["aggregate"], c)
                 if not _close(v, str(again), TOL_CAGR):
                     return f"{row['company']['name']}: {n} の値 {v} が系列から計算した {again} と合わない"
-            ps = [y["period"] for y in s]
+            ps = [p_ for p_, _ in _years(s)]
             if ps != sorted(ps):
                 return f"{row['company']['name']}: 系列が年の順でない"
             if (q.get("period_from") and ps[0] < q["period_from"]) or (q.get("period_to") and ps[-1] > q["period_to"]):
@@ -189,10 +204,25 @@ def check_query(q: dict, st) -> str | None:
                 return f"{row['company']['name']}: restated_years が無い"
     if e.get("same_span") and rows:  # 期間の既定＝全社で同じ期間（年数の違う集約を並べない）
         n = _name(q["conditions"][0])
-        spans = {(row["series"][n][0]["period"][:4], len(row["series"][n])) for row in rows}
+        spans = {(_years(row["series"][n])[0][0][:4], len(_years(row["series"][n]))) for row in rows}
         lens = {k[1] for k in spans}
         if max(lens) - min(lens) > 1:
             return f"期間の既定で系列の年数が会社によって違う: {sorted(lens)}"
+    for row in rows:
+        for n, s_ in row.get("series", {}).items():
+            if e.get("compact"):
+                if not isinstance(s_, dict) or not (len(s_["periods"]) == len(s_["values"]) == len(s_["doc_ids"])):
+                    return f"{row['company']['name']}: 細い返り値の系列が列の形（periods・values・doc_ids が同じ長さ）でない"
+                for t in e.get("inputs_terms", []):
+                    col = (s_.get("inputs") or {}).get(t)
+                    if not col or len(col) != len(s_["periods"]) or any(v is None for v in col):
+                        return f"{row['company']['name']}: 入力 {t} の各年の開示値がそろわない"
+                if "elements" not in row:
+                    return f"{row['company']['name']}: 細い返り値に入力の要素（elements）が無い"
+            if e.get("detail") and not (isinstance(s_, list) and all(isinstance(y.get("inputs"), list) and all("element" in i or "home_text" in i for i in y["inputs"]) for y in s_)):
+                return f"{row['company']['name']}: detail=true で各年の入力の出典一式が無い"
+    if "companies_only" in e and {row["company"]["edinet_code"] for row in rows} - set(e["companies_only"]):
+        return "companies の指定の外の会社が入った"
     if e.get("no_manufacturing") and any(row["company"]["manufacturing"] for row in rows):
         return "非製造業の絞り込みに製造業の会社が入った"
     if "max_rows" in e and len(rows) > e["max_rows"]:
