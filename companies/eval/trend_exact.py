@@ -22,7 +22,8 @@
   海外売上比率（段②）の年 t＝t の地域別の表が載る書類のうち最新＝翌年の書類（日本基準は前期の欄・IFRS は表の前期の列）。最新の年はその年の書類。
     本邦と合計のセルの特定は第 1c 便と同じ（合計×単位＝その書類のタグの付いた最上段の収益 t）。表が無く文だけの年は overseas_statement_only で除外。
   段③＝lookup_segments／lookup_regions に期間（period_from・period_to）＝1 社の区分・地域別の年ごとの並び：
-    lookup_segments(company, period=None, *, basis=None, doc_id=None, period_from=None, period_to=None)
+    lookup_segments(company, period=None, *, basis=None, doc_id=None, period_from=None, period_to=None, elements=None)
+      elements＝期間のとき系列を要素で絞る（11 年で約 99KB になる＝年の並び・区分の組み替えは絞らない）
       期間のとき -> {"found": True, "years": [{"period", "found", "reason"?, "doc_id"?, "segments"?}],
                      "series": [{"member", "label", "kind", "element", "section", "values": [{"period", "value", "doc_id", "restated"?}]}],
                      "regrouped": [{"period", "added": [区分], "removed": [区分]}]（会社が定義した区分の組の年ごとの増減＝旧区分と新区分を対応づけない）}
@@ -226,6 +227,17 @@ def check_lookup(q: dict, fns) -> str | None:
         r = fn(q["company"], q.get("period"), **{k: q[k] for k in ("doc_id", "period_from", "period_to") if k in q})
         if r.get("found") is not False or r.get("reason") != q["reason"]:
             return f"受付の誤り・収録外にならない: {r.get('reason')}（期待 {q['reason']}）"
+        return None
+    if q["kind"] == "segments_range_elements":
+        r = seg(q["company"]["edinet_code"], period_from=q["period_from"], period_to=q["period_to"], elements=[q["element"]])
+        if not r.get("found"):
+            return f"found=false: {r.get('reason')}"
+        if {s_["element"] for s_ in r["series"]} != {q["element"]}:
+            return f"要素で絞った系列に他の要素が入る: {sorted({s_['element'] for s_ in r['series']})[:5]}"
+        if not set(q["members"]) <= {_mk(s_["member"]) for s_ in r["series"]}:
+            return "要素で絞ると区分の系列が欠ける"
+        if not r.get("years") or "regrouped" not in r:
+            return "要素で絞ると年の並び・区分の組み替えが返らない"
         return None
     fn = seg if q["kind"] == "segments_range" else regn
     r = fn(q["company"]["edinet_code"], period_from=q["period_from"], period_to=q["period_to"])

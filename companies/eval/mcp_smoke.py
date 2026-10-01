@@ -28,7 +28,7 @@ async def run() -> list[str]:
         tools = {t.name: t for t in (await s.list_tools()).tools}
         TOOL_NAMES[:] = sorted(tools)
         if set(tools) != {"find_company", "lookup_company_facts", "lookup_segments", "lookup_regions", "list_items",
-                          "list_metrics", "screen_companies"}:
+                          "list_metrics", "screen_companies", "screen_trend"}:
             errs.append(f"[1] ツール集合が違う: {sorted(tools)}")
         for t in tools.values():
             if "layer" in (t.inputSchema.get("properties") or {}):
@@ -98,6 +98,35 @@ async def run() -> list[str]:
             errs.append("[22] 語彙に無い語が捕捉ログ（30 日）に残らない＝triage で拾えない")
         if "横断" not in INSTRUCTIONS[0]:
             errs.append("[23] サーバの説明に横断検索（派生値を計算する唯一の入口）が無い")
+        # 第 1e 便（時系列）：集約の語彙はツールの説明に書かず list_metrics に（足しても定義が変わらない）
+        from companies.core.trend import AGGREGATES
+        tdesc = getattr(tools.get("screen_trend"), "description", "") or ""
+        if "list_metrics" not in tdesc or any(f"{k}=" in tdesc or f"「{k}」" in tdesc for k in AGGREGATES if k not in ("min", "max", "mean")):
+            errs.append("[24] screen_trend の説明が list_metrics を案内しない／集約の名前を並べている")
+        if set(AGGREGATES) - set((m.get("aggregates") or {})):
+            errs.append("[25] list_metrics が集約の語彙を返さない")
+        for name in ("lookup_segments", "lookup_regions"):
+            props = (tools[name].inputSchema.get("properties") or {}) if name in tools else {}
+            if not {"period_from", "period_to"} <= set(props):
+                errs.append(f"[26] {name} に期間（period_from／period_to）の引数が無い")
+        if "elements" not in ((tools["lookup_segments"].inputSchema.get("properties") or {}) if "lookup_segments" in tools else {}):
+            errs.append("[27] lookup_segments に要素で絞る引数（elements）が無い（11 年で約 99KB）")
+        t1 = await call("screen_trend", conditions=[{"metric": "top_line", "aggregate": "median"}])
+        if t1.get("found") or t1.get("reason") != "unknown_aggregate":
+            errs.append(f"[28] 語彙に無い集約を弾かない: {t1.get('reason')}")
+        t2 = await call("screen_trend", conditions=[{"metric": "top_line", "aggregate": "streak_up", "min": 12}], limit=3)
+        if not t2.get("found") or "excluded" not in t2 or len(t2.get("rows") or []) > 3:
+            errs.append(f"[29] screen_trend が行と除外を返さない: {str(t2)[:200]}")
+        t3 = await call("screen_trend", conditions=[{"metric": "gross_profit", "aggregate": "cagr"}])
+        if t3.get("found") or t3.get("reason") != "input_not_ingested":
+            errs.append(f"[30] screen_trend：未収録の項目を弾かない: {t3.get('reason')}")
+        recs = [json.loads(l) for l in open(env["COMPANIES_QUERY_LOG"]) if l.strip()]
+        if not any(u["term"] == "gross_profit" for x in recs if x.get("tool") == "screen_trend" for u in x.get("unavailable_vocab") or []):
+            errs.append("[31] screen_trend の未収録の項目が捕捉ログ（unavailable_vocab）に残らない")
+        if "screen_trend" not in json.dumps(r11, ensure_ascii=False):
+            errs.append("[32] screen_companies の返り値に、複数年の条件は screen_trend の案内が無い")
+        if "時系列" not in INSTRUCTIONS[0] or "screen_trend" not in INSTRUCTIONS[0]:
+            errs.append("[33] サーバの説明に時系列（screen_trend）が無い")
         r4 = await call("find_company", query="")
         if r4.get("found"):
             errs.append("[8] 空の問い合わせで会社を返した")

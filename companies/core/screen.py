@@ -651,6 +651,8 @@ def _definition(metric: str | None, expr: str | None) -> tuple[str, object, dict
             return metric, parse(metric), {"name": metric, "label": label, "expr": e, "note": note, "verified": True}
         if metric in DERIVED:
             return metric, parse(metric), {"name": metric, "label": "海外売上比率", "note": DERIVED[metric], "verified": True}
+        if metric in NOT_INGESTED:  # 未収録の目録の語は metric で書かれても未収録と返す（語彙に無い語と区別＝改善候補の集計に入る・2026-10-01）
+            parse(metric)
         if metric in ITEMS or metric in PSEUDO:
             label = ITEMS[metric][0] if metric in ITEMS else PSEUDO[metric]
             return metric, parse(metric), {"name": metric, "label": label, "note": "開示値（計算しない）", "verified": True, "disclosed": True}
@@ -796,11 +798,15 @@ def screen_companies(conditions: list[dict], *, order_by: str | None = None, ord
             # 未収録の項目＝使える語の外（2026-09-27 staging＝返り値に案内が無い問で、利用側のモデルが「営業利益で並べ直せます」と提案した）
             "not_ingested": {k: label for k, (label, _) in NOT_INGESTED.items()},
             "not_ingested_note": "未収録の項目（横断検索の条件に使えない＝使うと input_not_ingested）。並べ直しの提案に使わない",
+            "trend_note": "複数年の条件（5 年連続で増収・年平均成長率・10 年間ずっと ROE 8% 以上 等）は screen_trend（集約の語彙は list_metrics の aggregates）",
             "license": {"grade": "○", "terms": "公共データ利用規約（PDL1.0）＝出典の明記と加工の明記（派生値は加工）"}}
 
 
 def list_metrics() -> dict:
-    return {"items": {k: v[0] for k, v in ITEMS.items() if k not in NOT_INGESTED}, "pseudo_items": PSEUDO, "derived_items": DERIVED,
+    from companies.core.trend import AGGREGATES, TREND_REASONS  # 時系列（第 1e 便）＝trend は screen を import する＝ここで遅れて読む
+    return {"aggregates": AGGREGATES, "trend_exclusion_reasons": TREND_REASONS,
+            "trend_note": "screen_trend＝条件ごとに metric か expr と aggregate（集約）。各年の値はその年を載せた最新の書類の値・"
+                          "期間の既定は全社で同じ 13 年（海外売上比率は 11 年）","items": {k: v[0] for k, v in ITEMS.items() if k not in NOT_INGESTED}, "pseudo_items": PSEUDO, "derived_items": DERIVED,
             "presets": {k: {"expr": e, "label": label, "note": note} for k, (e, label, note) in PRESETS.items()},
             "not_ingested": {k: {"label": label, "source": where} for k, (label, where) in NOT_INGESTED.items()},
             "industries": list(INDUSTRIES), "manufacturing": sorted(MANUFACTURING),

@@ -18,7 +18,7 @@ import anyio  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 
-from companies.core import lookup, regions, screen, segments, store  # noqa: E402
+from companies.core import lookup, regions, screen, segments, store, trend  # noqa: E402
 from companies.core.items import ITEMS  # noqa: E402
 from polyarchy_common.capture import append_record  # noqa: E402
 
@@ -41,6 +41,9 @@ SERVER_INSTRUCTIONS = (
     "各値には出典(書類管理番号・提出日・要素・context・URL・引用1行)が付く。単社の参照層は派生値(利益率・前年比 等)を計算しない=構成する項目を引いて利用側で計算する。"
     "横断検索(list_metrics=使える項目・検証済みの型・未収録の項目/screen_companies=条件で会社を絞り並べる)に限り、定義した式で派生値をサーバが計算し、"
     "行ごとに式と入力の開示値(出典つき)を添えて派生値と明記する。比較できない会社は除外の理由と件数で返し、未収録の入力は未収録と返す(近い項目で埋めない)。"
+    "時系列(screen_trend=複数年の条件で会社を絞り並べる〔連続増収・年平均成長率・ずっと一定以上 等〕)は、各年の値をその年を載せた最新の書類から取り、"
+    "年ごとの系列(値・出所の書類)と集約(派生値)を返す。後年の書類で組み替えられた年は restated に他の書類の値が並ぶ(除外しない)。"
+    "1 社の年ごとの並びは lookup_segments/lookup_regions に period_from/period_to(区分の組み替えは regrouped で事実として示し、旧区分と新区分を対応づけない)。"
     "値そのものは各提出会社の開示に帰属し、本サービスは値を保証しない(原典で確認すること)。"
 )
 mcp = FastMCP("polyarchy-companies", instructions=SERVER_INSTRUCTIONS)
@@ -101,10 +104,16 @@ def lookup_company_facts(company: str, period: str, item: str | None = None, ele
 
 
 @mcp.tool(title="セグメント別の値を参照する", annotations=READ_ONLY)
-def lookup_segments(company: str, period: str, basis: str | None = None, doc_id: str | None = None) -> dict:
-    """企業×決算期のセグメント別の値を、有価証券報告書に書かれたとおりに表ごと返す(完全一致参照)。
+def lookup_segments(company: str, period: str | None = None, basis: str | None = None, doc_id: str | None = None,
+                    period_from: str | None = None, period_to: str | None = None, elements: list[str] | None = None) -> dict:
+    """企業×決算期のセグメント別の値を、有価証券報告書に書かれたとおりに表ごと返す(完全一致参照)。期間を指定すれば年ごとに並べる。
 
     company=EDINET コード・証券コード・社名。period=決算期末の YYYY-MM(各書類に当期・前期の 2 期だけ載る)。
+    period_from/period_to=期間(period の代わり・doc_id とは併用しない)＝各年はその期を載せた最新の書類の値(1 年ずつ引いたときと同じ)。
+    期間のとき返り値=years(年ごとの出所の書類・区分の一覧)・series(区分×要素の年ごとの値・restated=同じ期の値が違う他の書類)・
+    regrouped(会社が定義した報告セグメントの組が前の年と違う年=増えた区分・無くなった区分。旧区分と新区分は対応づけない=組み替えの前後で
+    区分の値をつないで伸び率を出さない)。elements=期間のとき系列を要素 ID で絞る(例 ["jpcrp_cor:RevenuesFromExternalCustomers"]・
+    絞らないと 10 年で約 100KB)。
     basis=consolidated/non_consolidated(省くと、連結を作成している会社は連結)。doc_id=書類管理番号(省くと提出日が最新の書類)。
     返り値=segments(区分の一覧=member〔要素 ID〕・label〔会社のラベル。標準の区分で会社のラベルが無ければタクソノミの標準ラベル〕・kind)・facts(区分×要素の値=member・element・label・
     section〔segment_information=セグメント情報の注記/employees=従業員の状況/capex=設備投資/research_and_development=研究開発〕・
@@ -124,16 +133,20 @@ def lookup_segments(company: str, period: str, basis: str | None = None, doc_id:
     not_tagged=米国基準の会社で注記が XBRL に無い〔本文の表だけ〕/ no_consolidated_statements / out_of_range / bad_period /
     unknown_company / ambiguous_company)。数値が無いときもタグのある欄(従業員の状況 等)は other_sections に返る(区分の label・kind は segments)。
     """
-    r = segments.lookup_segments(company, period, basis=basis, doc_id=doc_id)
-    _capture("lookup_segments", {"company": company, "period": period, "basis": basis, "doc_id": doc_id}, r)
+    r = segments.lookup_segments(company, period, basis=basis, doc_id=doc_id, period_from=period_from, period_to=period_to, elements=elements)
+    _capture("lookup_segments", {"company": company, "period": period, "basis": basis, "doc_id": doc_id, "period_from": period_from,
+                                 "period_to": period_to, "elements": elements}, r)
     return r
 
 
 @mcp.tool(title="地域別の表を参照する", annotations=READ_ONLY)
-def lookup_regions(company: str, period: str, basis: str | None = None, doc_id: str | None = None) -> dict:
+def lookup_regions(company: str, period: str | None = None, basis: str | None = None, doc_id: str | None = None,
+                   period_from: str | None = None, period_to: str | None = None) -> dict:
     """企業×決算期の地域別(国・地域ごと)の売上高・有形固定資産(IFRS は売上収益・非流動資産)の欄を、有価証券報告書に書かれたとおりに返す。
 
     company=EDINET コード・証券コード・社名。period=決算期末の YYYY-MM(各書類に当期・前期の 2 期)。
+    period_from/period_to=期間(period の代わり・doc_id とは併用しない)＝years に年ごとの欄(その期の欄が載る最新の書類＝翌年の書類の前期の欄・
+    IFRS は翌年の書類の表の前期の列)。見出しの地域は年で変わり得る=寄せない。
     basis=consolidated/non_consolidated(省くと、連結を作成している会社は連結)。doc_id=書類管理番号(省くと提出日が最新の書類)。
     地域別の値は XBRL の数値のタグが無く表だけ=表をセル単位で公表どおりに写して返す(数値に換算しない)。
     返り値=sections(欄ごと=section〔revenue=売上高/property_plant_and_equipment=有形固定資産/geographic_areas_ifrs=IFRS の地域別情報〕・
@@ -146,14 +159,15 @@ def lookup_regions(company: str, period: str, basis: str | None = None, doc_id: 
     not_tagged=地域の欄が無い〔米国基準・地域の要素でタグ付けしていない書類〕/ no_consolidated_statements / out_of_range / bad_period /
     unknown_company / ambiguous_company)。
     """
-    r = regions.lookup_regions(company, period, basis=basis, doc_id=doc_id)
-    _capture("lookup_regions", {"company": company, "period": period, "basis": basis, "doc_id": doc_id}, r)
+    r = regions.lookup_regions(company, period, basis=basis, doc_id=doc_id, period_from=period_from, period_to=period_to)
+    _capture("lookup_regions", {"company": company, "period": period, "basis": basis, "doc_id": doc_id, "period_from": period_from,
+                                "period_to": period_to}, r)
     return r
 
 
 @mcp.tool(title="横断検索の項目と型を見る", annotations=READ_ONLY)
 def list_metrics() -> dict:
-    """screen_companies の条件・並べ方に使える語の一覧＝項目のキー(開示値)・仮の項目(top_line=最上段の収益/bottom_line=当期純利益)・
+    """screen_companies・screen_trend の条件・並べ方に使える語の一覧＝集約の語彙(aggregates・screen_trend)・＝項目のキー(開示値)・仮の項目(top_line=最上段の収益/bottom_line=当期純利益)・
     派生項目・検証済みの型(名前つきの指標＝式と注)・未収録の項目(まだ使えない＝使うと input_not_ingested)・業種(EDINET の提出者業種)・
     除外の理由の一覧・式の書き方。screen_companies を使う前に引く。
     """
@@ -187,6 +201,33 @@ def screen_companies(conditions: list[dict], order_by: str | None = None, order:
     return r
 
 
+@mcp.tool(title="複数年の条件で会社を絞り込み並べる", annotations=READ_ONLY)
+def screen_trend(conditions: list[dict], order_by: str | None = None, order: str = "desc", industries: list[str] | None = None,
+                 manufacturing: bool | None = None, basis: str | None = None, period_from: str | None = None,
+                 period_to: str | None = None, limit: int = 20) -> dict:
+    """複数年の条件で会社を絞り込み、1 つの集約値で並べて返す(時系列の横断検索)。集約の語彙・使える項目と型は list_metrics で引く。
+
+    conditions=1〜5 個の {"metric": 検証済みの型か項目のキー} または {"expr": 式} に "aggregate"(集約=list_metrics の aggregates のどれか)と、
+    任意で "min"/"max"(集約値の条件)・"year_min"/"year_max"(各年の値の条件=年数を数える集約で使う)。条件は AND。比率は 0.1 の形=10%。
+    条件の名前="<aggregate>:<metric または expr>"(order_by に使う・省くと最初の条件)。order=desc/asc・limit=1〜100(既定 20)。
+    period_from/period_to=決算期末 YYYY-MM の範囲(省くと全社で同じ 13 年=基準日の 4 か月前まで・海外売上比率は 11 年)。
+    指定した期間の端まで年がそろわない会社は insufficient_history で除外(年数の違う集約を並べない)。
+    各年の値=その年の入力がすべて載る書類のうち提出日が最新の書類の値(単社の参照の既定と同じ)。後年の書類で組み替えられた年は除外せず、
+    行の series の restated に他の書類の値・restated_years に年が並ぶ=段差は利用側が系列で確かめる。
+    系列が途切れる会社(会計基準・決算期・連結の有無・最上段の収益の項目の変更・株式分割をまたぐ 1 株当たりの項目 等)は除外の理由と件数で返す。
+    返り値=rows(会社・values〔集約＝派生値〕・series〔年ごとの値・出所の書類・入力の開示値〕・restated_years)・matched・excluded・definitions・note。
+    無ければ found=false と reason(unknown_aggregate/unknown_item/input_not_ingested/bad_expression/bad_request/bad_period)。
+    1 年の条件(最新の決算期で絞る)は screen_companies。
+    """
+    args = {"conditions": conditions, "order_by": order_by, "order": order, "industries": industries, "manufacturing": manufacturing,
+            "basis": basis, "period_from": period_from, "period_to": period_to, "limit": limit}
+    r = trend.screen_trend(conditions, order_by=order_by, order=order, industries=industries, manufacturing=manufacturing,
+                           basis=basis, period_from=period_from, period_to=period_to, limit=limit)
+    un = r.get("unavailable") or []
+    _capture("screen_trend", args, r, matched=r.get("matched"), unavailable=un, unavailable_vocab=_vocab_only(un))
+    return r
+
+
 @mcp.tool(title="項目の語彙を見る", annotations=READ_ONLY)
 def list_items() -> dict:
     """lookup_company_facts の item に使えるキーの一覧(キー・日本語の呼び名・対応する標準タクソノミの要素)。
@@ -211,7 +252,7 @@ def main() -> int:
     if a.http:
         from polyarchy_common.mcp_http import serve_streamable_http
         serve_streamable_http(mcp, host=a.host, port=a.port, path=os.getenv("MCP_HTTP_PATH", "/mcp"),
-                              tools_desc="find_company / lookup_company_facts / lookup_segments / lookup_regions / list_items / list_metrics / screen_companies", logger_name="polyarchy.companies",
+                              tools_desc="find_company / lookup_company_facts / lookup_segments / lookup_regions / list_items / list_metrics / screen_companies / screen_trend", logger_name="polyarchy.companies",
                               health_check=_health)
         return 0
     log.info("companies MCP（stdio）起動＝収録 %d 社", len(store.registry()))

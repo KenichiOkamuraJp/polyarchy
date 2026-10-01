@@ -117,7 +117,7 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
             "stats_find": 0, "stats_find_zero": 0, "stats_find_filtered": 0,
             "stats_lookup": 0, "stats_found_true": 0, "stats_found_false": 0,
             "stats_nf_reasons": Counter(), "stats_catalog": 0,
-            "companies": 0, "companies_screen": 0, "companies_unavailable": Counter(),
+            "companies": 0, "companies_screen": 0, "companies_trend": 0, "companies_unavailable": Counter(),
         })
         w["total"] += 1
         w[svc] += 1
@@ -138,6 +138,8 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
         elif svc == "companies":
             if rec.get("tool") == "screen_companies":
                 w["companies_screen"] += 1
+            elif rec.get("tool") == "screen_trend":  # 時系列の横断検索（第 1e 便）
+                w["companies_trend"] += 1
             # 横断検索で使えなかった入力＝サーバ側の固定の語（項目・未収録の目録のキー）だけ（companies が書き込み時に絞った欄＝
             # 利用者が書いた語は入らない）。「level:キー」の件数＝取込の改善候補の一次情報
             for u in rec.get("unavailable_vocab") or []:
@@ -252,7 +254,7 @@ def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at:
 識別利用者 {latest['users']} 人（user_hash・authless 分は数えない）／
 recommendations 0 件率 {e(pct(latest['recommendations_zero'], latest['recommendations']))}・低ヒット率(&lt;{LOW_HIT}) {e(pct(latest['recommendations_low'], latest['recommendations']))}／
 stats lookup found=false {latest['stats_found_false']} 件（拡充候補の一次情報）／
-companies {latest.get('companies', 0)} 件（横断検索 {latest.get('companies_screen', 0)}）・使えなかった入力
+companies {latest.get('companies', 0)} 件（横断検索 {latest.get('companies_screen', 0)}・時系列 {latest.get('companies_trend', 0)}）・使えなかった入力
 {e("・".join(f"{k} {v}" for k, v in (latest.get('companies_unavailable') or {}).items()) or "—")}（未収録・開示なし＝取込の改善候補）</p>""")
     parts.append("""<h2>週次推移</h2><div class="wrap"><table>
 <tr><th>週</th><th>週初</th><th>計</th><th>recommendations</th><th>stats</th><th>source 内訳</th><th>利用者</th>

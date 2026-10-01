@@ -252,13 +252,17 @@ def test_usage_report_aggregate():
         ("companies", {"ts": "2026-08-19T12:00:00", "tool": "screen_companies", "args": {"conditions": [{"expr": secret}]},
                        "unavailable": [{"term": secret, "level": "unknown_item"}],
                        "unavailable_vocab": [{"term": "gross_profit", "level": "input_not_ingested"}]}),
+        # 時系列の横断検索（第 1e 便）＝回数は別に数え、使えなかった入力は同じ欄で数える
+        ("companies", {"ts": "2026-08-19T12:01:00", "tool": "screen_trend", "args": {"conditions": [{"metric": "operating_profit", "aggregate": "cagr"}]},
+                       "unavailable_vocab": [{"term": "operating_profit", "level": "input_not_ingested"}]}),
     ]
     rows = aggregate(recs)
     assert len(rows) == 1 and rows[0]["week"] == "2026-W34"
     w = rows[0]
-    assert w["total"] == 6 and w["recommendations"] == 2 and w["stats"] == 3 and w["companies"] == 1 and w["users"] == 1
-    assert w["by_source"] == {"app_chat": 1, "mcp": 4, "unknown": 1}
-    assert w["companies_screen"] == 1 and w["companies_unavailable"] == {"input_not_ingested:gross_profit": 1}
+    assert w["total"] == 7 and w["recommendations"] == 2 and w["stats"] == 3 and w["companies"] == 2 and w["users"] == 1
+    assert w["by_source"] == {"app_chat": 1, "mcp": 4, "unknown": 2}
+    assert w["companies_screen"] == 1 and w["companies_trend"] == 1
+    assert w["companies_unavailable"] == {"input_not_ingested:gross_profit": 1, "input_not_ingested:operating_profit": 1}
     assert w["recommendations_zero"] == 1 and w["recommendations_low"] == 1 and w["recommendations_orgs_filter"] == 1 and w["recommendations_period_filter"] == 1
     assert w["stats_find"] == 1 and w["stats_find_filtered"] == 1 and w["stats_lookup"] == 1
     assert w["stats_found_false"] == 1 and w["stats_nf_reasons"] == {"no_values": 1} and w["stats_catalog"] == 1
@@ -272,7 +276,7 @@ def test_usage_report_aggregate():
     old = [{"week": "2026-W30", "total": 100}, {"week": "2026-W34", "total": 3}]
     merged = merge_weekly(old, rows)
     assert [r["week"] for r in merged] == ["2026-W30", "2026-W34"]
-    assert merged[1]["total"] == 6                                     # 増えた再計算は置換
+    assert merged[1]["total"] == 7                                     # 増えた再計算は置換
     shrunk = merge_weekly(merged, [{"week": "2026-W30", "total": 2}])
     assert shrunk[0]["total"] == 100                                   # 痩せた再計算は既存優先
 
