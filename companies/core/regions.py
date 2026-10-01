@@ -87,7 +87,52 @@ def _section(s: dict) -> dict:
             "has_table": _has_table(s), "content": _content(s)}
 
 
-def lookup_regions(company: str, period: str, *, basis: str | None = None, doc_id: str | None = None) -> dict:
+def range_request(period, doc_id, period_from, period_to) -> dict | None:
+    """期間の指定（段③＝lookup_segments・lookup_regions で共通）の受付。"""
+    from companies.core.lookup import PERIOD, _miss
+    if period is not None:
+        return _miss("bad_request", hint="period（1 つの決算期）と期間（period_from／period_to）は同時に指定しない")
+    if doc_id is not None:
+        return _miss("bad_request", hint="期間の指定では doc_id を受けない（年ごとに出所の書類が違う＝1 つの書類の値は period と doc_id で引く）")
+    for x in (period_from, period_to):
+        if x is not None and not PERIOD.fullmatch(x):
+            return _miss("bad_period", hint="period_from／period_to は決算期末の YYYY-MM")
+    if period_from and period_to and period_from > period_to:
+        return _miss("bad_period", hint="period_from が period_to より後")
+    return None
+
+
+def lookup_regions(company: str, period: str | None = None, *, basis: str | None = None, doc_id: str | None = None,
+                   period_from: str | None = None, period_to: str | None = None) -> dict:
+    """1 つの決算期（period）か、期間（period_from〜period_to＝年ごとの並び・第 1e 便 段③＝欄は表のまま・国や地域に寄せない）。"""
+    if period_from is not None or period_to is not None:
+        from companies.core.lookup import _miss, find_company
+        bad = range_request(period, doc_id, period_from, period_to)
+        if bad:
+            return bad
+        found = find_company(company)
+        if not found["found"]:
+            return _miss(found["reason"], candidates=found["candidates"], **({"hint": found["hint"]} if "hint" in found else {}))
+        co = found["company"]
+        docs = store.regions_of(co["edinet_code"])["docs"]
+        periods = sorted({p for d in docs.values() for p in d["periods"].values() if (period_from or "") <= p <= (period_to or "9999-99")})
+        if not periods:
+            return _miss("out_of_range", company=co, available_periods=sorted({p for d in docs.values() for p in d["periods"].values()}),
+                         hint="収録の無い期間＝近い期の欄から推して返さない")
+        years = []
+        for p in periods:
+            r = _one(co["edinet_code"], p, basis=basis, doc_id=None)
+            years.append({"period": p, "found": r["found"], **({"reason": r["reason"]} if not r["found"] else {}),
+                          "doc_id": (r.get("source") or {}).get("doc_id"), **({"basis": r["basis"]} if "basis" in r else {}),
+                          **({"sections": r["sections"]} if "sections" in r else {}), **({"quotes": r["quotes"]} if "quotes" in r else {})})
+        return {"found": True, "company": co, "period_from": period_from, "period_to": period_to, "years": years, "read_note": READ_NOTE,
+                "note": "各年は、その期の欄が載る最新の書類（1 年ずつ引いたときと同じ＝日本基準は翌年の書類の前期の欄・IFRS は翌年の書類の表の前期の列）。"
+                        "欄は表のまま＝見出しの地域は年で変わり得る（国や地域に寄せない・比率を計算しない）",
+                "license": {"grade": "○", "terms": "公共データ利用規約（PDL1.0）＝出典の明記と加工の明記"}}
+    return _one(company, period, basis=basis, doc_id=doc_id)
+
+
+def _one(company: str, period: str, *, basis: str | None = None, doc_id: str | None = None) -> dict:
     from companies.core.lookup import BASES, NO_CONSOLIDATED_HINT, PERIOD, _miss, consolidated_at, find_company  # 発見層と理由コードは第 1 便と共通
     if basis is not None and basis not in BASES:
         return _miss("bad_request", hint=f"basis は {BASES} のいずれか（省くと、その決算期に連結の値があれば連結・無ければ単体＝連結の有無は決算期ごと）")

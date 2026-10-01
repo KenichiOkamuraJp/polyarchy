@@ -85,7 +85,63 @@ def _fact(f: dict) -> dict:
             "unit": f["unit"], "decimals": f["decimals"], "context": f["context"]}
 
 
-def lookup_segments(company: str, period: str, *, basis: str | None = None, doc_id: str | None = None) -> dict:
+def lookup_segments(company: str, period: str | None = None, *, basis: str | None = None, doc_id: str | None = None,
+                    period_from: str | None = None, period_to: str | None = None) -> dict:
+    """1 つの決算期（period）か、期間（period_from〜period_to＝年ごとの並び・第 1e 便 段③）。"""
+    if period_from is not None or period_to is not None:
+        return _range(company, period, basis=basis, doc_id=doc_id, period_from=period_from, period_to=period_to)
+    return _one(company, period, basis=basis, doc_id=doc_id)
+
+
+def _range(company, period, *, basis, doc_id, period_from, period_to) -> dict:
+    """年ごとの並び＝各年は 1 年ずつ引いたときと同じ（その期を当期か前期として載せた最新の書類）。区分×要素の系列と、会社が定義した
+    報告セグメントの組の年ごとの増減（regrouped）を添える＝旧区分と新区分を対応づけない（対応づけは DB の解釈になる）。"""
+    from companies.core.lookup import _miss, find_company
+    from companies.core.regions import range_request
+    bad = range_request(period, doc_id, period_from, period_to)
+    if bad:
+        return bad
+    found = find_company(company)
+    if not found["found"]:
+        return _miss(found["reason"], candidates=found["candidates"], **({"hint": found["hint"]} if "hint" in found else {}))
+    co = found["company"]
+    data = store.segments_of(co["edinet_code"])
+    periods = sorted({p for d in data["docs"].values() for p in d["periods"].values() if (period_from or "") <= p <= (period_to or "9999-99")})
+    if not periods:
+        return _miss("out_of_range", company=co, available_periods=sorted({p for d in data["docs"].values() for p in d["periods"].values()}),
+                     hint="収録の無い期間＝近い期で埋めない")
+    years, series, sets = [], {}, []
+    for p in periods:
+        r = _one(co["edinet_code"], p, basis=basis, doc_id=None)
+        src = (r.get("source") or {}).get("doc_id")
+        years.append({"period": p, "found": r["found"], **({"reason": r["reason"]} if not r["found"] else {}), "doc_id": src,
+                      **({"segments": r["segments"]} if r["found"] else {})})
+        if not r["found"]:
+            continue
+        mine = [f for f in data["facts"] if f["period"] == p and f["basis"] == r["basis"]]
+        for f in r["facts"]:
+            others = [{"doc_id": g["doc_id"], "value": g["value"]} for g in mine
+                      if g["doc_id"] != src and g["member"] == f["member"] and g["element"] == f["element"] and g["section"] == f["section"]
+                      and g["value"] != f["value"]]
+            k = (f["member"], f["element"], f["section"])
+            if k not in series:
+                seg = next(x for x in r["segments"] if x["member"] == f["member"])
+                series[k] = {"member": f["member"], "label": seg["label"], "kind": seg["kind"], "element": f["element"],
+                             "element_label": f["label"], "section": f["section"], "values": []}
+            series[k]["values"].append({"period": p, "value": f["value"], "doc_id": src, **({"restated": others} if others else {})})
+        sets.append((p, {f["member"] for f in r["facts"] if f["section"] == "segment_information" and kind_of(f["member"]) == "company_defined"
+                         and f["member"].endswith("ReportableSegmentsMember")}))
+    regrouped = [{"period": b[0], "added": sorted(b[1] - a[1]), "removed": sorted(a[1] - b[1])} for a, b in zip(sets, sets[1:]) if a[1] != b[1]]
+    return {"found": True, "company": co, "period_from": period_from, "period_to": period_to, "years": years,
+            "series": list(series.values()), "regrouped": regrouped, "kind_note": KIND_NOTE, "section_labels": SECTION_LABEL,
+            "note": "各年は、その期を当期か前期として載せた最新の書類の値（1 年ずつ引いたときと同じ）＝years の doc_id が出所。"
+                    "restated＝同じ期・区分・要素の値が違う他の書類。regrouped＝会社が定義した報告セグメントの組が前の年と違う年"
+                    "（増えた区分・無くなった区分）＝旧区分と新区分を対応づけない。区分の組み替えの年の書類は前期も新しい区分で開示し直すのが普通＝"
+                    "組み替えの前後で区分の値をつないで伸び率を出さない",
+            "license": {"grade": "○", "terms": "公共データ利用規約（PDL1.0）＝出典の明記と加工の明記"}}
+
+
+def _one(company: str, period: str, *, basis: str | None = None, doc_id: str | None = None) -> dict:
     from companies.core.lookup import BASES, NO_CONSOLIDATED_HINT, PERIOD, _miss, consolidated_at, find_company  # 発見層と理由コードは第 1 便と共通
     if basis is not None and basis not in BASES:
         return _miss("bad_request", hint=f"basis は {BASES} のいずれか（省くと、その決算期に連結の値があれば連結・無ければ単体＝連結の有無は決算期ごと）")

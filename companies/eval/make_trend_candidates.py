@@ -453,6 +453,157 @@ def overseas_negatives() -> list[dict]:
     return out
 
 
+# ── 段③：1 社の区分・地域別の年ごとの並び ───────────────────────
+def _seg_rows(doc_id: str) -> dict:
+    """公式 CSV のセグメント情報の値（会社が定義した区分・連結）＝{(区分, 要素, 当期か前期): 値}。区分は context の末尾から。"""
+    from companies.core.segments import section_of
+    from companies.eval.make_candidates import official_csv
+    out = {}
+    for el, _label, ctx, *_rest, value in official_csv(doc_id):
+        for base in ("CurrentYearDuration_", "Prior1YearDuration_", "CurrentYearInstant_", "Prior1YearInstant_"):
+            if ctx.startswith(base) and ctx.endswith("ReportableSegmentsMember") and "NonConsolidated" not in ctx:
+                member = ctx[len(base):]
+                if "_E" in member and section_of(el) == "segment_information" and value not in ("", "－"):
+                    out[(member, el, base.split("Year")[0])] = value
+    return out
+
+
+def _member_key(member: str) -> str:
+    """置き場の区分（接頭辞:要素）→ 公式 CSV の context の末尾（接頭辞と要素をつないだ形）。"""
+    return member.replace(":", "")
+
+
+def segments_range_positives(per_kind: int = 2) -> list[dict]:
+    reg = store.registry()
+    out, kinds = [], {"stable": 0, "regrouped": 0}
+    for code in sorted(reg, key=lambda k: hashlib.sha1(f"trend-seg-{k}".encode()).hexdigest()):
+        co = reg[code]
+        if co["accounting_standard"] != "Japan GAAP" or not co["consolidated"] or len(co["documents"]) != 10:
+            continue
+        data = store.segments_of(code)
+        docs = sorted(data["docs"], key=lambda d: data["docs"][d]["submitted"])
+        if len(docs) != 10 or any(data["docs"][d]["submitted"] > AS_OF for d in docs):
+            continue
+        per_year = {}
+        for f in data["facts"]:  # 絞り込みだけ（置き場）＝各年の出所の書類（その期を載せた最新の書類）の区分の組
+            if f["basis"] == "consolidated" and f["section"] == "segment_information" and ":" in f["member"] and "_E" in f["member"]:
+                per_year.setdefault(f["period"], {}).setdefault(f["doc_id"], set()).add(f["member"])
+        years = sorted(per_year)
+        if len(years) != 11 or any(_months(b, a) != 12 for a, b in zip(years, years[1:])):
+            continue
+        sets = [per_year[y][max(per_year[y], key=lambda d: data["docs"][d]["submitted"])] for y in years]
+        changes = sum(1 for a, b in zip(sets, sets[1:]) if a != b)
+        kind = "stable" if changes == 0 else "regrouped" if changes == 1 else None
+        if kind is None or kinds[kind] >= per_kind:
+            continue
+        # 期待値＝公式 CSV（出所の書類＝その期を当期か前期として載せた最新の書類）
+        csvs = {d: _seg_rows(d) for d in docs}
+        cur = {d: data["docs"][d]["periods"] for d in docs}
+        exp_years, series, members_by_year = [], {}, []
+        el_count = {}
+        for rows in csvs.values():
+            for (m, el, _), _v in rows.items():
+                el_count[el] = el_count.get(el, 0) + 1
+        el = max(el_count, key=el_count.get) if el_count else None
+        if not el:
+            continue
+        for y in years:
+            cands = [(d, "Current" if cur[d].get("current") == y else "Prior1") for d in docs if y in cur[d].values()]
+            cands = [(d, w) for d, w in cands if any(k[2] == w for k in csvs[d])]
+            if not cands:
+                break
+            src, w = cands[-1]
+            members = sorted({m for (m, e, ww) in csvs[src] if ww == w})
+            exp_years.append({"period": y, "doc_id": src})
+            members_by_year.append(members)
+            for m in members:
+                v = csvs[src].get((m, el, w))
+                if v is None:
+                    continue
+                others = [{"doc_id": d, "value": csvs[d][(m, el, ww)]} for d, ww in
+                          [(d, "Current" if cur[d].get("current") == y else "Prior1") for d in docs if y in cur[d].values() and d != src]
+                          if (m, el, ww) in csvs[d] and csvs[d][(m, el, ww)] != v]
+                series.setdefault(m, []).append({"period": y, "value": v, "doc_id": src, **({"restated": others} if others else {})})
+        if len(exp_years) != len(years):
+            continue
+        regrouped = [{"period": y, "added": sorted(set(b) - set(a)), "removed": sorted(set(a) - set(b))}
+                     for y, a, b in zip(years[1:], members_by_year, members_by_year[1:]) if a != b]
+        if (kind == "stable") != (not regrouped):
+            continue  # 置き場の絞り込みと公式 CSV が食い違う会社は材料にしない
+        kinds[kind] += 1
+        out.append({"id": f"{code}-segments-{years[0]}-{years[-1]}", "kind": "segments_range", "company": {"edinet_code": code, "name": co["name"]},
+                    "period_from": years[0], "period_to": years[-1], "element": el,
+                    "expected": {"years": exp_years, "series": series, "regrouped": regrouped},
+                    "checked_by": "公式 CSV（区分の context・会社が定義した区分）＝取込とは別の経路。出所の書類（その期を当期か前期として載せた最新の書類）・"
+                                  "組み替え（年ごとの区分の組の増減）・restated は本ファイルで決めた",
+                    "checked_at": TODAY,
+                    "note": ("区分の組が全年同じ" if kind == "stable" else f"区分の組み替えが {regrouped[0]['period']} に 1 回（旧区分と新区分を対応づけない）")})
+        if all(v >= per_kind for v in kinds.values()):
+            break
+    return out
+
+
+def _cells(content: list[dict]) -> list[str]:
+    return [c["text"].strip() for x in content if x["type"] == "table" for row in x["rows"] for c in row if c["text"].strip()]
+
+
+def regions_range_positives() -> list[dict]:
+    """地域別の欄を年ごとに＝その期の欄が載る最新の書類（日本基準は翌年の書類の前期の欄・IFRS は翌年の書類の表）の表のセル。
+    期待値＝本文 inline XBRL（取込とは別のパーサ）の同じ欄の表のセルの文字列（並び順どおり）。"""
+    from companies.eval.make_region_candidates import ix_blocks
+    reg = store.registry()
+    out, n = [], {"Japan GAAP": 0, "IFRS": 0}
+    for code in sorted(reg, key=lambda k: hashlib.sha1(f"trend-reg-{k}".encode()).hexdigest()):
+        co = reg[code]
+        std = co["accounting_standard"]
+        if std not in n or n[std] >= (1 if std == "IFRS" else 2) or not co["consolidated"] or len(co["documents"]) < 8:
+            continue
+        run = _run(code, co, std, store.regions_of(code).get("sections", []))
+        if not run:
+            continue
+        ds = [(d, co["documents"][d]) for d in run]
+        cur = {d: store.regions_of(code)["docs"][d]["periods"]["current"] for d in run}
+        years = [store.regions_of(code)["docs"][run[0]]["periods"]["prior"]] + [cur[d] for d in run]
+        want = "geographic_areas_ifrs" if std == "IFRS" else "revenue"
+        exp = []
+        for i, y in enumerate(years):
+            src = run[i] if i < len(run) else run[-1]
+            ctx = "CurrentYearDuration" if (std == "IFRS" or cur[src] == y) else "Prior1YearDuration"
+            blocks = [b for b in ix_blocks(src) if b["section"] == want and b["context"] == ctx]
+            if len(blocks) != 1:
+                exp = None
+                break
+            exp.append({"period": y, "doc_id": src, "section": want, "cells": _cells(blocks[0]["content"])})
+        if not exp:
+            continue
+        n[std] += 1
+        out.append({"id": f"{code}-regions-{years[0]}-{years[-1]}", "kind": "regions_range", "company": {"edinet_code": code, "name": co["name"]},
+                    "period_from": years[0], "period_to": years[-1], "expected": {"years": exp},
+                    "checked_by": "本文 inline XBRL の欄（取込とは別のパーサ）の表のセルの文字列・出所の書類は本ファイルで決めた", "checked_at": TODAY,
+                    "note": "日本基準は翌年の書類の前期の欄・IFRS は翌年の書類の表（前期の列を含む＝period_in_columns）・最新の年はその年の書類"})
+        if all(n[k] >= (1 if k == "IFRS" else 2) for k in n):
+            break
+    return out
+
+
+LOOKUP_NEGATIVES = [
+    {"id": "seg-range-and-period", "tool": "segments", "company": "E00345", "period": "2025-03", "period_from": "2020-03", "period_to": "2025-03",
+     "reason": "bad_request", "note": "period と期間（period_from／period_to）は同時に指定しない"},
+    {"id": "seg-range-doc", "tool": "segments", "company": "E00345", "doc_id": "S100YIC9", "period_from": "2020-03", "period_to": "2025-03",
+     "reason": "bad_request", "note": "期間の指定では doc_id を受けない（年ごとに出所の書類が違う）"},
+    {"id": "seg-range-reversed", "tool": "segments", "company": "E00345", "period_from": "2025-03", "period_to": "2020-03",
+     "reason": "bad_period", "note": "period_from が period_to より後"},
+    {"id": "seg-range-out", "tool": "segments", "company": "E00345", "period_from": "2000-03", "period_to": "2005-03",
+     "reason": "out_of_range", "note": "収録の無い期間＝近い期で埋めない"},
+    {"id": "reg-range-and-period", "tool": "regions", "company": "E00345", "period": "2025-03", "period_from": "2020-03", "period_to": "2025-03",
+     "reason": "bad_request", "note": "period と期間は同時に指定しない"},
+    {"id": "reg-range-reversed", "tool": "regions", "company": "E00345", "period_from": "2025-03", "period_to": "2020-03",
+     "reason": "bad_period", "note": "period_from が period_to より後"},
+    {"id": "reg-range-out", "tool": "regions", "company": "E00345", "period_from": "2000-03", "period_to": "2005-03",
+     "reason": "out_of_range", "note": "収録の無い期間"},
+]
+
+
 def main() -> int:
     pos = [positive(*x) for x in POSITIVE] + [roa_positive(*x) for x in ROA]
     negs = fixed_negatives() + [insufficient_history(), top_line_changed()]
@@ -462,6 +613,10 @@ def main() -> int:
     negs.append(nonpositive_start())
     pos += overseas_positives()
     negs += overseas_negatives()
+    lookup = segments_range_positives() + regions_range_positives()
+    (EVAL / "trend_lookup.jsonl").write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lookup + [
+        {**q, "kind": "lookup_excluded"} for q in LOOKUP_NEGATIVES]))
+    print(f"trend_lookup.jsonl: 正例 {len(lookup)}（{[x['company']['name'] + ':' + x['kind'] for x in lookup]}）・負例 {len(LOOKUP_NEGATIVES)}", file=sys.stderr)
     (EVAL / "trend.jsonl").write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in pos))
     (EVAL / "trend_fail_closed.jsonl").write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in negs))
     print(f"trend.jsonl: 正例 {len(pos)}（年の値 {sum(len(x['expected']['series']) for x in pos)}）・trend_fail_closed.jsonl: 負例 {len(negs)}"

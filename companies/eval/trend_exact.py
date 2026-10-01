@@ -21,6 +21,14 @@
               出所がすべて分割の後の書類なら除外しない（古い書類の分割の前の値は restated に並ぶだけ）。
   海外売上比率（段②）の年 t＝t の地域別の表が載る書類のうち最新＝翌年の書類（日本基準は前期の欄・IFRS は表の前期の列）。最新の年はその年の書類。
     本邦と合計のセルの特定は第 1c 便と同じ（合計×単位＝その書類のタグの付いた最上段の収益 t）。表が無く文だけの年は overseas_statement_only で除外。
+  段③＝lookup_segments／lookup_regions に期間（period_from・period_to）＝1 社の区分・地域別の年ごとの並び：
+    lookup_segments(company, period=None, *, basis=None, doc_id=None, period_from=None, period_to=None)
+      期間のとき -> {"found": True, "years": [{"period", "found", "reason"?, "doc_id"?, "segments"?}],
+                     "series": [{"member", "label", "kind", "element", "section", "values": [{"period", "value", "doc_id", "restated"?}]}],
+                     "regrouped": [{"period", "added": [区分], "removed": [区分]}]（会社が定義した区分の組の年ごとの増減＝旧区分と新区分を対応づけない）}
+    lookup_regions(company, period=None, *, basis=None, doc_id=None, period_from=None, period_to=None)
+      期間のとき -> {"found": True, "years": [{"period", "found", "reason"?, "doc_id"?, "sections"?}]}（欄は表のまま）
+    各年＝その期を当期か前期として載せた最新の書類（1 年ずつ引いたときと同じ）。period と期間の同時指定・期間と doc_id は bad_request。
   集約＝cagr（(終/始)^(1/(年数−1))−1）・change（終−始）・ratio（終/始）・mean・min・max・streak_up／streak_down
         （期間の終わりから数えた連続増加／減少の回数）・years_meeting（year_min／year_max を満たした年数）。
   screen_trend(conditions, *, order_by=None, order="desc", industries=None, manufacturing=None, basis=None,
@@ -207,15 +215,65 @@ def check_query(q: dict, st) -> str | None:
     return None
 
 
+def _mk(m: str) -> str:
+    return m.replace(":", "")  # 置き場の区分（接頭辞:要素）と公式 CSV の context の末尾（つないだ形）をそろえる
+
+
+def check_lookup(q: dict, fns) -> str | None:
+    seg, regn = fns
+    if q["kind"] == "lookup_excluded":
+        fn = seg if q["tool"] == "segments" else regn
+        r = fn(q["company"], q.get("period"), **{k: q[k] for k in ("doc_id", "period_from", "period_to") if k in q})
+        if r.get("found") is not False or r.get("reason") != q["reason"]:
+            return f"受付の誤り・収録外にならない: {r.get('reason')}（期待 {q['reason']}）"
+        return None
+    fn = seg if q["kind"] == "segments_range" else regn
+    r = fn(q["company"]["edinet_code"], period_from=q["period_from"], period_to=q["period_to"])
+    if not r.get("found"):
+        return f"found=false: {r.get('reason')}"
+    e = q["expected"]
+    got = r.get("years", [])
+    if [(y["period"], y.get("doc_id")) for y in got] != [(y["period"], y["doc_id"]) for y in e["years"]]:
+        return f"年と出所の書類が違う: {[(y['period'], y.get('doc_id')) for y in got]}（期待 {[(y['period'], y['doc_id']) for y in e['years']]}）"[:400]
+    if q["kind"] == "regions_range":
+        for g, x in zip(got, e["years"]):
+            secs = [s_ for s_ in g.get("sections", []) if s_["section"] == x["section"]]
+            if len(secs) != 1:
+                return f"{x['period']} の欄 {x['section']} が 1 つでない: {len(secs)}"
+            have = [c["text"].strip() for c in secs[0]["content"] if c.get("type") == "text"] if not secs[0]["has_table"] else None
+            cells = [c["text"].strip() for t in secs[0]["content"] if t["type"] == "table" for row in t["rows"] for c in row if c["text"].strip()]
+            if cells != x["cells"]:
+                return f"{x['period']} の表のセルが違う（{len(cells)} 個・期待 {len(x['cells'])} 個）: {cells[:6]} …（期待 {x['cells'][:6]} …）"
+        return None
+    series = {(_mk(s_["member"]), s_["element"]): s_["values"] for s_ in r.get("series", [])}
+    for m, want in e["series"].items():
+        have = series.get((m, q["element"]))
+        if have is None:
+            return f"区分 {m} の {q['element']} の系列が無い"
+        if [(v["period"], v["value"], v["doc_id"]) for v in have] != [(v["period"], v["value"], v["doc_id"]) for v in want]:
+            return f"区分 {m} の系列が違う: {[(v['period'], v['value'], v['doc_id']) for v in have]}（期待 {[(v['period'], v['value'], v['doc_id']) for v in want]}）"[:400]
+        for v, w in zip(have, want):
+            if {(x["doc_id"], x["value"]) for x in v.get("restated", [])} != {(x["doc_id"], x["value"]) for x in w.get("restated", [])}:
+                return f"区分 {m} の {w['period']} の restated が違う: {v.get('restated')}（期待 {w.get('restated')}）"
+    rg = [{"period": x["period"], "added": sorted(map(_mk, x["added"])), "removed": sorted(map(_mk, x["removed"]))} for x in r.get("regrouped", [])]
+    if rg != e["regrouped"]:
+        return f"区分の組み替えが違う: {rg}（期待 {e['regrouped']}）"[:400]
+    return None
+
+
 def main() -> int:
     pos, neg, qs = _load("trend.jsonl"), _load("trend_fail_closed.jsonl"), _load("trend_queries.jsonl")
+    lk = _load("trend_lookup.jsonl")  # 段③（1 社の区分・地域別の年ごとの並び）
     try:
         from companies.core.trend import screen_trend, trend_company
     except ImportError:
         print(f"FAIL: 時系列の横断検索（companies.core.trend）が未実装＝正例 0/{len(pos)}・負例 0/{len(neg)}・横断の問 0/{len(qs)}")
         return 1
     fails = []
-    for items, check, fn in ((pos, check_series, trend_company), (neg, check_negative, trend_company), (qs, check_query, screen_trend)):
+    from companies.core.regions import lookup_regions
+    from companies.core.segments import lookup_segments
+    for items, check, fn in ((pos, check_series, trend_company), (neg, check_negative, trend_company), (qs, check_query, screen_trend),
+                             (lk, check_lookup, (lookup_segments, lookup_regions))):
         for q in items:
             try:
                 err = check(q, fn)
@@ -225,7 +283,7 @@ def main() -> int:
                 fails.append((q["id"], err))
     for i, err in fails[:40]:
         print(f"  FAIL {i}: {err}")
-    print(f"{'PASS' if not fails else 'FAIL'}: 時系列の横断検索 正例 {len(pos)}・負例 {len(neg)}・横断の問 {len(qs)}・失敗 {len(fails)}")
+    print(f"{'PASS' if not fails else 'FAIL'}: 時系列の横断検索 正例 {len(pos)}・負例 {len(neg)}・横断の問 {len(qs)}・区分と地域別の年ごと {len(lk)}・失敗 {len(fails)}")
     return 0 if not fails else 1
 
 
