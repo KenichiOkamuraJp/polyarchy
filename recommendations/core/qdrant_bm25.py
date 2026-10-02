@@ -147,6 +147,13 @@ class QdrantBM25:
         log.info("BM25 語彙ロード: %s 語彙%d・avgdl %.1f・n_docs %d",
                  self.collection, len(self.vocab),
                  self.params["avgdl"], self.params["n_docs"])
+        # 語彙は索引と別ファイル＝索引だけ作り直されると（索引を別のフォルダと共有する手元など）
+        # クエリ側の重みがずれ、黙って順位が変わる（2026-10-02：MRR 0.710→0.692）。
+        n_points = self.store.qc.count(self.collection, exact=True).count
+        if n_points != self.params["n_docs"]:
+            log.warning("BM25 語彙の n_docs %d と索引のチャンク数 %d が食い違う＝語彙が索引と"
+                        "同じ時点のものでない（語彙を作り直すか、索引を作った側の語彙を複製する）",
+                        self.params["n_docs"], n_points)
 
     def search(self, query: str, top_k: int, sf=None) -> list[str]:
         """BM25 上位 top_k の chunk id を降順で返す（sf は org/layer/date を push-down）。"""
