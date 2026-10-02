@@ -122,7 +122,8 @@ mkdir -p "$APP_DIR/data"
 #   作れず Permission denied になる（root は任意のパスを作成可・IMDS の instance role 資格は
 #   どのユーザからでも使える）。取得後に所有権をまとめて polyarchy へ渡す。
 # --delete は付けない（箱側で溜まった捕捉ログ＝燃料を消さない）。
-aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exclude "stats/*" --exclude "companies/*"
+# cache/ は箱で作る（新着チェックの結果 等）＝S3 に古い写しが残っていても箱の最新を上書きしない（2026-10-02）。
+aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exclude "stats/*" --exclude "companies/*" --exclude "cache/*"
 # .streamlit/config.toml は code tar に同梱済（fileWatcherType=none・§32.3）。
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR/data"
 # stats（統計参照DB）のデータ＝S3 `data/stats/` → `stats/data/`（共通契約 §4）。tar は */data を除外するので

@@ -327,6 +327,23 @@ def test_ops_dashboard_memory_and_fuelsync():
         od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR, od.subprocess.run, od.shutil.which, od.companies_enabled = saved
 
 
+def test_box_cache_not_shipped():
+    """箱で作る cache/（提言の新着チェックの結果 等）を手元から S3 に上げない・S3 から箱へ戻さない（2026-10-02 staging＝
+    手元の 09-03 の update_check.json が upload で S3 に載り、自動適用の bootstrap 再走行の同期が箱の最新の値を上書きした）。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+
+    def syncs(path: str) -> list[str]:  # 行末の \ でつないだ 1 コマンドずつ
+        text = re.sub(r"\\\n\s*", " ", (root / path).read_text(encoding="utf-8"))
+        return [ln for ln in text.splitlines() if "s3 sync" in ln and not ln.lstrip().startswith("#")]
+
+    up = [c for c in syncs("deploy/scripts/upload_to_s3.sh") if "recommendations/data/\"" in c and "qdrant" not in c.split("s3://")[0]]
+    assert up and all('--exclude "cache/*"' in c for c in up), up
+    down = [c for c in syncs("deploy/bootstrap/bootstrap.sh") if "$APP_DIR/data/" in c]
+    assert down and all('--exclude "cache/*"' in c for c in down), down
+
+
 if __name__ == "__main__":
     import sys
 

@@ -93,7 +93,8 @@ echo "[upload] データ同期 → s3://$BUCKET/$DATA_PREFIX/ （Qdrant/BM25語�
     --exclude "qdrant/*" \
   --exclude "*.bak" --exclude "*.bak[0-9]" \
   --exclude "*.phase11*.bak" \
-  --exclude "eval/results/*" --exclude "stats/*" --exclude "companies/*" --exclude "query_log/*"
+  --exclude "eval/results/*" --exclude "stats/*" --exclude "companies/*" --exclude "query_log/*" \
+  --exclude "cache/*"  # 箱で作る（新着チェックの結果 等）＝手元の古い値を S3 に載せると bootstrap の同期が箱の最新を上書きする（2026-10-02）
 
 # stats（統計参照DB）のデータ＝S3 `data/stats/`（共通契約 §4）。registry（git 追跡・2MB）＋values（88MB）＋eval を運ぶ。
 # cache/（原本 1.2GB・取込時のみ使用）・values_archive/・query_log/（箱で生成する燃料）は運ばない。
