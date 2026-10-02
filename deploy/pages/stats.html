@@ -54,7 +54,8 @@ a{color:var(--accent)}
 <ul>
 <li><code>value</code> は公表どおりの文字列です（単位は <code>unit</code>）。換算・丸め・季節調整・基準改定の接続はしていません。</li>
 <li><code>kind=projection</code> は推計・予測値（観測値ではありません）。<code>vintage</code> は公表時点、<code>retrieved_at</code> は取得日です。</li>
-<li><code>status=guide</code> の系列は再配布条件により<strong>値を保持しません</strong>。原典（URL・表・行・列）の読み方だけを返すので、値は原典で確認してください。</li>
+<li><code>status=guide</code> の系列は<strong>値を保持しません</strong>（理由は系列ごとに応答の <code>hint</code> に入ります＝取得元の再配布条件、取得元が PDF のグラフしか無い 等）。原典（URL・表・行・列）の読み方だけを返すので、値は原典で確認してください。原典がその区分を推計・公表していない組合せ（例：一般政府の部門別の固定資産）は <code>not_published</code> と理由（<code>guide.why</code>）を返します。</li>
+<li><code>period_basis</code> は値の時点の定義です（暦年末・年度末・各年10月1日現在・期中 等）。<code>lookup_panel</code> で定義の違う系列が混ざると <code>quality_summary.period_basis_warning</code> が付きます（stats は時点を換算しません）。</li>
 <li><code>license.grade</code>：◎＝出典明示で商用利用可（CC BY 互換）／○＝可だが条件あり／△＝商用利用は取得元への事前相談が必要。</li>
 </ul>
 
@@ -62,13 +63,13 @@ a{color:var(--accent)}
 <table>
 <tr><th>取得元</th><th>統計</th><th>規約</th><th>区分</th></tr>
 <tr><td>政府統計の総合窓口 e-Stat（総務省統計局）</td><td>法人企業統計・消費者物価指数・労働力調査・人口推計・地方財政状況調査・毎月勤労統計調査・一般職業紹介状況・社会保障費用統計</td><td><a href="https://www.e-stat.go.jp/terms-of-use">利用規約</a>／<a href="https://www.e-stat.go.jp/api/agreement/">API 利用規約</a></td><td>◎</td></tr>
-<tr><td>内閣府（経済社会総合研究所ほか）</td><td>国民経済計算（年次推計・QE）・GDP ギャップと潜在成長率（月例経済報告 その他の資料）・政府経済見通し（閣議決定・年央試算＝見通し値）</td><td><a href="https://www.cao.go.jp/notice/rule.html">公共データ利用規約 1.0</a></td><td>◎</td></tr>
-<tr><td>財務省</td><td>国債金利情報・財政統計</td><td><a href="https://www.mof.go.jp/about_mof/notice/index.html">同上</a></td><td>◎</td></tr>
-<tr><td>総務省</td><td>地方財政計画（地方財政白書 資料編）</td><td><a href="https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html">同上</a></td><td>◎</td></tr>
+<tr><td>内閣府（経済社会総合研究所ほか）</td><td>国民経済計算（年次推計・QE）・GDP ギャップと潜在成長率（月例経済報告 その他の資料）・政府経済見通し（閣議決定・年央試算＝見通し値）・社会資本ストック推計</td><td><a href="https://www.cao.go.jp/notice/rule.html">公共データ利用規約 1.0</a></td><td>◎</td></tr>
+<tr><td>財務省</td><td>国債金利情報・財政統計・国の財務書類（一般会計・特別会計／連結）・財政投融資関連統計（値は保持せず案内のみ）</td><td><a href="https://www.mof.go.jp/about_mof/notice/index.html">同上</a></td><td>◎</td></tr>
+<tr><td>総務省</td><td>地方財政計画（地方財政白書 資料編）・統一的な基準による財務書類（都道府県）</td><td><a href="https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html">同上</a></td><td>◎</td></tr>
 <tr><td>中小企業庁</td><td>中小企業白書 付属統計資料（開業率・廃業率。原資料は厚生労働省「雇用保険事業年報」）</td><td><a href="https://www.meti.go.jp/main/rules.html">経済産業省 ウェブサイト利用規約（PDL1.0 準拠）</a></td><td>◎</td></tr>
-<tr><td>国立社会保障・人口問題研究所</td><td>日本の将来推計人口</td><td><a href="https://www.ipss.go.jp/site-ad/">サイトのご利用にあたって（PDL1.0 準拠）</a></td><td>◎</td></tr>
+<tr><td>国立社会保障・人口問題研究所</td><td>日本の将来推計人口・社会保障費用統計（社会保障財源）</td><td><a href="https://www.ipss.go.jp/site-ad/">サイトのご利用にあたって（PDL1.0 準拠）</a></td><td>◎</td></tr>
 <tr><td>日本銀行</td><td>需給ギャップと潜在成長率・国際収支統計・本邦対外資産負債残高・資金循環統計・企業物価指数・外国為替相場・コールレートと基準貸付利率（主要時系列統計データ表）</td><td><a href="https://www.boj.or.jp/about/copyright.htm">著作権・免責事項</a>（出所明記で転載可・商用は事前相談）</td><td>△</td></tr>
-<tr><td>IMF</td><td>World Economic Outlook</td><td><a href="https://www.imf.org/en/about/copyright-and-terms#data">Copyright and Usage — Data</a>（再配布可・出典必須・商用は許諾申請）。IMF データは IMF から無償で入手できます</td><td>○</td></tr>
+<tr><td>IMF</td><td>World Economic Outlook・Fiscal Monitor</td><td><a href="https://www.imf.org/en/about/copyright-and-terms#data">Copyright and Usage — Data</a>（再配布可・出典必須・商用は許諾申請）。IMF データは IMF から無償で入手できます</td><td>○</td></tr>
 <tr><td>OECD</td><td>Productivity database・Average annual wages・STAN（業種別）・Structural business statistics（規模階級別）</td><td><a href="https://www.oecd.org/en/about/terms-conditions.html">Terms and Conditions §3 Data</a></td><td>◎</td></tr>
 <tr><td>世界銀行</td><td>World Development Indicators</td><td><a href="https://datacatalog.worldbank.org/public-licenses">CC BY 4.0</a></td><td>◎</td></tr>
 <tr><td>米国 労働統計局（BLS）</td><td>消費者物価指数（CPI-U）・失業率</td><td><a href="https://www.bls.gov/opub/copyright-information.htm">Copyright Information</a>（パブリックドメイン・出典は BLS）／<a href="https://www.bls.gov/developers/termsOfService.htm">API Terms of Service</a>。BLS.gov cannot vouch for the data or analyses derived from these data after the data have been retrieved from BLS.gov.</td><td>◎</td></tr>
@@ -82,7 +83,7 @@ a{color:var(--accent)}
 
 <h2>制限</h2>
 <ul>
-<li>収録は約 10,000 系列・43 データセット（2026-09 時点）。都道府県粒度は一部、月次は CPI 等に限られます。</li>
+<li>収録は約 11,000 系列・54 データセット（2026-10 時点）。都道府県粒度は一部、月次は CPI 等に限られます。</li>
 <li>値は月次で更新します。速報値の改定は <code>vintage</code> で区別し、最新の公表値を返します。</li>
 <li>レート制限があります（通常の対話利用では到達しません）。</li>
 </ul>
