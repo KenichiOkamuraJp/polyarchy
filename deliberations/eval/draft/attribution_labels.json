@@ -1,0 +1,1254 @@
+{
+ "meta": {
+  "状態": "下書き（M0）・人手の確定前",
+  "作成": "2026-10-03",
+  "規則の出典": "docs/審議会議事録DB_開発計画.md §4.1（区分は会議での役割＝政務／事務局／府省・会議体／構成員（政府外）／外部（ヒアリング）／不明・2026-10-03 改定）",
+  "資料": 40,
+  "資料_要確認": 0,
+  "発言（名前あり）": 31,
+  "発言_要確認": 0,
+  "発言（匿名）": 11,
+  "presenter_type の内訳": {
+   "政務": 12,
+   "構成員（政府外）": 11,
+   "府省・会議体": 3,
+   "不明": 10,
+   "外部（ヒアリング）": 3,
+   "事務局": 1
+  },
+  "speaker_role の内訳": {
+   "政務": 11,
+   "構成員（政府外）": 14,
+   "府省・会議体": 3,
+   "外部（ヒアリング）": 2,
+   "事務局": 1
+  },
+  "表紙の扱い": "資料名で決まらないときは表紙の提出者の行を見る（決定 2026-10-03）。git には根拠の行（cover_evidence）だけを残し、表紙の全文は残さない。"
+ },
+ "materials": [
+  {
+   "id": "M01",
+   "path": "dgk/01/kaigi1_siryou4.pdf",
+   "org": "dgk",
+   "session_no": 1,
+   "material_no": "資料４",
+   "material_name_in_list": "デジタル行財政改革について（PDF／998KB）",
+   "presenter_type": "政務",
+   "presenter": "デジタル行財政改革担当大臣 河野太郎",
+   "rule": "表紙の提出者の行（日付・会議名の行の後）",
+   "note": "",
+   "要確認": null,
+   "cover_evidence": "デジタル行財政改革担当大臣 / 河野太郎"
+  },
+  {
+   "id": "M02",
+   "path": "dgk/01/kaigi1_siryou5.pdf",
+   "org": "dgk",
+   "session_no": 1,
+   "material_no": "資料５",
+   "material_name_in_list": "上野山構成員提出資料（PDF／311KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "上野山構成員",
+   "rule": "「…構成員（提出）資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M03",
+   "path": "dgk/01/kaigi1_siryou9.pdf",
+   "org": "dgk",
+   "session_no": 1,
+   "material_no": "",
+   "material_name_in_list": "国土交通大臣提出資料（PDF／670KB）",
+   "presenter_type": "政務",
+   "presenter": "国土交通大臣",
+   "rule": "「…大臣提出資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M04",
+   "path": "dgk/01/kaigi1_siryou10.pdf",
+   "org": "dgk",
+   "session_no": 1,
+   "material_no": "",
+   "material_name_in_list": "経済産業大臣提出資料（PDF／480KB）",
+   "presenter_type": "政務",
+   "presenter": "経済産業大臣",
+   "rule": "「…大臣提出資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M05",
+   "path": "dgk/02/kaigi2_siryou2.pdf",
+   "org": "dgk",
+   "session_no": 2,
+   "material_no": "資料２",
+   "material_name_in_list": "規制改革推進会議提出資料（PDF／390KB）",
+   "presenter_type": "府省・会議体",
+   "presenter": "規制改革推進会議",
+   "rule": "「…会議提出資料」＝別の政府の会議体",
+   "note": "提出者が会議体（規制改革推進会議）。",
+   "要確認": null
+  },
+  {
+   "id": "M06",
+   "path": "dgk/02/kaigi2_siryou3.pdf",
+   "org": "dgk",
+   "session_no": 2,
+   "material_no": "資料３",
+   "material_name_in_list": "文部科学大臣提出資料（PDF／2,210KB）",
+   "presenter_type": "政務",
+   "presenter": "文部科学大臣",
+   "rule": "「…大臣提出資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M07",
+   "path": "dgk/02/kaigi2_siryou7.pdf",
+   "org": "dgk",
+   "session_no": 2,
+   "material_no": "資料７",
+   "material_name_in_list": "佐藤構成員提出資料（PDF／487KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "佐藤構成員",
+   "rule": "「…構成員（提出）資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M08",
+   "path": "dgk/02/kaigi2_siryou11.pdf",
+   "org": "dgk",
+   "session_no": 2,
+   "material_no": "資料１１",
+   "material_name_in_list": "令和５年秋の年次公開検証の取りまとめ（PDF／486KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M09",
+   "path": "dgk/03/kaigi3_siryou6.pdf",
+   "org": "dgk",
+   "session_no": 3,
+   "material_no": "資料６",
+   "material_name_in_list": "こども政策・少子化対策・若者活躍・男女共同参画担当大臣提出資料（PDF／1,792KB）",
+   "presenter_type": "政務",
+   "presenter": "こども政策・少子化対策・若者活躍・男女共同参画担当大臣",
+   "rule": "「…大臣提出資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M10",
+   "path": "dgk/03/kaigi3_siryou11.pdf",
+   "org": "dgk",
+   "session_no": 3,
+   "material_no": "資料１１",
+   "material_name_in_list": "宍戸構成員提出資料（PDF／292KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "宍戸構成員",
+   "rule": "「…構成員（提出）資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M11",
+   "path": "dgk/05/kaigi5_siryou1.pdf",
+   "org": "dgk",
+   "session_no": 5,
+   "material_no": "資料１",
+   "material_name_in_list": "デジタル行財政改革のこれまでの取組等について（PDF／4,098KB）",
+   "presenter_type": "政務",
+   "presenter": "デジタル行財政改革担当大臣 河野太郎",
+   "rule": "表紙の提出者の行（日付・会議名の行の後）",
+   "note": "",
+   "要確認": null,
+   "cover_evidence": "デジタル行財政改革担当大臣 / 河野太郎"
+  },
+  {
+   "id": "M12",
+   "path": "dgk/05/sankou2.pdf",
+   "org": "dgk",
+   "session_no": 5,
+   "material_no": "参考資料２",
+   "material_name_in_list": "デジタルライフライン全国総合整備計画（案）（PDF／1,463KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M13",
+   "path": "dgk/06/kaigi6_siryou3.pdf",
+   "org": "dgk",
+   "session_no": 6,
+   "material_no": "資料３",
+   "material_name_in_list": "国家公安委員会委員長提出資料（PDF／280KB）",
+   "presenter_type": "政務",
+   "presenter": "国家公安委員会委員長",
+   "rule": "「…委員長提出資料」＝国務大臣（政務）",
+   "note": "国家公安委員会委員長は国務大臣だが、資料名に「大臣」の文字列がない。",
+   "要確認": null
+  },
+  {
+   "id": "M14",
+   "path": "dgk/06/kaigi6_siryou5.pdf",
+   "org": "dgk",
+   "session_no": 6,
+   "material_no": "資料５",
+   "material_name_in_list": "マイナンバーカードの普及・利用について（PDF／2,008KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "表紙は日付と会議名だけ（会議名は会議の文脈であって提出者ではない）＝不明。",
+   "要確認": null
+  },
+  {
+   "id": "M15",
+   "path": "dgk/08/kaigi8_siryou5.pdf",
+   "org": "dgk",
+   "session_no": 8,
+   "material_no": "資料５",
+   "material_name_in_list": "東原構成員提出資料（PDF／1,048KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "東原構成員",
+   "rule": "「…構成員（提出）資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M16",
+   "path": "dgk/10/kaigi10_siryou1.pdf",
+   "org": "dgk",
+   "session_no": 10,
+   "material_no": "資料１",
+   "material_name_in_list": "マイナウォレット株式会社代表取締役 橘博之氏提出資料（PDF／2,247KB）",
+   "presenter_type": "外部（ヒアリング）",
+   "presenter": "マイナウォレット株式会社代表取締役 橘博之氏",
+   "rule": "「法人・団体名＋提出資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M17",
+   "path": "dgk/10/kaigi10_siryou2.pdf",
+   "org": "dgk",
+   "session_no": 10,
+   "material_no": "資料２",
+   "material_name_in_list": "株式会社HashPort 代表取締役CEO 吉田世博氏提出資料（PDF／4,826KB）",
+   "presenter_type": "外部（ヒアリング）",
+   "presenter": "株式会社HashPort 代表取締役CEO 吉田世博氏",
+   "rule": "「法人・団体名＋提出資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M18",
+   "path": "dgk/10/kaigi10_siryou3.pdf",
+   "org": "dgk",
+   "session_no": 10,
+   "material_no": "資料３",
+   "material_name_in_list": "Whiskey＆Co.株式会社取締役 佐藤大吾氏提出資料（PDF／885KB）",
+   "presenter_type": "外部（ヒアリング）",
+   "presenter": "Whiskey＆Co.株式会社取締役 佐藤大吾氏",
+   "rule": "「法人・団体名＋提出資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M19",
+   "path": "dgk/10/kaigi10_siryou5.pdf",
+   "org": "dgk",
+   "session_no": 10,
+   "material_no": "資料５",
+   "material_name_in_list": "デジタル行財政改革の更なる深化と加速について（PDF／2,556KB）",
+   "presenter_type": "政務",
+   "presenter": "デジタル行財政改革担当大臣平将明",
+   "rule": "表紙の提出者の行（日付・会議名の行の後）",
+   "note": "",
+   "要確認": null,
+   "cover_evidence": "デジタル行財政改革担当大臣平将明"
+  },
+  {
+   "id": "M20",
+   "path": "dgk/10/kaigi10_siryou11.pdf",
+   "org": "dgk",
+   "session_no": 10,
+   "material_no": "資料11",
+   "material_name_in_list": "今後、特に、取組を深化・加速いただきたい項目（PDF／301KB）",
+   "presenter_type": "政務",
+   "presenter": "デジタル行財政改革担当大臣平将明",
+   "rule": "1 枚資料の提出者の行（表題の下・資料番号の前）",
+   "note": "",
+   "要確認": null,
+   "cover_evidence": "デジタル行財政改革担当大臣平将明"
+  },
+  {
+   "id": "M21",
+   "path": "dgk/12/kaigi12_siryou2.pdf",
+   "org": "dgk",
+   "session_no": 12,
+   "material_no": "資料２",
+   "material_name_in_list": "デジタル行財政改革の今後の取組方針について（PDF／7,377KB）",
+   "presenter_type": "政務",
+   "presenter": "デジタル行財政改革担当大臣松本尚",
+   "rule": "表紙の提出者の行（日付・会議名の行の後）",
+   "note": "",
+   "要確認": null,
+   "cover_evidence": "デジタル行財政改革担当大臣松本尚"
+  },
+  {
+   "id": "M22",
+   "path": "dgk/12/kaigi12_siryou7.pdf",
+   "org": "dgk",
+   "session_no": 12,
+   "material_no": "資料７",
+   "material_name_in_list": "堀構成員提出資料（PDF／422KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "堀構成員",
+   "rule": "「…構成員（提出）資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M23",
+   "path": "dgk/13/kaigi13_siryou2.pdf",
+   "org": "dgk",
+   "session_no": 13,
+   "material_no": "資料２",
+   "material_name_in_list": "規制改革担当大臣提出資料（PDF／565KB）",
+   "presenter_type": "政務",
+   "presenter": "規制改革担当大臣",
+   "rule": "「…大臣提出資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M24",
+   "path": "dgk/14/kaigi14_siryou1.pdf",
+   "org": "dgk",
+   "session_no": 14,
+   "material_no": "資料１",
+   "material_name_in_list": "デジタル行財政改革担当大臣提出資料（PDF／2,309KB）",
+   "presenter_type": "政務",
+   "presenter": "デジタル行財政改革担当大臣",
+   "rule": "「…大臣提出資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M25",
+   "path": "dgk/14/kaigi14_siryou9.pdf",
+   "org": "dgk",
+   "session_no": 14,
+   "material_no": "資料９",
+   "material_name_in_list": "上野山構成員資料（PDF／216KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "上野山構成員",
+   "rule": "「…構成員（提出）資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M26",
+   "path": "dgk/14/kaigi14_siryou12.pdf",
+   "org": "dgk",
+   "session_no": 14,
+   "material_no": "資料12",
+   "material_name_in_list": "デジタル行財政改革取りまとめ２０２６（案）（PDF／733KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M27",
+   "path": "ai_hq/01/shiryo2_2.pdf",
+   "org": "ai_hq",
+   "session_no": 1,
+   "material_no": "資料2-2",
+   "material_name_in_list": "⼈⼯知能基本計画の⾻⼦（たたき台）について（PDF形式：408KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M28",
+   "path": "ai_hq/03/shiryo2.pdf",
+   "org": "ai_hq",
+   "session_no": 3,
+   "material_no": "資料2",
+   "material_name_in_list": "経済対策におけるＡＩ施策について（PDF形式：695KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M29",
+   "path": "ai_hq/05/shiryo2_2.pdf",
+   "org": "ai_hq",
+   "session_no": 5,
+   "material_no": "資料2-2",
+   "material_name_in_list": "バーティカルＡＩ領域別戦略 中間とりまとめ（PDF形式：1,332KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M30",
+   "path": "ai_senmon/01/shiryo1_2.pdf",
+   "org": "ai_senmon",
+   "session_no": 1,
+   "material_no": "資料1-2",
+   "material_name_in_list": "人工知能戦略専門調査会 委員名簿（PDF形式：257KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M31",
+   "path": "ai_senmon/02/shiryo1_2.pdf",
+   "org": "ai_senmon",
+   "session_no": 2,
+   "material_no": "資料1-2",
+   "material_name_in_list": "人工知能基本計画骨子案に係る関係府省庁の取組について（PDF形式：2,307KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "表紙の「関係府省庁の取組について」は題名＝提出者ではない＝不明。",
+   "要確認": null
+  },
+  {
+   "id": "M32",
+   "path": "ai_senmon/04/shiryo1.pdf",
+   "org": "ai_senmon",
+   "session_no": 4,
+   "material_no": "資料1",
+   "material_name_in_list": "人工知能基本計画の改定に向けて【2026年４月16日 差し替え】（PDF形式：1212KB）",
+   "presenter_type": "事務局",
+   "presenter": "内閣府科学技術・イノベーション推進事務局 AI政策推進室",
+   "rule": "表紙の提出者の行（日付・会議名の行の後）。同じ組織が議事要旨の出席者欄の【事務局】に載る",
+   "note": "",
+   "要確認": null,
+   "cover_evidence": "内閣府科学技術・イノベーション推進事務局 / AI政策推進室"
+  },
+  {
+   "id": "M33",
+   "path": "ai_senryaku/02/shiryo2-1.pdf",
+   "org": "ai_senryaku",
+   "session_no": 2,
+   "material_no": "資料2-1",
+   "material_name_in_list": "江間構成員 資料（PDF形式：529KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "江間構成員",
+   "rule": "「…構成員（提出）資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M34",
+   "path": "ai_senryaku/02/shiryo2-6.pdf",
+   "org": "ai_senryaku",
+   "session_no": 2,
+   "material_no": "資料2-6",
+   "material_name_in_list": "松尾構成員 資料（PDF形式：196KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "松尾構成員",
+   "rule": "「…構成員（提出）資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M35",
+   "path": "ai_senryaku/02/ronten.pdf",
+   "org": "ai_senryaku",
+   "session_no": 2,
+   "material_no": "",
+   "material_name_in_list": "AIに関する暫定的な論点整理（PDF形式：488KB）",
+   "presenter_type": "不明",
+   "presenter": "不明",
+   "rule": "どの型にも当たらない（資料名が題名だけ）",
+   "note": "表紙は日付と会議名だけ（会議名は会議の文脈であって提出者ではない）＝不明。",
+   "要確認": null
+  },
+  {
+   "id": "M36",
+   "path": "ai_senryaku/03/kojinjouhou.pdf",
+   "org": "ai_senryaku",
+   "session_no": 3,
+   "material_no": "資料1-1",
+   "material_name_in_list": "個人情報保護法の対応について（報告）（PDF形式：641KB）",
+   "presenter_type": "府省・会議体",
+   "presenter": "個人情報保護委員会事務局",
+   "rule": "表紙の発表元の行（本会議の事務局ではない政府の機関）",
+   "note": "",
+   "要確認": null,
+   "cover_evidence": "個人情報保護委員会事務局"
+  },
+  {
+   "id": "M37",
+   "path": "ai_senryaku/09/shiryo1-3.pdf",
+   "org": "ai_senryaku",
+   "session_no": 9,
+   "material_no": "資料1-3",
+   "material_name_in_list": "田中構成員資料（進化する日本でのAIの利活用）（PDF形式：2103KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "田中構成員",
+   "rule": "「…構成員（提出）資料」",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M38",
+   "path": "ai_senryaku/09/shiryo1-4.pdf",
+   "org": "ai_senryaku",
+   "session_no": 9,
+   "material_no": "資料1-4",
+   "material_name_in_list": "松尾座長資料（生成AIの産業における可能性）（PDF形式：3033KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "松尾座長",
+   "rule": "「…座長資料」＝座長は構成員（政府外）",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M39",
+   "path": "ai_senryaku/11/shiryo2.pdf",
+   "org": "ai_senryaku",
+   "session_no": 11,
+   "material_no": "資料2",
+   "material_name_in_list": "構成員提出資料（PDF形式：1829KB）",
+   "presenter_type": "構成員（政府外）",
+   "presenter": "不明",
+   "rule": "「構成員提出資料」＝区分は構成員・どの構成員かは書かれていない",
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "M40",
+   "path": "ai_senryaku/12/shiryou1.pdf",
+   "org": "ai_senryaku",
+   "session_no": 12,
+   "material_no": "資料1",
+   "material_name_in_list": "ＡＩ戦略会議 ＡＩ制度研究会 中間とりまとめ（案）（PDF形式：1432KB）",
+   "presenter_type": "府省・会議体",
+   "presenter": "AI 戦略会議 AI 制度研究会",
+   "rule": "表紙の提出者の行（日付・会議名の行の後）＝会議の下の研究会",
+   "note": "",
+   "要確認": null,
+   "cover_evidence": "AI 戦略会議 AI 制度研究会"
+  }
+ ],
+ "utterances_named": [
+  {
+   "id": "S01",
+   "path": "dgk/01/kaigi1_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 1,
+   "page": 13,
+   "speaker": "西村経済産業大臣",
+   "speaker_role": "政務",
+   "rule": "「…大臣」",
+   "heading_in_text": "○西村経済産業大臣 デジタル行財政改革のポイントは、デジタル基盤などの規格を全国",
+   "quote": [
+    "○西村経済産業大臣 デジタル行財政改革のポイントは、デジタル基盤などの規格を全国"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S02",
+   "path": "dgk/01/kaigi1_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 1,
+   "page": 8,
+   "speaker": "瀧構成員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…構成員」",
+   "heading_in_text": "○瀧構成員 マネーフォワードの瀧でございます。この度はよろしくお願いいたします。",
+   "quote": [
+    "○瀧構成員 マネーフォワードの瀧でございます。この度はよろしくお願いいたします。"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S03",
+   "path": "dgk/01/kaigi1_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 1,
+   "page": 18,
+   "speaker": "岸田内閣総理大臣",
+   "speaker_role": "政務",
+   "rule": "「…内閣総理大臣」",
+   "heading_in_text": "○岸田内閣総理大臣 今日は会議への御協力、誠にありがとうございました。",
+   "quote": [
+    "○岸田内閣総理大臣 今日は会議への御協力、誠にありがとうございました。"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S04",
+   "path": "dgk/01/kaigi1_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 1,
+   "page": 12,
+   "speaker": "鈴木総務大臣",
+   "speaker_role": "政務",
+   "rule": "「…大臣」",
+   "heading_in_text": "【提出者：鈴木総務大臣】",
+   "quote": [
+    "【提出者：鈴木総務大臣】",
+    "・デジタルマーケットプレイスについては、総務省としても、地方の財務会計制度を所管"
+   ],
+   "note": "欠席者が書面で出した発言要旨を議事録に掲載したもの（会議の場の発言ではない）＝逐語の型の中の例外。",
+   "要確認": null
+  },
+  {
+   "id": "S05",
+   "path": "dgk/02/kaigi2_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 2,
+   "page": 3,
+   "speaker": "冨田議長",
+   "speaker_role": "府省・会議体",
+   "rule": "開催要領の出席者欄の肩書（規制改革推進会議議長）＝別の政府の会議体の代表",
+   "heading_in_text": "○冨田議長 冨田でございます。よろしくお願いいたします。",
+   "quote": [
+    "○冨田議長 冨田でございます。よろしくお願いいたします。"
+   ],
+   "note": "第2回の開催要領で「関係大臣等」の欄に「規制改革推進会議議長」として載る（構成員の欄ではない）。同会議の資料（M05）を説明＝会議体の代表として府省・会議体（判断の分かれ目＝報告済み）。",
+   "要確認": null
+  },
+  {
+   "id": "S06",
+   "path": "dgk/02/kaigi2_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 2,
+   "page": 9,
+   "speaker": "宍戸構成員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…構成員」",
+   "heading_in_text": "【提出者：宍戸構成員】",
+   "quote": [
+    "【提出者：宍戸構成員】",
+    " 私からは、前回示された取組方針の①と②について意見を述べたいと思います。"
+   ],
+   "note": "欠席者が書面で出した発言要旨を議事録に掲載したもの（会議の場の発言ではない）＝逐語の型の中の例外。",
+   "要確認": null
+  },
+  {
+   "id": "S07",
+   "path": "dgk/05/kaigi5_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 5,
+   "page": 5,
+   "speaker": "立谷全国市長会会長",
+   "speaker_role": "外部（ヒアリング）",
+   "rule": "どの型にも当たらない",
+   "heading_in_text": "○立谷全国市長会会長 全国市長会でございます。",
+   "quote": [
+    "○立谷全国市長会会長 全国市長会でございます。",
+    " 私からは３点ほど、まずシステム標準化、ガバメントクラウドについて申し上げます。"
+   ],
+   "note": "第5回の開催要領で「関係大臣等」の欄（構成員の欄ではない）＝構成員でない出席者。",
+   "要確認": null
+  },
+  {
+   "id": "S08",
+   "path": "dgk/05/kaigi5_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 5,
+   "page": 8,
+   "speaker": "上月経済産業副大臣",
+   "speaker_role": "政務",
+   "rule": "「…副大臣／…大臣政務官」",
+   "heading_in_text": "○上月経済産業副大臣 資料３を御覧ください。中間取りまとめの交通分野におけますデ",
+   "quote": [
+    "○上月経済産業副大臣 資料３を御覧ください。中間取りまとめの交通分野におけますデ"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S09",
+   "path": "dgk/05/kaigi5_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 5,
+   "page": 14,
+   "speaker": "南構成員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…構成員」",
+   "heading_in_text": "○南構成員 人材採用、人材登用の話がたくさん出てきますが、15年間ビズリーチという",
+   "quote": [
+    "○南構成員 人材採用、人材登用の話がたくさん出てきますが、15年間ビズリーチという"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S10",
+   "path": "dgk/08/kaigi8_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 8,
+   "page": 8,
+   "speaker": "東原構成員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…構成員」",
+   "heading_in_text": "○東原構成員 日立製作所の東原でございます。今回から参加させていただきます。よろ",
+   "quote": [
+    "○東原構成員 日立製作所の東原でございます。今回から参加させていただきます。よろ"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S11",
+   "path": "dgk/09/kaigi9_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 9,
+   "page": 8,
+   "speaker": "坂井国家公安委員会委員長",
+   "speaker_role": "政務",
+   "rule": "どの型にも当たらない",
+   "heading_in_text": "【提出者：坂井国家公安委員会委員長】",
+   "quote": [
+    "【提出者：坂井国家公安委員会委員長】",
+    " 自動運転バス・タクシーの実装加速に関する警察の取組を御説明します。"
+   ],
+   "note": "欠席者が書面で出した発言要旨を議事録に掲載したもの（会議の場の発言ではない）＝逐語の型の中の例外。",
+   "要確認": null
+  },
+  {
+   "id": "S12",
+   "path": "dgk/10/kaigi10_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 10,
+   "page": 4,
+   "speaker": "株式会社HashPort吉田代表取締役CEO",
+   "speaker_role": "外部（ヒアリング）",
+   "rule": "法人名を含む見出し",
+   "heading_in_text": "○株式会社HashPort吉田代表取締役CEO HashPort代表取締役の吉田でございます。",
+   "quote": [
+    "○株式会社HashPort吉田代表取締役CEO HashPort代表取締役の吉田でございます。"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S13",
+   "path": "dgk/10/kaigi10_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 10,
+   "page": 7,
+   "speaker": "中室構成員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…構成員」",
+   "heading_in_text": "○中室構成員 ありがとうございます。",
+   "quote": [
+    "○中室構成員 ありがとうございます。",
+    "私のほうからは、資料４を御用意させていただいていますけれども、１枚おめくりいた"
+   ],
+   "note": "発言は p.7 末尾の見出しから p.8 に続く（p.8 先頭の「8」はページ番号＝行の連結で除く）。",
+   "要確認": null,
+   "quote_pages": [
+    7,
+    8
+   ]
+  },
+  {
+   "id": "S14",
+   "path": "dgk/14/kaigi14_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 14,
+   "page": 4,
+   "speaker": "小森経済産業大臣政務官",
+   "speaker_role": "政務",
+   "rule": "「…副大臣／…大臣政務官」",
+   "heading_in_text": "○小森経済産業大臣政務官 経済産業省では、地下インフラ管理のDXやドローンの事業化",
+   "quote": [
+    "○小森経済産業大臣政務官 経済産業省では、地下インフラ管理のDXやドローンの事業化"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S15",
+   "path": "dgk/14/kaigi14_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 14,
+   "page": 6,
+   "speaker": "上野山構成員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…構成員」",
+   "heading_in_text": "○上野山構成員 取りまとめをありがとうございます。具体施策へ多数落とし込まれてお",
+   "quote": [
+    "○上野山構成員 取りまとめをありがとうございます。具体施策へ多数落とし込まれてお"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S16",
+   "path": "dgk/14/kaigi14_gijiroku.pdf",
+   "org": "dgk",
+   "session_no": 14,
+   "page": 11,
+   "speaker": "木原内閣官房長官",
+   "speaker_role": "政務",
+   "rule": "どの型にも当たらない",
+   "heading_in_text": "○木原内閣官房長官 本日はお疲れさまでございました。昨年12月に高市総理からの指示",
+   "quote": [
+    "○木原内閣官房長官 本日はお疲れさまでございました。昨年12月に高市総理からの指示"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S17",
+   "path": "ai_hq/01/gijigaiyo.pdf",
+   "org": "ai_hq",
+   "session_no": 1,
+   "page": 3,
+   "speaker": "平デジタル大臣",
+   "speaker_role": "政務",
+   "rule": "「…大臣」",
+   "heading_in_text": "・平デジタル大臣から、「デジタル庁では、政府におけるＡＩの適切な調達・利活用のガ",
+   "quote": [
+    "・平デジタル大臣から、「デジタル庁では、政府におけるＡＩの適切な調達・利活用のガ"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S18",
+   "path": "ai_hq/03/gijigaiyo.pdf",
+   "org": "ai_hq",
+   "session_no": 3,
+   "page": 1,
+   "speaker": "茂木外務大臣",
+   "speaker_role": "政務",
+   "rule": "「…大臣」",
+   "heading_in_text": "・茂木外務大臣から、「ＡＩは、我が国の経済・社会の発展の基盤となる技術であり、安",
+   "quote": [
+    "・茂木外務大臣から、「ＡＩは、我が国の経済・社会の発展の基盤となる技術であり、安"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S19",
+   "path": "ai_hq/05/gijigaiyo.pdf",
+   "org": "ai_hq",
+   "session_no": 5,
+   "page": 1,
+   "speaker": "林総務大臣",
+   "speaker_role": "政務",
+   "rule": "「…大臣」",
+   "heading_in_text": "・林総務大臣から、「我が国の生産性の向上や労働力不足の解消に向けて、ＡＩの社会実",
+   "quote": [
+    "・林総務大臣から、「我が国の生産性の向上や労働力不足の解消に向けて、ＡＩの社会実"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S20",
+   "path": "ai_senmon/01/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 1,
+   "page": 4,
+   "speaker": "伊藤委員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…委員」",
+   "heading_in_text": "【伊藤委員】",
+   "quote": [
+    "【伊藤委員】",
+    "・ 経済安全保障という観点からも、１つのモデルにオーバーリライアンスすることなく、"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S21",
+   "path": "ai_senmon/02/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 2,
+   "page": 5,
+   "speaker": "デジタル庁",
+   "speaker_role": "府省・会議体",
+   "rule": "「…省／庁／室」の見出し",
+   "heading_in_text": "【デジタル庁】",
+   "quote": [
+    "【デジタル庁】",
+    "・ 生成ＡＩ利用プラットフォーム「源内（ガバメントＡＩ）」について、以下の取組を進め"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S22",
+   "path": "ai_senmon/02/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 2,
+   "page": 17,
+   "speaker": "内閣府科学技術・イノベーション推進事務局 福永統括官",
+   "speaker_role": "事務局",
+   "rule": "「事務局」を含む見出し",
+   "heading_in_text": "【内閣府科学技術・イノベーション推進事務局 福永統括官】",
+   "quote": [
+    "【内閣府科学技術・イノベーション推進事務局 福永統括官】"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S23",
+   "path": "ai_senmon/02/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 2,
+   "page": 7,
+   "speaker": "佐渡島委員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…委員」",
+   "heading_in_text": "【佐渡島委員】",
+   "quote": [
+    "【佐渡島委員】",
+    "・ ＡＩと著作権侵害の関係について懸念がある。特にコンテンツ分野では、著作権侵害と見"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S24",
+   "path": "ai_senmon/02/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 2,
+   "page": 11,
+   "speaker": "岡田（陽）委員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…委員」",
+   "heading_in_text": "【岡田（陽）委員】",
+   "quote": [
+    "【岡田（陽）委員】",
+    "・ 日本がこれまで「最善手」を打ち続けてきたという点は、改めて明確に打ち出すべきであ"
+   ],
+   "note": "同じ会議体で見出しの書き方が回によって違う（（陽）と氏名全体）。表記のまま写し、名寄せしない。",
+   "要確認": null
+  },
+  {
+   "id": "S25",
+   "path": "ai_senmon/03/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 3,
+   "page": 4,
+   "speaker": "福岡委員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…委員」",
+   "heading_in_text": "【福岡委員】",
+   "quote": [
+    "【福岡委員】",
+    "・ ＡＩ分野の発展には、投資額や具体的な指標を計画に盛り込むことが重要であるが、根拠"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S26",
+   "path": "ai_senmon/04/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 4,
+   "page": 3,
+   "speaker": "岡田（淳）委員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…委員」",
+   "heading_in_text": "【岡田（淳）委員】",
+   "quote": [
+    "【岡田（淳）委員】",
+    "・"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S27",
+   "path": "ai_senmon/06/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 6,
+   "page": 3,
+   "speaker": "岡田陽介委員",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…委員」",
+   "heading_in_text": "【岡田陽介委員】",
+   "quote": [
+    "【岡田陽介委員】",
+    "・ パブリックコメントの内容については、表現の精査や背景の認識差の埋め合わせ、進め"
+   ],
+   "note": "同じ会議体で見出しの書き方が回によって違う（（陽）と氏名全体）。表記のまま写し、名寄せしない。",
+   "要確認": null
+  },
+  {
+   "id": "S28",
+   "path": "ai_senmon/06/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 6,
+   "page": 10,
+   "speaker": "松尾座長",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…座長」",
+   "heading_in_text": "【松尾座長】",
+   "quote": [
+    "【松尾座長】",
+    "・ ソブリンＡＩや国際情勢の変化への対応の重要性、ＡＩスタック全体を見据えた戦略の"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S29",
+   "path": "ai_senmon/06/gijiyoushi.pdf",
+   "org": "ai_senmon",
+   "session_no": 6,
+   "page": 11,
+   "speaker": "警察庁",
+   "speaker_role": "府省・会議体",
+   "rule": "「…省／庁／室」の見出し",
+   "heading_in_text": "【警察庁】",
+   "quote": [
+    "【警察庁】",
+    "・ 警察分野における治安上の課題に的確に対応するため、ＡＩを活用した様々な施策を推"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S30",
+   "path": "ai_senryaku/12/gijiyoushi.pdf",
+   "org": "ai_senryaku",
+   "session_no": 12,
+   "page": 10,
+   "speaker": "松尾座長",
+   "speaker_role": "構成員（政府外）",
+   "rule": "「…座長」",
+   "heading_in_text": "【松尾座長】",
+   "quote": [
+    "【松尾座長】",
+    "・皆様には非常に貴重な御意見を頂きました。内閣府は今後の政策に生かしていただければと"
+   ],
+   "note": "",
+   "要確認": null
+  },
+  {
+   "id": "S31",
+   "path": "ai_senryaku/14/gijiyoushi.pdf",
+   "org": "ai_senryaku",
+   "session_no": 14,
+   "page": 2,
+   "speaker": "城内科学技術政策担当大臣",
+   "speaker_role": "政務",
+   "rule": "「…大臣」",
+   "heading_in_text": "【城内科学技術政策担当大臣】",
+   "quote": [
+    " 【城内科学技術政策担当大臣】",
+    "構成員の皆様には、本日もご多忙のところ、ＡＩ戦略会議にご出席いただき、感謝申し"
+   ],
+   "note": "",
+   "要確認": null
+  }
+ ],
+ "utterances_anonymous": [
+  {
+   "id": "U01",
+   "path": "ai_senryaku/01/giji.pdf",
+   "org": "ai_senryaku",
+   "session_no": 1,
+   "page": 2,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き（氏名なし）",
+   "heading_in_text": "〇 松尾座長より、本日はAIをめぐる様々な論点について整理し、それを今後の議論のスコ",
+   "quote": [
+    "社会的な受容性というような観点に関しては、協調領域だと考える。競争しつつも、協調して"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  },
+  {
+   "id": "U02",
+   "path": "ai_senryaku/02/gijiyoushi2kai.pdf",
+   "org": "ai_senryaku",
+   "session_no": 2,
+   "page": 5,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き（氏名なし）",
+   "heading_in_text": "〇 次に、松尾座長より、本日は構成員の意見や問題意識を基に作成された暫定的な論点整理",
+   "quote": [
+    "・AIという言葉の定義がすごく重要になってくるのではないか。AIという言葉自体の定義が"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。 直前の見出しは p.4（引用は p.5）。",
+   "要確認": null
+  },
+  {
+   "id": "U03",
+   "path": "ai_senryaku/04/gijiyoushi4kai.pdf",
+   "org": "ai_senryaku",
+   "session_no": 4,
+   "page": 5,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き（氏名なし）",
+   "heading_in_text": "〇 次に、内閣府よりAI 開発力の強化に向けたAI 関連の主要な施策について説明があり、そ",
+   "quote": [
+    "のような国際ルールの形成を継続していくに当たり、研究開発と同時にガバナンスの研究も必"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  },
+  {
+   "id": "U04",
+   "path": "ai_senryaku/05/gijiyoushi5kai.pdf",
+   "org": "ai_senryaku",
+   "session_no": 5,
+   "page": 6,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き（氏名なし）",
+   "heading_in_text": "〇 次に、総務省より広島AIプロセスの閣僚級会合の結果報告が、内閣府より事業者向けの",
+   "quote": [
+    "のAI関係者向けの国際的な指針を策定というところで具体的な内容が出ている点、並びに偽"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  },
+  {
+   "id": "U05",
+   "path": "ai_senryaku/06/gijiyoushi6kai.pdf",
+   "org": "ai_senryaku",
+   "session_no": 6,
+   "page": 6,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き（氏名なし）",
+   "heading_in_text": "〇 次に、総務省及び外務省より広島AIプロセスの報告が、内閣府よりAI事業者ガイドライ",
+   "quote": [
+    "例えばプライバシーマークを取得している企業の近時のインシデント事例などを見ていると、"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  },
+  {
+   "id": "U06",
+   "path": "ai_senryaku/07/gijiyoushi7kai.pdf",
+   "org": "ai_senryaku",
+   "session_no": 7,
+   "page": 6,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き（氏名なし）",
+   "heading_in_text": "〇次に、松本総務大臣より広島AIプロセスの報告が、松本総務大臣及び齋藤経済産業大臣よ",
+   "quote": [
+    "・国際的な取りまとめと国内ガイドラインの双方について、様々なステークホルダーから多様"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  },
+  {
+   "id": "U07",
+   "path": "ai_senryaku/09/gijiyoushi9kai.pdf",
+   "org": "ai_senryaku",
+   "session_no": 9,
+   "page": 6,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き（氏名なし）",
+   "heading_in_text": "〇内閣府より「AI戦略の課題と対応」の説明が、田中構成員より「進化する日本でのAIの利",
+   "quote": [
+    "・クリエイティブ領域に関しては、まだなかなかAIが出てきていない。素人の人が使う分に"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  },
+  {
+   "id": "U08",
+   "path": "ai_senryaku/11/gijiyoushi.pdf",
+   "org": "ai_senryaku",
+   "session_no": 11,
+   "page": 6,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き（氏名なし）",
+   "heading_in_text": "○ 続いて、松尾座長より、AI制度の現状と制度課題について研究会の構成員の皆様を中心に",
+   "quote": [
+    "・ 生成AI以前のAIのリスクの焦点は、製品の安全性と個人情報のプロファイリングの問題で"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  },
+  {
+   "id": "U09",
+   "path": "ai_senryaku/12/gijiyoushi.pdf",
+   "org": "ai_senryaku",
+   "session_no": 12,
+   "page": 6,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "【構成員】の見出し（氏名なし）",
+   "heading_in_text": "【構成員】",
+   "quote": [
+    "・一つ目として、AI技術を悪用した詐欺行為が増えている。ディープフェイク技術を用い"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  },
+  {
+   "id": "U10",
+   "path": "ai_senryaku/13/gijiyoushi.pdf",
+   "org": "ai_senryaku",
+   "session_no": 13,
+   "page": 6,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "【構成員】の見出し（氏名なし）",
+   "heading_in_text": "【構成員】",
+   "quote": [
+    "・意見がたくさん出たことは、国民の方々のAIの発展の期待とそれに伴う不安が大きいこと"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  },
+  {
+   "id": "U11",
+   "path": "ai_senryaku/14/gijiyoushi.pdf",
+   "org": "ai_senryaku",
+   "session_no": 14,
+   "page": 7,
+   "speaker": "不明",
+   "speaker_role": "不明",
+   "rule": "【構成員】の見出し（氏名なし）",
+   "heading_in_text": "【構成員】",
+   "quote": [
+    "・ 日本のエンタメ、ＩＰ産業は大きな輸出産業になろうとしていると思います。しかし、産"
+   ],
+   "note": "推定しない（名簿・資料・発言内容から特定の構成員を連想できても）。",
+   "要確認": null
+  }
+ ]
+}
