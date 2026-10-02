@@ -205,6 +205,12 @@ def from_esri_year_paren(code: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def from_esri_year_paren_fy(code: str) -> Optional[str]:
+    """ESRI 付表の年度見出し：'令和6年度（2024）' → 'FY2024'（「年度」を含む見出しだけ・括弧内の西暦を採る。和暦は換算しない）"""
+    m = re.search(r"年度[（(](\d{4})[）)]", code or "")
+    return f"FY{m.group(1)}" if m else None
+
+
 def from_boj_gap_q(code: str) -> Optional[str]:
     """日銀 需給ギャップ（gap.xlsx data1）: '1983.1Q' → '1983Q1'（暦年四半期）"""
     m = re.match(r"^(\d{4})\.([1-4])Q$", (code or "").strip())
@@ -233,6 +239,7 @@ CONVERTERS = {
     "esri_year_fy": from_esri_year_fy,
     "esri_year_a": from_esri_year_a,
     "esri_year_paren": from_esri_year_paren,
+    "esri_year_paren_fy": from_esri_year_paren_fy,
     "estat_hojin_fy": from_estat_hojin_fy,
     "estat_hojin_fq": from_estat_hojin_fq,
     "estat_cpi_time": from_estat_cpi_time,

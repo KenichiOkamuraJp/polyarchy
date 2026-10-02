@@ -285,13 +285,31 @@ def ingest_series(s: Series, *, dry_run: bool = False, day: Optional[str] = None
     if sub_row and not want_sub:
         raise EsriSourceError(f"{s.series_id}: sub_header_row があるが sub_header が未設定")
 
+    # ブロック単位の見出し（付表 6 等）：年見出しがブロックの先頭列ではなく途中の列にある表。前方補完だと先頭列が前の年に付く＝
+    # 副見出しが block_head の列でブロックを切り、ブロック内の見出し行に年が**ちょうど 1 つ**あることを確かめてからその年を全列に付ける。
+    block_head = _norm(acc.get("block_head", ""))
+    block_year: dict[int, str] = {}
+    if block_head:
+        if not sub_row:
+            raise EsriSourceError(f"{s.series_id}: block_head は sub_header_row と一緒に指定する")
+        starts = [c for c in range(int(acc.get("first_col", 2)), ws.max_column + 1) if _norm(ws.cell(sub_row, c).value) == block_head]
+        for i, c0 in enumerate(starts):
+            c1 = starts[i + 1] if i + 1 < len(starts) else ws.max_column + 1
+            heads = [str(int(v)) if isinstance(v, (int, float)) else str(v).strip()
+                     for v in (ws.cell(hrow, c).value for c in range(c0, c1)) if v is not None and str(v).strip() != ""]
+            if len(heads) != 1:
+                raise EsriSourceError(f"{s.series_id}: 列 {_col_letter(c0 - 1)} から始まるブロックの見出しが {len(heads)} 個（{heads[:3]}）＝年が 1 つに確定しない")
+            block_year.update({c: heads[0] for c in range(c0, c1)})
+
     recs: list[ValueRecord] = []
     bad_head: list[str] = []
     skipped = 0
     carried = ""  # 結合セルの年見出しを右へ引き継ぐ（二段見出しのときのみ）
     for col in range(int(acc.get("first_col", 2)), ws.max_column + 1):
         head = ws.cell(hrow, col).value
-        if head is not None and str(head).strip() != "":
+        if block_head:
+            carried = block_year.get(col, "")
+        elif head is not None and str(head).strip() != "":
             carried = str(int(head)) if isinstance(head, (int, float)) else str(head).strip()
         elif not sub_row:
             continue

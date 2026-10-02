@@ -584,6 +584,13 @@ def intl_series() -> list[Series]:
                          "対外・国際", unit, "weo", meas, tags, {"type": "imf_dm", "indicator": ind},
                          "World Economic Outlook（DataMapper）", weo_url.format(ind=ind), first_period="1980",
                          notes="最新版のみ保持（版名は vintage/edition）。版年以降の年は予測値（kind=projection）。版年直前の年も IMF スタッフ推計が混じり得る。"))
+    # 第 12 弾 第 1 便（2026-10-02）：一般政府の純債務は WEO の DataMapper に無く Fiscal Monitor 側にだけある（GGXWDN_NGDP は 0 件＝実測）
+    out.append(_intl("imf.fm.gov_net_debt_gdp.a.cty", "IMF Fiscal Monitor 一般政府 純債務残高 対GDP比（国別・暦年・最新版）", "imf", "IMF",
+                     "対外・国際", "％", "fm", "gov_net_debt_gdp", (TAG_FISCAL, TAG_MACRO), {"type": "imf_dm", "indicator": "GGXWDN_G01_GDP_PT"},
+                     "Fiscal Monitor（DataMapper）", "https://www.imf.org/external/datamapper/GGXWDN_G01_GDP_PT@FM", first_period="1980",
+                     notes="純債務＝総債務−債務性の金融資産（貨幣用金・SDR・現金預金・債務証券・貸出・保険年金・その他の未収金。IMF の定義＝国により各国の会計慣行で定義がずれる）。"
+                           "総債務は imf.weo.gov_debt_gdp.a.cty（WEO）＝版も出所も別。値は DataMapper の返す数値のまま（丸めない）。"
+                           "最新版のみ保持（版名は vintage）。版年以降の年は予測値（kind=projection）。"))
     # OECD
     pdb = "OECD.SDD.TPS,DSD_PDB@DF_PDB,"
     out.append(_intl("oecd.pdb.labour_productivity_level.a.cty", "OECD 時間当たり労働生産性（GDP/総労働時間・米ドル PPP・当年価格）", "oecd", "OECD",
@@ -801,9 +808,11 @@ def hakusho_sme_series() -> list[Series]:
 # 要件源＝利用側プロジェクト §5.9（資金循環ブロック）。既存 esri_xlsx（行ラベル×年列）で取れる。
 # 表は**原本のシートを機械で走査して生成し、行ラベル・occurrence を確定させたもの**（2026-08-24・年版が変われば再生成）。
 # 部門で勘定の構成が違う（例 npish に経常税の行が無い・gg は税が受取側）＝**無い組合せは登録しない**（unknown_series が正しい応答）。
-SECTOR_FILES = {"nfc": "非金融法人企業", "fin": "金融機関", "gg": "一般政府", "hh": "家計（個人企業を含む）", "npish": "対家計民間非営利団体"}
+SECTOR_FILES = {"nfc": "非金融法人企業", "fin": "金融機関", "gg": "一般政府", "hh": "家計（個人企業を含む）", "npish": "対家計民間非営利団体",
+                "nfc_public": "公的非金融企業", "fin_public": "公的金融機関"}
 SECTOR_MEASURE_TITLE = {
     "property_income_paid": "財産所得（支払）", "property_income_received": "財産所得（受取）",
+    "taxes_on_production_imports_received": "生産・輸入品に課される税（受取）", "subsidies_paid": "補助金（支払）",
     "primary_income_balance_gross": "第１次所得バランス（総）", "current_taxes_paid": "所得・富等に課される経常税（支払）",
     "current_taxes_received": "所得・富等に課される経常税（受取）", "social_contributions_received": "純社会負担（受取）",
     "social_contributions_paid": "純社会負担（支払）", "social_benefits_paid": "現物社会移転以外の社会給付（支払）",
@@ -863,6 +872,9 @@ SECTOR_ACCOUNT_ROWS = {
     "gg": [
         ("property_income_paid", "i4", "年度（１）", "1.1財産所得（支払）", 0),
         ("property_income_received", "i4", "年度（１）", "1.5財産所得（受取）", 0),
+        # 第 12 弾 第 1 便（2026-10-02）：公表行。利用側が第 1 次所得バランスから逆算していた＝派生させずに公表値を返す
+        ("taxes_on_production_imports_received", "i4", "年度（１）", "1.3生産・輸入品に課される税（受取）", 0),
+        ("subsidies_paid", "i4", "年度（１）", "1.4（控除）補助金（支払）", 0),
         ("primary_income_balance_gross", "i4", "年度（１）", "（再掲）第１次所得バランス（総）", 0),
         ("current_taxes_received", "i4", "年度（２）", "2.5所得・富等に課される経常税（受取）", 0),
         ("social_contributions_received", "i4", "年度（２）", "2.6純社会負担（受取）", 0),
@@ -927,7 +939,8 @@ SECTOR_ACCOUNT_ROWS = {
 
 # 期末貸借対照表勘定（ストック編 Ⅱ. 制度部門別勘定・暦年末）。si11 非金融法人／si21 金融機関／si3 一般政府／si4 家計／si5 NPISH。
 # (表, 見出し行)＝si11/si21 は部門名の副題が 1 行多く header_row=9・si3/si4/si5 は 8（2026-08-24 原本で確認）
-BS_FILES = {"nfc": ("si11", 9), "fin": ("si21", 9), "gg": ("si3", 8), "hh": ("si4", 8), "npish": ("si5", 8)}
+BS_FILES = {"nfc": ("si11", 9), "fin": ("si21", 9), "gg": ("si3", 8), "hh": ("si4", 8), "npish": ("si5", 8),
+            "nfc_public": ("si13", 9), "fin_public": ("si23", 9)}  # 公的企業 2 部門は第 12 弾 第 1 便（2026-10-02・si11/si21 と同じ様式を原本で確認）
 BS_MEASURE_TITLE = {
     "nonfinancial_assets": "非金融資産", "produced_assets": "生産資産", "fixed_assets": "固定資産", "inventories": "在庫",
     "nonproduced_assets": "非生産資産（自然資源）", "land": "土地", "financial_assets": "金融資産",
@@ -939,7 +952,9 @@ BS_MEASURE_TITLE = {
 }
 BS_NOTE = ("ストック編 Ⅱ. 制度部門別勘定 期末貸借対照表勘定（**暦年末**・年度ではない）。10 億円。"
            "資産側と負債側で同じ行ラベルが出るため occurrence で区別している（accessor に記録）。"
-           "一国計は cao.sna2020.stock.*（付表 ss2 系）。非金融資産の内訳（資産別）は別表＝固定資本ストックマトリックス（未収録・F-4）。")
+           "一国計は cao.sna2020.stock.*（付表 ss2 系）。非金融資産の内訳（資産別）は別表＝固定資本ストックマトリックス（cao.sna_fcs.*）。"
+           "公的非金融企業（nfc_public）・公的金融機関（fin_public）は非金融法人企業（nfc）・金融機関（fin）の内訳（民間との 2 分の公的側）。"
+           "一般政府の中央・地方・社会保障基金の別は付表 3（cao.sna_gg_bs.*）。")
 
 BS_SECTOR_ROWS = {
     "nfc": [
@@ -1050,6 +1065,11 @@ BS_SECTOR_ROWS = {
 }
 
 
+# 第 12 弾 第 1 便：公的非金融企業（si13）・公的金融機関（si23）は si11・si21 と同じ行構成（2026-10-02 原本で確認）
+BS_SECTOR_ROWS["nfc_public"] = BS_SECTOR_ROWS["nfc"]
+BS_SECTOR_ROWS["fin_public"] = BS_SECTOR_ROWS["fin"]
+
+
 def sna_sector_series() -> list[Series]:
     """F-2 制度部門別勘定の残り（年度・フロー）＋ F-3 制度部門別 期末貸借対照表（暦年末・ストック）。"""
     out: list[Series] = []
@@ -1090,6 +1110,162 @@ def sna_sector_series() -> list[Series]:
                           citation_template=f"内閣府「国民経済計算年次推計」{kl}（{SNA_EDITION}年度確報・2020年基準・2008SNA・" + "{item}／{period}）取得 {retrieved_at}",
                           notes=BS_NOTE))
     return out
+
+
+# ---------------------------------------------------------------- 第 12 弾 第 1 便（2026-10-02）：一般政府の部門別（付表 3・付表 6）
+# 要件源＝利用側の財政 PL・BS 分析（中央政府・地方政府・社会保障基金の別が要る）。表は原本の行ラベルを機械で走査して確定（2026-10-02・年版が変われば再生成）。
+# 列＝年ごとに 4 列（中央政府・地方政府・社会保障基金・合計）。**合計は 3 部門の単純和**（部門間の債権債務・移転を相殺していない＝2024 年末の金融資産・負債で確認）。
+GG_SUB = {"cg": "中央政府", "lg": "地方政府", "ssf": "社会保障基金", "total": "合計"}
+# 付表 3（ストック編・暦年末）：(measure, 表示名, 行ラベル, occurrence, 部門別に推計されているか)
+GG_BS_ROWS = [
+    ("nonfinancial_assets", "非金融資産", "１．非金融資産", 0, False),
+    ("produced_assets", "生産資産", "（１）生産資産", 0, False),
+    ("fixed_assets", "固定資産", "ａ．固定資産", 0, False),
+    ("inventories", "在庫", "ｂ．在庫", 0, False),
+    ("nonproduced_assets", "非生産資産（自然資源）", "（２）非生産資産（自然資源）", 0, True),
+    ("financial_assets", "金融資産", "２．金融資産", 0, True),
+    ("monetary_gold_sdr_assets", "貨幣用金・ＳＤＲ（資産）", "（１）貨幣用金・ＳＤＲ", 1, True),
+    ("currency_deposits_assets", "現金・預金（資産）", "（２）現金・預金", 1, True),
+    ("loans_assets", "貸出（資産）", "（３）貸出", 0, True),
+    ("debt_securities_assets", "債務証券（資産）", "（４）債務証券", 1, True),
+    ("equity_assets", "持分・投資信託受益証券（資産）", "（５）持分・投資信託受益証券", 1, True),
+    ("shares_assets", "うち株式（資産）", "うち株式", 1, True),
+    ("insurance_assets", "保険・年金・定型保証（資産）", "（６）保険・年金・定型保証", 1, True),
+    ("derivatives_assets", "金融派生商品・雇用者ストックオプション（資産）", "（７）金融派生商品・雇用者ストックオプション", 1, True),
+    ("other_financial_assets", "その他の金融資産", "（８）その他の金融資産", 0, True),
+    ("assets_total", "総資産", "総資産", 0, False),
+    ("liabilities", "負債", "３．負債", 0, True),
+    ("monetary_gold_sdr_liabilities", "貨幣用金・ＳＤＲ（負債）", "（１）貨幣用金・ＳＤＲ", 2, True),
+    ("currency_deposits_liabilities", "現金・預金（負債）", "（２）現金・預金", 2, True),
+    ("borrowing", "借入（負債）", "（３）借入", 0, True),
+    ("debt_securities_liabilities", "債務証券（負債）", "（４）債務証券", 2, True),
+    ("equity_liabilities", "持分・投資信託受益証券（負債）", "（５）持分・投資信託受益証券", 2, True),
+    ("shares_liabilities", "うち株式（負債）", "うち株式", 2, True),
+    ("insurance_liabilities", "保険・年金・定型保証（負債）", "（６）保険・年金・定型保証", 2, True),
+    ("derivatives_liabilities", "金融派生商品・雇用者ストックオプション（負債）", "（７）金融派生商品・雇用者ストックオプション", 2, True),
+    ("other_liabilities", "その他の負債", "（８）その他の負債", 0, True),
+    ("net_worth", "正味資産", "４．正味資産", 0, False),
+]
+GG_BS_NOTE = ("ストック編 付表 3 一般政府の部門別資産・負債残高（**暦年末**・10 億円）。**合計列は 3 部門の単純和**（部門間の債権債務を相殺していない）"
+              "＝制度部門別 BS の一般政府（cao.sna_sector_bs.*.gg.a）と同じ値。原表の注記により一部の項目は合計のみ推計＝部門別の系列は値を持たない（found=false・reason=not_published・guide.why）。"
+              "定義・恒等式・資金循環や公会計との違いは list_datasets の sna_gg_bs の analysis_notes。")
+# 系列の notes には部門名・項目名を書かない（全系列に同じ語が載ると発見層で全系列が当たり、集計の行が上位を占める＝2026-10-02 find_quality）
+# 付表 6（フロー編・年度）：(measure, 表示名, 行ラベル, occurrence)
+GG_ACC_ROWS = [
+    ("taxes_on_production_imports_received", "生産・輸入品に課される税（受取）", "１．生産・輸入品に課される税（受取）", 0),
+    ("taxes_on_products_received", "生産物に課される税（受取）", "（１）生産物に課される税", 0),
+    ("other_taxes_on_production_received", "生産に課されるその他の税（受取）", "（２）生産に課されるその他の税", 0),
+    ("subsidies_paid", "補助金（支払）", "２．（控除）補助金（支払）", 0),
+    ("property_income_received", "財産所得（受取）", "３．財産所得（受取）", 0),
+    ("interest_received", "利子（受取）", "（１）利子", 1),
+    ("property_income_paid", "財産所得（支払）", "５．財産所得（支払）", 0),
+    ("interest_paid", "利子（支払）", "（１）利子", 2),
+    ("primary_income_balance_net", "第１次所得バランス（純）", "７．第１次所得バランス（純）", 0),
+    ("primary_income_balance_gross", "第１次所得バランス（総）", "（再掲）第１次所得バランス（総）", 0),
+    ("cfc", "固定資本減耗", "２３．（控除）固定資本減耗", 0),
+    ("current_taxes_received", "所得・富等に課される経常税（受取）", "８．所得・富等に課される経常税（受取）", 0),
+    ("social_contributions_received", "社会負担（受取）", "９．社会負担（受取）", 0),
+    ("other_current_transfers_received", "その他の経常移転（受取）", "１０．その他の経常移転（受取）", 0),
+    ("intra_gg_current_transfers_received", "一般政府内の経常移転（受取）", "（２）一般政府内の経常移転", 1),
+    ("social_benefits_paid", "現物社会移転以外の社会給付（支払）", "１２．現物社会移転以外の社会給付（支払）", 0),
+    ("other_current_transfers_paid", "その他の経常移転（支払）", "１３．その他の経常移転（支払）", 0),
+    ("intra_gg_current_transfers_paid", "一般政府内の経常移転（支払）", "（２）一般政府内の経常移転", 2),
+    ("disposable_income_net", "可処分所得（純）", "１５．可処分所得（純）", 0),
+    ("disposable_income_gross", "可処分所得（総）", "（再掲）可処分所得（総）", 0),
+    ("final_consumption", "最終消費支出", "１７．最終消費支出", 0),
+    ("saving_net", "貯蓄（純）", "１８．貯蓄（純）", 0),
+    ("saving_gross", "貯蓄（総）", "（再掲）貯蓄（総）", 0),
+    ("capital_transfers_received", "資本移転（受取）", "１９．資本移転（受取）", 0),
+    ("intra_gg_capital_transfers_received", "他の一般政府部門からの資本移転（受取）", "（１）他の一般政府部門からのもの", 0),
+    ("capital_transfers_paid", "資本移転（支払）", "２０．（控除）資本移転（支払）", 0),
+    ("intra_gg_capital_transfers_paid", "他の一般政府部門に対する資本移転（支払）", "（１）他の一般政府部門に対するもの", 0),
+    ("gross_fixed_capital_formation", "総固定資本形成", "２２．総固定資本形成", 0),
+    ("inventory_change", "在庫変動", "２４．在庫変動", 0),
+    ("land_purchase_net", "土地の購入（純）", "２５．土地の購入（純）", 0),
+    ("net_lending", "純貸出(+)／純借入(-)", "２６．純貸出(+)／純借入(-)", 0),
+    ("primary_balance", "（参考）プライマリーバランス", "(参考)プライマリーバランス", 0),
+    ("interest_received_pre_fisim", "（参考）受取利子（ＦＩＳＩＭ調整前）", "(参考)受取利子（ＦＩＳＩＭ調整前）", 0),
+    ("interest_paid_pre_fisim", "（参考）支払利子（ＦＩＳＩＭ調整前）", "(参考)支払利子（ＦＩＳＩＭ調整前）", 0),
+]
+GG_ACC_NOTE = ("フロー編 付表 6 一般政府の部門別勘定（**年度**・10 億円）。**合計列は 3 部門の単純和**＝一般政府内の移転は受取・支払の両側に同額が入る"
+               "（制度部門別勘定 cao.sna_sector.*.gg.fy の資本移転は相殺済み）。プライマリーバランス（参考）の式・一時的な大口の資本移転（原表の注）・"
+               "恒等式は list_datasets の sna_gg の analysis_notes。")
+GG_NOT_ESTIMATED_GUIDE = {
+    "why": "原表（付表 3）の注記『在庫と固定資産は合計のみを推計している』＝この項目は中央政府・地方政府・社会保障基金の別に推計・公表されていない。値は存在しない（按分・推計で埋めない）。",
+    "where": "一般政府の合計は cao.sna_gg_bs.<同じ measure>.total.a（＝cao.sna_sector_bs.<measure>.gg.a）。部門別にあるのは非生産資産（土地等）と金融資産・負債。",
+    "table": "国民経済計算年次推計 ストック編 付表 3 一般政府の部門別資産・負債残高",
+}
+
+
+def sna_gg_series() -> list[Series]:
+    """付表 3 一般政府の部門別資産・負債残高（暦年末）＋付表 6 一般政府の部門別勘定（年度）。部門別に推計されていない項目は guide。"""
+    out: list[Series] = []
+    for meas, ttl, rlabel, occ, by_sub in GG_BS_ROWS:
+        for sub, sname in GG_SUB.items():
+            acc = {"type": "esri_xlsx", "edition": SNA_EDITION, "file": "kakuhou/files/{Y}/tables/{Y}ss3_jp.xlsx",
+                   "sheet": "資産・負債残高", "row_label": rlabel, "header_row": 5, "sub_header_row": 6, "sub_header": sname,
+                   "block_head": "中央政府", "first_col": 2}
+            if occ:
+                acc["occurrence"] = occ
+            not_est = sub != "total" and not by_sub
+            if not_est:
+                acc["guide"] = GG_NOT_ESTIMATED_GUIDE
+            kl = "ストック編 付表3 一般政府の部門別資産・負債残高"
+            out.append(_s(series_id=f"cao.sna_gg_bs.{meas}.{sub}.a",
+                          title=f"国民経済計算（2020年基準・2008SNA）年次推計 一般政府の部門別 期末残高 {ttl}（{sname}・暦年末）",
+                          org="cao", org_name="内閣府", source_url=ESRI_TOP, sector="マクロ", unit="10億円", granularity="暦年", freq="a",
+                          dataset="sna_gg_bs", measure=meas, dims=sub, basis="2020年基準・2008SNA", edition=f"{SNA_EDITION}年度年次推計（確報）",
+                          stat_name="国民経済計算年次推計", table_id=f"{SNA_EDITION}ss3", table_title=kl,
+                          policy_tags=(TAG_FISCAL, TAG_MACRO), period_converter="esri_year_paren", first_period="1994",
+                          accessor=acc, status="guide" if not_est else "registered",
+                          citation_template=f"内閣府「国民経済計算年次推計」{kl}（{SNA_EDITION}年度確報・2020年基準・2008SNA・" + "{item}／{period}）取得 {retrieved_at}",
+                          notes=GG_BS_NOTE))
+    for meas, ttl, rlabel, occ in GG_ACC_ROWS:
+        for sub, sname in GG_SUB.items():
+            acc = {"type": "esri_xlsx", "edition": SNA_EDITION, "file": "kakuhou/files/{Y}/tables/{Y}s6_jp.xlsx",
+                   "sheet": "経常・資本取引", "row_label": rlabel, "header_row": 5, "sub_header_row": 6, "sub_header": sname,
+                   "block_head": "中央政府", "first_col": 2}
+            if occ:
+                acc["occurrence"] = occ
+            kl = "付表6 一般政府の部門別勘定"
+            out.append(_s(series_id=f"cao.sna_gg.{meas}.{sub}.fy",
+                          title=f"国民経済計算（2020年基準・2008SNA）年次推計 一般政府の部門別勘定 {ttl}（{sname}・年度）",
+                          org="cao", org_name="内閣府", source_url=ESRI_TOP, sector="マクロ", unit="10億円", granularity="年度", freq="fy",
+                          dataset="sna_gg", measure=meas, dims=sub, basis="2020年基準・2008SNA", edition=f"{SNA_EDITION}年度年次推計（確報）",
+                          stat_name="国民経済計算年次推計", table_id=f"{SNA_EDITION}s6", table_title=kl,
+                          policy_tags=(TAG_FISCAL, TAG_MACRO), period_converter="esri_year_paren_fy", first_period="FY1994",
+                          accessor=acc, status="registered",
+                          citation_template=f"内閣府「国民経済計算年次推計」{kl}（{SNA_EDITION}年度確報・2020年基準・2008SNA・" + "{item}／{period}）取得 {retrieved_at}",
+                          notes=GG_ACC_NOTE))
+    return out
+
+
+def fiscal_planned_series() -> list[Series]:
+    """第 12 弾 第 3〜6 便の対象（2026-10-02 登録）＝未収録だが取得元は特定済み。find_statistics で『未収録・取得元はここ』を返すための planned。
+    単位・表・コードは取込時に原表で確定する（ここでは決めない）。"""
+    note = "未収録（第 12 弾 第 {n} 便の計画＝stats/docs/データ拡充計画.md §4g）。取得元は source_url。lookup は found=false。単位・表は取込時に原表で確定する。{x}"
+    return [
+        planned("mof.zaimu_shorui.net_assets.national.fy", "国の財務書類（一般会計・特別会計）資産・負債差額（年度末）", "mof", "財務省", "財政", "（取込時に確定）",
+                "fy", "年度", "zaimu_shorui", "net_assets", (TAG_FISCAL,), {"type": "mof_zaimu_shorui"}, "国の財務書類",
+                "https://www.mof.go.jp/policy/budget/report/public_finance_fact_sheet/index.html", dims="national",
+                notes=note.format(n=3, x="貸借対照表・業務費用計算書・資産・負債差額増減計算書・区分別収支計算書。"
+                                         "SNA 一般政府との違いの軸は cao.sna_gg_bs の analysis_notes.vs_public_accounts。")),
+        planned("mof.zaimu_shorui.net_assets.consolidated.fy", "国の財務書類（連結＝独立行政法人等を含む）資産・負債差額（年度末）", "mof", "財務省", "財政", "（取込時に確定）",
+                "fy", "年度", "zaimu_shorui", "net_assets", (TAG_FISCAL,), {"type": "mof_zaimu_shorui"}, "国の財務書類（連結財務書類）",
+                "https://www.mof.go.jp/policy/budget/report/public_finance_fact_sheet/index.html", dims="consolidated",
+                notes=note.format(n=3, x="連結財務書類は Excel 版が公表されている（2026-10-02 確認）。")),
+        planned("soumu.tokitsu.net_assets.pref.fy", "統一的な基準による財務書類（都道府県・一般会計等）純資産（年度末）", "soumu", "総務省", "財政", "（取込時に確定）",
+                "fy", "年度", "tokitsu", "net_assets", (TAG_FISCAL, TAG_REGION), {"type": "soumu_tokitsu"}, "統一的な基準による財務書類",
+                "https://www.soumu.go.jp/iken/kokaikei/R05_chihou_zaimusyorui.html", dims="pref", region_level="pref",
+                notes=note.format(n=4, x="都道府県まで（市区町村は収録しない＝2026-10-02 判断）。")),
+        planned("mof.gbb.debt_total.q", "国債及び借入金並びに政府保証債務現在高（四半期末）", "mof", "財務省", "財政", "（取込時に確定）",
+                "q", "四半期", "gbb", "debt_total", (TAG_FISCAL,), {"type": "mof_gbb"}, "国債及び借入金並びに政府保証債務現在高",
+                "https://www.mof.go.jp/jgbs/reference/gbb/index.htm", notes=note.format(n=5, x="")),
+        planned("cao.infra_stock.net_capital_stock.total.fy", "社会資本ストック推計 純資本ストック（17 部門計・年度）", "cao", "内閣府", "財政", "（取込時に確定）",
+                "fy", "年度", "infra_stock", "net_capital_stock", (TAG_FISCAL, TAG_MACRO), {"type": "cao_infra_stock"}, "社会資本ストック推計",
+                "https://www5.cao.go.jp/keizai2/ioj/result/ioj_data.html", dims="total",
+                notes=note.format(n=6, x="17 部門・都道府県別・粗／純／生産的資本ストック。")),
+    ]
 
 
 # ---------------------------------------------------------------- 第 8 弾 第 2 便（2026-08-24）：日銀 資金循環統計 部門別（F-1）
@@ -2532,7 +2708,9 @@ def build() -> list[Series]:
     S += intl_series()
     S += sna_activity_series()   # 第 7 弾 段 C（SNA 経済活動別・付表 2/3）
     S += hakusho_sme_series()    # 第 7 弾 補遺（開廃業率・中小企業白書 PDF）
-    S += sna_sector_series()     # 第 8 弾 第 1 便（制度部門別勘定の残り・制度部門別 BS）
+    S += sna_sector_series()     # 第 8 弾 第 1 便（制度部門別勘定の残り・制度部門別 BS）＋第 12 弾 第 1 便（公的企業の BS・一般政府の税と補助金）
+    S += sna_gg_series()         # 第 12 弾 第 1 便（2026-10-02）＝一般政府の部門別（付表 3 BS・付表 6 勘定）
+    S += fiscal_planned_series() # 第 12 弾 第 3〜6 便の対象を planned で先に登録（未収録の明示・取得元 URL）
     S += boj_fof_sector_series() # 第 8 弾 第 2 便（資金循環 部門別・年度）
     S += sna_fixed_capital_stock_series() + roudou_emp_type_series() + shaho_series()  # 第 8 弾 第 2 便（F-4／F-6／F-7）
     return S

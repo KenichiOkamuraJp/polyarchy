@@ -106,7 +106,12 @@ _STAN_ORDER = {slug: i for i, (slug, *_r) in enumerate(STAN_ACTIVITY)}
 
 # 制度部門（sna_sector／sna_sector_bs の dims）
 SNA_SECTOR = [("nfc", "非金融法人企業"), ("fin", "金融機関"), ("gg", "一般政府"), ("hh", "家計（個人企業を含む）"), ("npish", "対家計民間非営利団体"),
-              ("row", "海外"), ("total", "一国計"), ("nfc_private", "非金融法人企業（民間）"), ("nfc_public", "非金融法人企業（公的）")]
+              ("row", "海外"), ("total", "一国計"), ("nfc_private", "非金融法人企業（民間）"), ("nfc_public", "非金融法人企業（公的）"),
+              ("fin_public", "金融機関（公的）")]
+# 一般政府の部門（sna_gg／sna_gg_bs の dims・第 12 弾 第 1 便）
+GG_SUBSECTOR = [("cg", "中央政府"), ("lg", "地方政府"), ("ssf", "社会保障基金"), ("total", "一般政府 合計（3 部門の単純和）")]
+_GG_LABEL = dict(GG_SUBSECTOR)
+_GG_ORDER = {s: i for i, (s, _n) in enumerate(GG_SUBSECTOR)}
 _SECTOR_LABEL = dict(SNA_SECTOR)
 _SECTOR_ORDER = {s: i for i, (s, _n) in enumerate(SNA_SECTOR)}
 
@@ -197,6 +202,8 @@ def dim_label(position: str, slug: str, dataset: str = "") -> str:
         return _STAN_LABEL.get(slug, slug)
     if dataset in ("sna_sector", "sna_sector_bs", "fof", "sna_fcs"):
         return _SECTOR_LABEL.get(slug, slug)
+    if dataset in ("sna_gg", "sna_gg_bs"):
+        return _GG_LABEL.get(slug, slug)
     if dataset == "maikin":
         return (_MAIKIN_EMP if position == "industry" else _MAIKIN_SIZE).get(slug, slug)
     return _hojin(position, slug)
@@ -213,6 +220,8 @@ def dim_order(position: str, dataset: str = "") -> dict[str, int]:
         return _STAN_ORDER if position == "industry" else {}
     if dataset in ("sna_sector", "sna_sector_bs", "fof", "sna_fcs"):
         return _SECTOR_ORDER if position == "industry" else {}
+    if dataset in ("sna_gg", "sna_gg_bs"):
+        return _GG_ORDER if position == "industry" else {}
     if dataset == "maikin":
         return _MAIKIN_EMP_ORDER if position == "industry" else _MAIKIN_SIZE_ORDER
     return INDUSTRY_ORDER if position == "industry" else SIZE_ORDER

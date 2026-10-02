@@ -283,8 +283,13 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
             return nf("derived_see_components", hint="派生値は計算しません。構成系列を lookup してください。",
                       components=list(s.components), definition=s.notes)
         if s.status == "guide":
-            return nf("guide_only", hint="この系列は値を保持しません（取得元の再配布条件により発見層のみ）。guide に従って原典を読んでください。"
-                                        "stats は読み取った値を保証しません＝原典で確認すること。",
+            # guide.why があるもの＝原典がこの組合せを推計・公表していない（例 付表 3 の部門別の固定資産）。原典を読んでも値は無い＝読み方ではなく理由を返す。
+            # reason は既存の not_published（範囲内だが公表値がない）＝guide_only（再配布条件）とは別（ツール説明は変えない）
+            not_in_source = bool(s.accessor.get("guide", {}).get("why"))
+            return nf("not_published" if not_in_source else "guide_only", hint=("この組合せは原典で推計・公表されていません（guide.why）。値は存在しない＝近い項目・按分で埋めない。"
+                                          "引ける項目は guide.where。") if not_in_source else
+                                         ("この系列は値を保持しません（取得元の再配布条件により発見層のみ）。guide に従って原典を読んでください。"
+                                          "stats は読み取った値を保証しません＝原典で確認すること。"),
                       guide={**s.accessor.get("guide", {}), "unit": s.unit, "period_format": hint_for(s.freq),
                              "source_url": s.source_url, "notes": s.notes, "license": s.license})
         is_range = ".." in period
@@ -306,7 +311,10 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                 hint = (f"この系列の地域は市の JIS 5 桁（都道府県コード {region} では引けない）。同じ都道府県の候補: {cands}" if cands else hint)
             return nf("region_not_available", hint=hint)
         if not store.has_data(series_id):
-            return nf("no_values", hint=f"取込未実装（status={s.status}）。取得元: {s.accessor.get('type')}", status=s.status)
+            # 第 12 弾（2026-10-02）：未収録の明示＝取得元の URL を返す（accessor の型名では利用者が原典に辿れない）
+            return nf("no_values", hint=(f"未収録（status={s.status}＝取得元は特定済み・値は持たない・取込時期は未定）。取得元: {s.source_url}"
+                                         if s.status == "planned" else f"取込未実装（status={s.status}）。取得元: {s.source_url}"),
+                      status=s.status)
         if is_range:
             ps = store.periods(series_id, region)
             if not ps:

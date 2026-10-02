@@ -141,6 +141,60 @@ def main() -> int:
                if abs((_v(f"cao.sna_sector_bs.assets_total.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.nonfinancial_assets.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.financial_assets.{slug}.a", y) or 0)) > 0.6
                or abs((_v(f"cao.sna_sector_bs.assets_total.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.liabilities.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.net_worth.{slug}.a", y) or 0)) > 0.6]
         chk(not bad, f"F-3 BS の恒等式（非金融＋金融＝期末資産＝負債＋正味資産）が 5 部門×2 年で成立{bad[:4]}")
+    # 第 12 弾 第 1 便（2026-10-02）：公的企業の BS・一般政府の部門別（付表 3・付表 6）
+    if _vs.has_data("cao.sna_sector_bs.net_worth.nfc_public.a"):
+        bad = [f"{slug}/{y}" for slug in ("nfc_public", "fin_public") for y in ("2024", "2010", "1994")
+               if abs((_v(f"cao.sna_sector_bs.assets_total.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.nonfinancial_assets.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.financial_assets.{slug}.a", y) or 0)) > 0.6
+               or abs((_v(f"cao.sna_sector_bs.assets_total.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.liabilities.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.net_worth.{slug}.a", y) or 0)) > 0.6]
+        chk(not bad, f"第12弾 公的企業 2 部門の BS 恒等式（非金融＋金融＝期末資産＝負債＋正味資産）{bad[:4]}")
+        chk(all(abs((_v("cao.sna_sector_bs.fixed_assets.nfc_public.a", y) or -1) - (_v("cao.sna_fcs.total.nfc_public.a", y) or -2)) < 0.05 for y in ("2024", "1994")),
+            "第12弾 公的非金融企業の固定資産（si13）＝固定資本ストックマトリックスの公的非金融法人（別表と一致）")
+    if _vs.has_data("cao.sna_gg_bs.financial_assets.total.a"):
+        from stats.ingest.seed_registry import GG_ACC_ROWS, GG_BS_ROWS
+        subs = ("cg", "lg", "ssf")
+        bad = []
+        for meas, _t, _l, _o, by_sub in GG_BS_ROWS:
+            for y in ("2024", "2010", "1995"):
+                tot = _v(f"cao.sna_gg_bs.{meas}.total.a", y)
+                if not by_sub or tot is None:
+                    continue
+                parts = [_v(f"cao.sna_gg_bs.{meas}.{s2}.a", y) for s2 in subs]
+                if None in parts or abs(tot - sum(parts)) > 0.15:
+                    bad.append(f"{meas}/{y}")
+        chk(not bad, f"第12弾 付表 3：合計＝中央＋地方＋社会保障基金（単純和・部門別がある項目×3 年）{bad[:4]}")
+        bad = [f"{m}/{y}" for m, m2 in (("nonfinancial_assets", "nonfinancial_assets"), ("fixed_assets", "fixed_assets"),
+                                         ("financial_assets", "financial_assets"), ("currency_deposits_assets", "currency_deposits"),
+                                         ("assets_total", "assets_total"), ("liabilities", "liabilities"), ("borrowing", "borrowing"),
+                                         ("debt_securities_liabilities", "debt_securities_liabilities"), ("net_worth", "net_worth"))
+               for y in ("2024", "2010", "1994")
+               if _v(f"cao.sna_gg_bs.{m}.total.a", y) is None or abs(_v(f"cao.sna_gg_bs.{m}.total.a", y) - (_v(f"cao.sna_sector_bs.{m2}.gg.a", y) or 0)) > 0.05]
+        chk(not bad, f"第12弾 付表 3 の合計＝制度部門別 BS の一般政府（si3）{bad[:4]}")
+        g = [s2 for s2 in reg.series.values() if s2.dataset == "sna_gg_bs" and s2.status == "guide"]
+        chk(len(g) == 18 and all(s2.dims in subs and s2.accessor.get("guide", {}).get("why") for s2 in g),
+            f"第12弾 付表 3：部門別に推計されていない 6 項目×3 部門は guide（原典で非推計）{len(g)}")
+        bad = []
+        for meas, *_r in GG_ACC_ROWS:
+            for y in ("FY2024", "FY2010", "FY1994"):
+                tot = _v(f"cao.sna_gg.{meas}.total.fy", y)
+                parts = [_v(f"cao.sna_gg.{meas}.{s2}.fy", y) for s2 in subs]
+                if tot is None or None in parts or abs(tot - sum(parts)) > 0.15:
+                    bad.append(f"{meas}/{y}")
+        chk(not bad, f"第12弾 付表 6：合計＝中央＋地方＋社会保障基金（全項目×3 年）{bad[:4]}")
+        bad = [f"{m}/{y}" for m in ("taxes_on_production_imports_received", "subsidies_paid", "property_income_received", "property_income_paid",
+                                    "current_taxes_received", "social_benefits_paid", "disposable_income_gross", "final_consumption", "saving_net",
+                                    "gross_fixed_capital_formation", "land_purchase_net")
+               for y in ("FY2024", "FY2010", "FY1994")
+               if abs((_v(f"cao.sna_gg.{m}.total.fy", y) or 0) - (_v(f"cao.sna_sector.{m}.gg.fy", y) or 1e9)) > 0.05]
+        bad += [f"capital_transfers_{k}/{y}" for k in ("received", "paid") for y in ("FY2024", "FY2010", "FY1994")
+                if abs((_v(f"cao.sna_gg.capital_transfers_{k}.total.fy", y) or 0) - (_v(f"cao.sna_gg.intra_gg_capital_transfers_{k}.total.fy", y) or 0)
+                       - (_v(f"cao.sna_sector.capital_transfers_{k}.gg.fy", y) or 1e9)) > 0.15]
+        bad += [f"net_lending/{y}" for y in ("FY2024", "FY2010", "FY1994")
+                if abs((_v("cao.sna_gg.net_lending.total.fy", y) or 0) - (_v("cao.sna2020.net_lending.gg.fy", y) or 1e9)) > 0.05]
+        chk(not bad, f"第12弾 付表 6 の合計＝制度部門別勘定の一般政府（資本移転は一般政府内を相殺した値）・純貸出＝付表 18{bad[:4]}")
+        bad = [f"{s2}/{y}" for s2 in subs + ("total",) for y in ("FY2024", "FY2010", "FY1994")
+               if abs(sum((_v(f"cao.sna_gg.{m}.{s2}.fy", y) or 0) * k for m, k in (("net_lending", 1), ("interest_paid_pre_fisim", 1), ("interest_received_pre_fisim", -1)))
+                      - (_v(f"cao.sna_gg.primary_balance.{s2}.fy", y) or 1e9)) > 0.15]
+        chk(not bad, f"第12弾 付表 6：PB＝純貸出＋支払利子（FISIM 調整前）−受取利子（FISIM 調整前）＝原表の注 4{bad[:4]}")
     # 第 8 弾 第 2 便（2026-08-24）：資金循環／固定資本ストック／雇用形態／社会保障給付費の恒等式
     if _vs.has_data("boj.fof.stock.assets_total.hh.fy"):
         bad = []
