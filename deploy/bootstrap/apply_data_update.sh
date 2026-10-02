@@ -59,7 +59,7 @@ fi
 SERVING_JSON="$( [ -f "$MARK" ] && python3 -c "
 import json; m=json.load(open('$MARK')); s=m.get('serving') or {k:m.get(k) for k in ('released_at','code_version')}
 print(json.dumps(s, ensure_ascii=False))" || echo '{}')"
-log "新リリース検知: $NEW_AT（code $NEW_VER・適用中: ${CUR_AT:-なし}$( [[ "$FORCE" == 1 ]] && echo "・--force" )）＝適用開始"
+log "新リリース検知: ${NEW_AT}（code ${NEW_VER}・適用中: ${CUR_AT:-なし}$( [[ "$FORCE" == 1 ]] && echo "・--force" )）＝適用開始"
 
 # ── 共通部品 ────────────────────────────────────────────────────────────────
 command -v rsync >/dev/null || { export DEBIAN_FRONTEND=noninteractive; apt-get install -y -q rsync >/dev/null; }
@@ -68,7 +68,7 @@ REC_EXCL=(--exclude=pdfs/ --exclude=query_log/ --exclude=cache/ --exclude=qdrant
 STATS_EXCL=(--exclude=query_log/ --exclude=cache/ --exclude=values_archive/)
 COMPANIES_EXCL=(--exclude=query_log/ --exclude=cache/ --exclude=verify/ --exclude=logs/)
 COMPANIES_ON=0; [[ "${ENABLE_COMPANIES_APP:-false}" == "true" ]] && COMPANIES_ON=1  # companies は opt-in（deploy.env）
-snapshot_data() { # 現行データ → $RB_DIR（--delete＝前回退避の残骸を残さない）。戻り値＝rsync の合否
+snapshot_data() { # 現行データ → ${RB_DIR}（--delete＝前回退避の残骸を残さない）。戻り値＝rsync の合否
   rsync -a --delete "${REC_EXCL[@]}"   "$APP_DIR/data/"        "$RB_DIR/recommendations_data/" || return 1
   if [[ -d "$REPO_DIR/stats/data" ]]; then
     rsync -a --delete "${STATS_EXCL[@]}" "$REPO_DIR/stats/data/" "$RB_DIR/stats_data/" || return 1
@@ -89,7 +89,7 @@ restore_data() { # $RB_DIR → 現行（除外パターンは受け側でも保�
   fi
   chown -R polyarchy:polyarchy "$APP_DIR/data" "$REPO_DIR/stats/data"
 }
-extract_code() { # $1=tar → $INSTALL_DIR（tar 内トップは polyarchy/＝REPO_DIR）。data/ は tar に含まれない（upload_to_s3.sh）
+extract_code() { # $1=tar → ${INSTALL_DIR}（tar 内トップは polyarchy/＝REPO_DIR）。data/ は tar に含まれない（upload_to_s3.sh）
   tar -xzf "$1" -C "$INSTALL_DIR" && chown -R polyarchy:polyarchy "$REPO_DIR"
 }
 pip_resolve() { # 切り戻し時の依存再解決（bootstrap ③ と同じ＝ロックから --require-hashes・本体は --no-deps・出力は要点のみ）
@@ -168,7 +168,7 @@ PYEOF
 }
 
 # ── ① 退避（1 回目＝稼働中・大物の転送を先に済ませる）────────────────────────
-log "① 退避（rsync → $RB_DIR）※この間サービスは稼働中。②以降の停止が 3 分を超えると health アラームが ALARM→OK と 1 往復する（想定内・RUNBOOK §5）"
+log "① 退避（rsync → ${RB_DIR}）※この間サービスは稼働中。②以降の停止が 3 分を超えると health アラームが ALARM→OK と 1 往復する（想定内・RUNBOOK §5）"
 fail_early() { warn "①退避段で失敗（$1）＝サービスは無停止のまま中止。原因（ディスク・S3 権限）を直せば次の 15 分で再試行"; metric 0; exit 1; }
 snapshot_data || fail_early "rsync"
 if [[ -f "$REL_DIR/current.tar.gz" ]]; then cp -f "$REL_DIR/current.tar.gz" "$REL_DIR/prev.tar.gz" || fail_early "prev tar"; fi
@@ -178,7 +178,7 @@ aws s3 cp "s3://$S3_BUCKET/$CODE_S3_KEY" "$REL_DIR/next.tar.gz" --region "$AWS_R
 apply_new() { # 各段は失敗したら即 return 1（set +e の下で呼ぶため明示）
   svc_stop || return 1
   snapshot_data || return 1   # 2 回目＝停止後の差分（整合コピーの確定）
-  log "② コード反映（tar 再展開 $NEW_VER）→ qdrant ミラー同期 → bootstrap"
+  log "② コード反映（tar 再展開 ${NEW_VER}）→ qdrant ミラー同期 → bootstrap"
   extract_code "$REL_DIR/next.tar.gz" || { warn "tar 再展開に失敗"; return 1; }
   # ★Qdrant ストレージは新旧セグメント混在を許せない＝ミラー同期（--delete）を apply が自前で行う
   #   （bootstrap ⑥ の --delete なし同期は捕捉ログ温存のための仕様＝qdrant には適用不可。2026-09-03 実測の恒久対策）
@@ -199,7 +199,7 @@ if [[ "$APPLY_RC" == 0 ]]; then
   write_mark APPLIED PASS ""
   metric 1
   # 完了の行は更新チェックより先に出す＝更新チェック（上流への取得を含み、終わるまで戻らない）を待たずに CW Logs で適用の完了を確定できる
-  log "✅ APPLIED: $NEW_AT（code $NEW_VER・smoke PASS）→ 更新チェックとダッシュボード更新を開始"
+  log "✅ APPLIED: ${NEW_AT}（code ${NEW_VER}・smoke PASS）→ 更新チェックとダッシュボード更新を開始"
   # ダッシュボードを先に再生成して S3 へ（polyarchy ユーザで＝ファイル所有を崩さない）＝版一致を適用直後に確かめられる。
   # 更新チェック（上流への取得で長くかかる）の後ろに置くと、S3 のダッシュボードが次の毎時 05 分まで旧版のままだった（2026-09-26・27 staging）
   systemctl start polyarchy-dashboard.service && log "ダッシュボード更新済（S3 ops/dashboard/）" \
@@ -210,7 +210,7 @@ if [[ "$APPLY_RC" == 0 ]]; then
 fi
 
 # ── ④ 自動切り戻し（smoke FAIL／qdrant 起動不能／反映途中の失敗）────────────
-warn "適用失敗＝自動切り戻し開始（戻し先: $SERVING_JSON）"
+warn "適用失敗＝自動切り戻し開始（戻し先: ${SERVING_JSON}）"
 set +e
 svc_stop
 restore_data
@@ -234,6 +234,6 @@ set -e
 write_mark ROLLED_BACK FAILED "$RB_SMOKE"
 metric 0
 /usr/local/bin/polyarchy-dashboard || true
-warn "⏪ 切り戻し完了: リリース $NEW_AT は不採用（旧版でサービング中・切り戻し後 smoke $RB_SMOKE）。"
+warn "⏪ 切り戻し完了: リリース $NEW_AT は不採用（旧版でサービング中・切り戻し後 smoke ${RB_SMOKE}）。"
 warn "   次＝ローカルで原因を直して再 release（マニフェストが新しくなれば自動で再適用）。RUNBOOK §5「切り戻し後」"
 exit 1   # unit failure として journal に残す（メトリクス dataapply=0 → アラーム → メール）

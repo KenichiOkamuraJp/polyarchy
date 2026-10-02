@@ -67,7 +67,7 @@ echo "★catalog.csv の未コミット差分（レビューしてコミット�
 git -C "$REPO_DIR" diff --stat -- recommendations/data/catalog.csv || true
 
 if [[ "$NO_RELEASE" == "--no-release" ]]; then
-  echo "⏸ --no-release 指定＝ここで停止（配布するときは bash deploy/scripts/release.sh $ENV_NAME）"
+  echo "⏸ --no-release 指定＝ここで停止（配布するときは bash deploy/scripts/release.sh ${ENV_NAME}）"
   exit 0
 fi
 

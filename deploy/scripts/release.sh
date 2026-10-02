@@ -28,10 +28,10 @@ REQUIRE_MRR="${REQUIRE_MRR:-0.713}"
 GATE_LOG="$(mktemp -t polyarchy-release-gates.XXXXXX)"
 cd "$REPO_DIR"
 
-fail() { echo "❌ リリース中止: $*（ログ: $GATE_LOG）" >&2; exit 1; }
+fail() { echo "❌ リリース中止: $*（ログ: ${GATE_LOG}）" >&2; exit 1; }
 say()  { echo "── $*"; }
 
-say "① 品質ゲート（qdrant-dev 起動が前提・全出力→$GATE_LOG）"
+say "① 品質ゲート（qdrant-dev 起動が前提・全出力→${GATE_LOG}）"
 curl -fsS -m 3 http://localhost:6333/collections >/dev/null || fail "qdrant-dev が起動していない（docker start qdrant-dev）"
 
 say "  [1/9] retrieval アンカー（--eval-set both）"
@@ -113,4 +113,4 @@ json.dump({
 PYEOF
 aws s3 cp "$MANIFEST" "s3://$BUCKET_NAME/release/data.json" --profile "$AWS_PROFILE" --region "$AWS_REGION" \
   --content-type "application/json; charset=utf-8"
-echo "✅ リリース完了: release/data.json（$GITV・hit@5 ${HIT5}%）＝箱が 15 分以内に自動適用 → ダッシュボードで版一致を確認"
+echo "✅ リリース完了: release/data.json（${GITV}・hit@5 ${HIT5}%）＝箱が 15 分以内に自動適用 → ダッシュボードで版一致を確認"

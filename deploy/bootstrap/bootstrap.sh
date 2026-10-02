@@ -91,7 +91,7 @@ fi
 PIP_EXTRAS="${PIP_EXTRAS:-recommendations,stats}"
 LOCK_FILE="$REPO_DIR/deploy/requirements/lock-${PIP_EXTRAS//,/-}.txt"
 if [[ ! -f "$LOCK_FILE" ]]; then
-  echo "[bootstrap] ✗ ロックファイルが無い: $LOCK_FILE（PIP_EXTRAS=${PIP_EXTRAS} に対応するロックを RUNBOOK §7 の手順で生成して tar に含めること）" >&2
+  echo "[bootstrap] ✗ ロックファイルが無い: ${LOCK_FILE}（PIP_EXTRAS=${PIP_EXTRAS} に対応するロックを RUNBOOK §7 の手順で生成して tar に含めること）" >&2
   exit 1
 fi
 echo "[bootstrap] ③ 依存インストール（extras=${PIP_EXTRAS}・ロック $(basename "$LOCK_FILE")・--require-hashes）"

@@ -16,7 +16,7 @@ echo "[update-check] ① stats freshness"
 # freshness の終了コード＝0 変化なし／1 **更新あり**（正常）／2 取得失敗。1 を失敗扱いしない（2026-09-03 修正）。
 set +e; "$PY" -m stats.ops.freshness --json > stats/data/cache/freshness_last_run.json; RC=$?; set -e
 case "$RC" in 0) echo "[update-check] freshness: 変化なし";; 1) echo "[update-check] freshness: 更新あり（ダッシュボード③参照）";;
-  *) echo "[update-check] ⚠ freshness 取得失敗 rc=$RC（best-effort・続行）" >&2;; esac
+  *) echo "[update-check] ⚠ freshness 取得失敗 rc=${RC}（best-effort・続行）" >&2;; esac
 echo "[update-check] ② 提言の新着チェック"
 "$PY" -m recommendations.ingest.check_new \
   || echo "[update-check] ⚠ check_new 失敗（best-effort・続行）" >&2

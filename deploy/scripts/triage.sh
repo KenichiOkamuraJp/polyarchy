@@ -36,7 +36,7 @@ if [[ "$LOCAL" == 0 ]]; then
   BUCKET="${BUCKET:-$(cd "$SCRIPT_DIR/../terraform" && AWS_PROFILE="$AWS_PROFILE" terraform output -raw s3_bucket 2>/dev/null || true)}"
   if [[ -n "$BUCKET" ]]; then
     S3_ARGS=(--s3 --bucket "$BUCKET" --profile "$AWS_PROFILE")
-    echo "── ① 燃料＝S3 $BUCKET（fuelsync バックアップ）＋ローカル捕捉分"
+    echo "── ① 燃料＝S3 ${BUCKET}（fuelsync バックアップ）＋ローカル捕捉分"
   else
     echo "── ① ⚠ S3 バケット名を terraform output から取得できない＝ローカル捕捉分のみ" >&2
   fi
@@ -51,7 +51,7 @@ REC_ARGS=(${S3_ARGS[@]+"${S3_ARGS[@]}"}); [[ "$RECHECK" == 1 ]] && REC_ARGS+=(--
 # ${arr[@]+"${arr[@]}"}＝空配列でも set -u で落ちない書き方（macOS の bash 3.2 対策）
 python -m recommendations.ops.quality_candidates ${REC_ARGS[@]+"${REC_ARGS[@]}"} --out "$OUT/recommendations_candidates.jsonl" >/dev/null
 
-echo "── ③ 要約（草稿＝$OUT・git 外）"
+echo "── ③ 要約（草稿＝${OUT}・git 外）"
 python3 - "$OUT" <<'PY'
 import json, sys
 from collections import Counter

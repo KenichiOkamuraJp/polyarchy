@@ -344,6 +344,19 @@ def test_box_cache_not_shipped():
     assert down and all('--exclude "cache/*"' in c for c in down), down
 
 
+def test_shell_var_not_followed_by_multibyte():
+    """シェルの変数展開の直後に全角の文字を置かない＝${VAR} と波括弧で囲む（2026-10-02 staging＝macOS の /bin/bash 3.2 は
+    UTF-8 のロケールで全角の先頭バイトを変数名の一部として読み、set -u の release.sh が「GATE_LOG?: unbound variable」で止まった）。"""
+    import re
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    files = subprocess.run(["git", "ls-files", "*.sh"], cwd=root, capture_output=True, text=True, check=True).stdout.split()
+    pat = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]")
+    bad = [f"{f}:{i}" for f in files for i, ln in enumerate((root / f).read_text(encoding="utf-8").splitlines(), 1) if pat.search(ln)]
+    assert files and not bad, bad
+
+
 if __name__ == "__main__":
     import sys
 
