@@ -48,6 +48,9 @@ work_history/
 stats/data/raw/
 stats/data/cache/
 stats/data/values/
+# 審議会議事録DB の原文（PDF・HTML）と抽出の中間物＝S3 が原本
+deliberations/data/raw/
+deliberations/data/cache/
 models/
 *.tar.gz
 *.zip
