@@ -4,11 +4,13 @@
 #
 #   使い方: bash deploy/scripts/update.sh <staging|prod> [--no-release]
 #
-# 工程（新着検出 → 新着のある団体だけ収集 → 追い判定 → 増分取込 → release.sh）:
+# 工程（新着検出 → 新着のある団体だけ収集 → 増分取込 → 追い判定 → release.sh）:
 #   ① check_new（読み取り専用）＝新着 0 なら何もせず終了
 #   ② collect --skip-existing（新着のある団体のみ。keidanren は今年＋昨年を対象）
-#   ③ policy_tagger（分野タグ・文書性格の追い判定＝Anthropic API を使用。recommendations/.env に鍵）
-#   ④ qdrant_ingest ingest（doc 単位増分・冪等。ローカル qdrant-dev 起動が前提）
+#   ③ qdrant_ingest ingest（doc 単位増分・冪等。ローカル qdrant-dev 起動が前提）
+#   ④ policy_tagger（分野タグ・文書性格の追い判定＝Anthropic API を使用。recommendations/.env に鍵）
+#      ★取込の後に回す＝判定は本文を Qdrant から読む（取込の前だと新規文書は題名だけで判定される・
+#      2026-10-02 に判明）。未判定の文書は分野タグなしで取り込まれ、判定が catalog と payload の両方に書く
 #   ⑤ release.sh <env>（ゲート 9 本〔companies 有効時は 13 本〕全 PASS のときだけ配布＝FAIL なら箱には何も起きない）
 #
 # 安全設計＝失敗の最悪ケースは「リリースが起きない」（fail-closed）。--no-release で⑤の手前まで。
@@ -56,12 +58,12 @@ for org in $NEW_ORGS; do
   fi
 done
 
-say "③ 分野タグ・文書性格の追い判定（対象確認 → 本実行）"
-python -m recommendations.ingest.policy_tagger --dry-run
-python -m recommendations.ingest.policy_tagger
-
-say "④ 増分取込（doc 単位・冪等）"
+say "③ 増分取込（doc 単位・冪等）"
 COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.qdrant_ingest ingest
+
+say "④ 分野タグ・文書性格の追い判定（本文が索引に入った後＝対象確認 → 本実行）"
+COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.policy_tagger --dry-run
+COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.policy_tagger
 
 echo "★catalog.csv の未コミット差分（レビューしてコミットすること）:"
 git -C "$REPO_DIR" diff --stat -- recommendations/data/catalog.csv || true

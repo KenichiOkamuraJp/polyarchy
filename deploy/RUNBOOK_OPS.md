@@ -230,11 +230,12 @@ bash deploy/scripts/update.sh staging      # 新着検出→収集→追い判�
 ```bash
 # ①収集：5 団体アダプタで PDF 取得＋catalog.csv 登録（org= keidanren|doyukai|nissho|rengo|gov）
 python -m recommendations.ingest.collect <org> --skip-existing   # gov は --source で審議会を指定
-# ②分野タグ・文書性格の追い判定（新規行だけ判定・--dry-run で対象確認から）
+# ②取込（v7/Qdrant 本線・doc 単位増分・冪等。ローカル qdrant-dev を起動しておく）
+COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.qdrant_ingest ingest
+# ③分野タグ・文書性格の追い判定（新規行だけ判定・--dry-run で対象確認から）
+#   ★取込の後＝判定は本文を Qdrant から読む（取込の前だと新規文書は題名だけで判定される）。判定は catalog と payload の両方に書く
 python -m recommendations.ingest.policy_tagger --dry-run
 python -m recommendations.ingest.policy_tagger
-# ③取込（v7/Qdrant 本線・doc 単位増分・冪等。ローカル qdrant-dev を起動しておく）
-COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.qdrant_ingest ingest
 # ④⑤ ゲート→配布→マニフェスト＝release.sh に一本化（2026-09-03。手順を飛ばす余地を作らない）
 bash deploy/scripts/release.sh <staging|prod>
 ```
