@@ -4,10 +4,11 @@ Phase 7.5：比較・横断型クエリのマルチクエリ分解（団体別�
 比較型（「AとBはそれぞれ〜か」）は単一クエリだと融合プールが片方の団体に占有され、
 もう片方の正解文書がプール外や深部に沈む（§20.4 の comparative MRR 0.483 の主因）。
 クエリ中の団体言及を検出し、団体ごとに org フィルタ付きで検索して候補を均等に合流する
-（実行部は recommendations/core/hybrid.py の HybridRetriever）。ルールベース検出で LLM 不要＝
+（実行部は recommendations/core/hybrid.py の HybridRetriever・合流は polyarchy_retrieval.fusion.interleave_unique）。ルールベース検出で LLM 不要＝
 ローカル/無料/プライベート要件を維持する。
 """
 
+from polyarchy_retrieval.fusion import interleave_unique  # noqa: F401（候補の交互合流＝共有ライブラリ・再公開）
 from recommendations.core.orgs import ORG_MENTIONS  # 団体コード → クエリ中の言及語（1 表＝recommendations.core.orgs）
 
 # 検出は全団体の言及語を長い順にマスクしながら行うので、
@@ -36,21 +37,3 @@ def detect_comparative_orgs(query: str, max_orgs: int = 3) -> tuple[str, ...]:
     if len(first_pos) < 2:
         return ()
     return tuple(sorted(first_pos, key=first_pos.get)[:max_orgs])
-
-
-def interleave_unique(rankings: list[list[str]], limit: int) -> list[str]:
-    """複数の順位リストを先頭から交互に取り（重複除去）、limit 件の合流プールを作る。
-
-    RRF と違い「各リストの上位が必ず入る」ことを保証する＝比較型で両団体の候補枠を確保する。
-    """
-    out: list[str] = []
-    seen: set[str] = set()
-    depth = max((len(r) for r in rankings), default=0)
-    for i in range(depth):
-        for r in rankings:
-            if i < len(r) and r[i] not in seen:
-                seen.add(r[i])
-                out.append(r[i])
-                if len(out) >= limit:
-                    return out
-    return out

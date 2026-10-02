@@ -1,68 +1,22 @@
 """
-Phase 5：ハイブリッド検索（BM25 語彙検索 ＋ ベクトル）と RRF 融合。
+Phase 5：ハイブリッド検索（BM25 語彙検索 ＋ ベクトル）と RRF 融合＝政策主張DB の retriever。
 
 ベクトル（ruri）は意味的に近いチャンクを拾うが、**数値・固有名詞・制度名**の完全一致に
 弱いことがある（政府/日商の設問に多い）。BM25 は逆に語彙一致に強い。両者の順位を
 RRF（Reciprocal Rank Fusion）で融合し、リランカーに渡す候補プールの recall を上げる。
 
-トークナイズは fugashi（MeCab, ローカル/無料）＝リランカーと同じ日本語形態素。
+コーパスに依存しない部品（分かち書き・BM25・RRF・1 フィルタ条件分の融合）は共有ライブラリ
+`polyarchy_retrieval` にある（2026-10-03 に切り出し＝審議会議事録DB_開発計画 §2.3）。本モジュールに
+残すのは政策主張DB の固有部分＝SearchFilter の翻訳・比較型の団体別分解（Phase 7.5）・llama_index の包装。
 バックエンドは Qdrant のみ（バッチ2 段4〔2026-08-28〕で Chroma 経路を全廃）：
 ベクトルは dense 検索・BM25 は sparse サイドカー（`core/qdrant_bm25.py`）を push-down で使い、
 サイドカーの無い一時コレクション（層ゲート自己検証など）だけ in-memory BM25 に
 フォールバックする。ローカル完結要件（ローカル/無料/外部送信なし）は不変。
 """
-from rank_bm25 import BM25Okapi
-
-_TAGGER = None
-
-
-def _tagger():
-    """fugashi Tagger を遅延生成（プロセス内で1回だけロード）。"""
-    global _TAGGER
-    if _TAGGER is None:
-        import fugashi
-        _TAGGER = fugashi.Tagger()
-    return _TAGGER
-
-
-def tokenize_ja(text: str) -> list[str]:
-    """日本語を形態素の表層形に分割（空白のみのトークンは除外）。BM25 用。"""
-    return [w.surface for w in _tagger()(text) if w.surface.strip()]
-
-
-class BM25Index:
-    """全チャンク本文に対する in-memory BM25 索引。search(query, k) で上位 chunk id を返す。
-
-    本線は Qdrant sparse サイドカー（qdrant_bm25）＝本索引は語彙サイドカーの無い
-    一時コレクション（層ゲート自己検証など）用のフォールバック。
-    """
-
-    def __init__(self, ids: list[str], texts: list[str], file_names: list[str]):
-        self.ids = ids
-        self.texts = texts
-        self.file_names = file_names
-        # id → file_name（融合結果から出典名を引くため）
-        self.file_of = dict(zip(ids, file_names))
-        self._bm25 = BM25Okapi([tokenize_ja(t) for t in texts])
-
-    def search(self, query: str, top_k: int) -> list[str]:
-        """BM25 スコア上位 top_k の chunk id を降順で返す。"""
-        scores = self._bm25.get_scores(tokenize_ja(query))
-        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
-        return [self.ids[i] for i in order[:top_k]]
-
-
-def rrf_fuse(rankings: list[list[str]], k: int = 60) -> list[str]:
-    """複数の順位リスト（各々 best-first の id 列）を RRF で融合し、id を降順で返す。
-
-    RRF スコア = Σ 1/(k + rank)。k はスコア平滑化の定数（60 が慣例）。
-    順位のみ使うため、ベクトル距離と BM25 スコアのスケール差を気にせず融合できる。
-    """
-    scores: dict[str, float] = {}
-    for ranking in rankings:
-        for rank, _id in enumerate(ranking, 1):
-            scores[_id] = scores.get(_id, 0.0) + 1.0 / (k + rank)
-    return sorted(scores, key=lambda i: scores[i], reverse=True)
+from polyarchy_retrieval.bm25 import BM25Index
+from polyarchy_retrieval.fusion import rrf_fuse  # noqa: F401（再公開＝既存の import 先を保つ）
+from polyarchy_retrieval.hybrid import HybridSearcher
+from polyarchy_retrieval.tokenizer import tokenize_ja  # noqa: F401（再公開）
 
 
 # ---------------------------------------------------------------------------
@@ -86,9 +40,9 @@ def build_hybrid_retriever(collection, embed_model, kv: int, kb: int, pool: int,
     from llama_index.core.retrievers import BaseRetriever
     from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
 
-    from recommendations.core.config import FILTER_WIDEN
+    from recommendations.core.config import FILTER_WIDEN, QDRANT_EXACT
     from recommendations.core.filters import default_filter
-    from recommendations.core.qdrant_store import QdrantCorpusStore
+    from recommendations.core.qdrant_store import QdrantCorpusStore, qdrant_filter
 
     qstore = QdrantCorpusStore()
     qcorpus = (collection if isinstance(collection, str)
@@ -113,11 +67,14 @@ def build_hybrid_retriever(collection, embed_model, kv: int, kb: int, pool: int,
         g["ids"], [d or "" for d in g["documents"]],
         [m.get("file_name", "不明") for m in g["metadatas"]])
 
+    searcher = HybridSearcher(qstore, qcorpus, qbm25 if qbm25 is not None else bm25, id2meta,
+                              kv, kb, widen=FILTER_WIDEN, exact=QDRANT_EXACT)
+
     class HybridRetriever(BaseRetriever):
         def __init__(self, sf):
             self._embed = embed_model
-            self._bm25 = bm25
-            self._kv, self._kb, self._pool = kv, kb, pool
+            self._searcher = searcher
+            self._pool = pool
             self._filter = sf
             super().__init__()
 
@@ -126,30 +83,13 @@ def build_hybrid_retriever(collection, embed_model, kv: int, kb: int, pool: int,
             self._filter = sf
 
         def _fused_ids(self, qemb, q: str, sf) -> "list[str]":
-            """1フィルタ条件でのベクトル＋BM25→RRF融合の id 列（best-first, 未truncate）。"""
-            widen = FILTER_WIDEN if sf.needs_python_postfilter() else 1
+            """1フィルタ条件でのベクトル＋BM25→RRF融合の id 列（best-first, 未truncate）。
 
-            # ベクトル: org/date/layer を push-down で絞り、field_tags 有効時のみ広く取る。
-            from recommendations.core.config import QDRANT_EXACT
-            vids = qstore.search_dense(qcorpus, qemb, sf,
-                                       self._kv * widen, exact=QDRANT_EXACT)
-            if sf.needs_python_postfilter():
-                vids = [i for i in vids if sf.matches(id2meta.get(i, {}))]
-            vids = vids[: self._kv]
-
-            # BM25: sparse は org/layer/date を push-down（真のフィルタ内 top-k）し、
-            # field_tags のみ Python 後段。in-memory フォールバックは push 不可のため
-            # 広めに取って全条件を Python で後段フィルタ。
-            if qbm25 is not None:
-                bids = qbm25.search(q, self._kb * widen, sf)
-                if sf.needs_python_postfilter():
-                    bids = [i for i in bids if sf.matches(id2meta.get(i, {}))]
-                bids = bids[: self._kb]
-            else:
-                bids = self._bm25.search(q, self._kb * FILTER_WIDEN)
-                bids = [i for i in bids if sf.matches(id2meta.get(i, {}))][: self._kb]
-
-            return rrf_fuse([vids, bids])
+            org/date/layer は Qdrant へ push-down、分野の部分一致（push できない）だけ候補を
+            FILTER_WIDEN 倍に広げて `sf.matches` で後段フィルタする（`polyarchy_retrieval.hybrid`）。
+            """
+            return self._searcher.fused_ids(qemb, q, qdrant_filter(sf), sf.matches,
+                                            sf.needs_python_postfilter())
 
         def _retrieve(self, query_bundle: "QueryBundle") -> "list[NodeWithScore]":
             from dataclasses import replace

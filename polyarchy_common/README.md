@@ -36,6 +36,12 @@
 （共通＝mcp/PyJWT/uvicorn・`recommendations`＝検索スタック〔torch/ruri を引く重い側〕・`stats`＝軽量）。
 stats 単独の箱は `pip install -e ".[stats]"` で torch を引かない。ローカルは `.[recommendations,stats]`。
 
+**文書検索の部品は本パッケージに入れない**（2026-10-03）＝分かち書き・BM25・RRF・埋め込み/リランカーの登録・
+Qdrant のストアは共有ライブラリ `polyarchy_retrieval`（[docstring](../polyarchy_retrieval/__init__.py) が仕様）。
+torch・sentence-transformers を引くため、共通契約に入れると stats 単独の箱の依存の分離が崩れる。
+使うのは文書検索のサービス（政策主張DB・審議会議事録DB）だけで、依存は extras `recommendations` に含まれる。
+層の不変条件は `polyarchy_retrieval` の側でも守る（検索の Filter に `layer` の条件が無ければ拒む）。
+
 ## 4. 検証
 
 - 共通契約の単体テスト：`python -m polyarchy_common.tests.test_common`（ゲートの一部＝ルート README「品質の担保」）。

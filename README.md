@@ -7,7 +7,7 @@
 **統計参照DB `stats`**（事実）、**企業情報DB `companies`**（企業側の事実・2026-09 追加）。「主張↔事実の突き合わせ」が並べる理由。扱うのは**すべて公開資料・公開データ**。
 
 Polyarchy はサービス全体の名前。実体は**コーパス（文書ジャンル）ごとに独立したサービス**の集まりで、
-各サービスは自分の MCP サーバ（別プロセス・別ホスト名）を持ち、共通契約 `polyarchy_common` だけを共有する。
+各サービスは自分の MCP サーバ（別プロセス・別ホスト名）を持ち、共通契約 `polyarchy_common`（と、文書検索のサービスは検索部品の共有ライブラリ `polyarchy_retrieval`）だけを共有する。
 
 ## できること（現行 3 サービス・いずれも MCP サーバとして公開・利用者は自分の Claude／ChatGPT から呼ぶ）
 
@@ -41,8 +41,9 @@ Polyarchy はサービス全体の名前。実体は**コーパス（文書ジ�
 ```
 polyarchy/
 ├── polyarchy_common/     共通契約：メタデータ共通コア（層の不変条件）・分野タグ21分類・ログ/stdio保護・捕捉ログ・Access JWT・MCP HTTP 定型
+├── polyarchy_retrieval/  文書検索の部品（分かち書き・BM25・RRF・埋め込み/リランカーの登録・Qdrant ストア〔layer 必須〕）＝torch を引くので共通契約と分ける
 ├── recommendations/               政策主張DB（経済団体の提言＋政府の主張系文書）
-│   ├── core/             検索スタック（config・埋め込み・BM25/ハイブリッド・リランカー・Qdrant アダプタ・search_api・多段）
+│   ├── core/             検索スタックの固有部分（config・フィルタ・比較型の分解・llama_index の包装・search_api・多段。部品は polyarchy_retrieval）
 │   ├── serving/          入口（mcp_server。chat_app／app は 2026-09-02 廃止・残置）
 │   ├── ingest/           収集・チャンキング・取込・タグ付け・メタデータ監査
 │   ├── eval/             評価セット運用・回帰ゲート・スモークテスト
@@ -57,8 +58,8 @@ polyarchy/
 ## 拡張の形（コーパス連邦＝サービスを足しても既存を壊さない）
 
 現行は 2 サービスだが、構造は**足すことを前提**に作ってある。新しいサービスは兄弟フォルダとして増え、
-共通契約 `polyarchy_common`（メタデータの共通コア・層の不変条件・捕捉ログ・認証・MCP HTTP 定型）と
-`deploy/`（同じ箱・同じ配布経路・同じ監視）だけを共有する＝**あるサービスの作業は他サービスのソースを読まない**
+共通契約 `polyarchy_common`（メタデータの共通コア・層の不変条件・捕捉ログ・認証・MCP HTTP 定型）・文書検索の部品の共有ライブラリ
+`polyarchy_retrieval`（文書検索のサービスだけ）と `deploy/`（同じ箱・同じ配布経路・同じ監視）だけを共有する＝**あるサービスの作業は他サービスのソースを読まない**
 （把握範囲を 1 サービスに閉じる）。連邦レイヤは作らず、利用者側の Claude がルーターになる（設計＝[docs/長期開発計画.md](docs/長期開発計画.md)）。
 想定している拡張（**境界＝外部の公開データの整理と利活用促進**。導入組織の非公開文書を扱うモジュールは本ソフトウェアの範囲外＝
 必要な組織が自組織帰属の別リポジトリで、本ソフトウェアを依存として使う形で作る。層の不変条件＝公開固定・フェイルクローズは共通契約が担保）：
@@ -84,7 +85,7 @@ polyarchy/
 |---|---|---|---|
 | **総論**（何を・なぜ・次に何を） | [用語と役割](docs/用語と役割.md)＝文書共通の定義（役割・段階・用語はここだけ）／[残タスク](docs/残タスク.md)＝これからやることと対応履歴 | [長期開発計画](docs/長期開発計画.md)＝コーパス連邦・分割原理・拡張順序／[審議会議事録DB 開発計画](docs/審議会議事録DB_開発計画.md)＝2 つ目の文書検索コーパスの設計と検討経緯（2026-10-02）／[開発環境方針](docs/開発環境方針.md)＝PoC 維持と並行開発の規約／[文書管理ルール](docs/文書管理ルール.md)＝4 分類・地図・正典 1 箇所の規則（他プロジェクトへ持ち出し可） | [リファクタリング所見 2026-08-19](docs/リファクタリング所見_2026-08-19.md)＝配置の読み替え表 |
 | **開発計画・評価**（品質をどう測り育てるか） | [評価設計と改善計画](docs/評価設計と改善計画.md)＝何をなぜ測るか（合格基準は本 README「品質の担保」） | [stats データ拡充計画](stats/docs/データ拡充計画.md)・[第7弾](stats/docs/第7弾_ドッグフーディング反映計画.md)・[第9弾](stats/docs/第9弾_マクロ速報ドッグフーディング反映計画.md)＝弾ごとの計画／[companies 開発計画](companies/docs/開発計画.md)＝企業情報サービスの便の段組み・契約案・容量の見立て・[companies 第 1b 便 計画](companies/docs/第1b便_計画.md)＝セグメント別・地域別の実測と契約案・[companies 第 1c 便 計画](companies/docs/第1c便_計画.md)＝横断検索（海外売上比率から）の実測と契約案／[実利用ログの提供](docs/実利用ログの提供_同意書ひな型と共有経路.md)＝燃料確保の同意書と共有経路 | [stats 開発経緯と設計判断 2026-08-25](stats/docs/記録/開発経緯と設計判断_2026-08-25.md)（**新しいセッションはまずこれ**）／[companies（EDINET）正規化検証 2026-08-22](companies/docs/正規化検証.md)・[実データ検証 2026-09-20](companies/docs/記録/実データ検証_2026-09-20.md)・[母集団の棚卸し 2026-09-21](companies/docs/記録/母集団の棚卸し_2026-09-21.md)・[全社の取込と棚卸し 2026-09-22](companies/docs/記録/全社の取込と棚卸し_2026-09-22.md)・[人手の目視 2026-09-23](companies/docs/記録/人手の目視_2026-09-23.md)・[セグメント別の取込と棚卸し 2026-09-23](companies/docs/記録/セグメント別の取込と棚卸し_2026-09-23.md)・[地域別の表の棚卸し 2026-09-23](companies/docs/記録/地域別の表の棚卸し_2026-09-23.md)・[地域別の PDF 照合 2026-09-26](companies/docs/記録/PDF照合_地域別_2026-09-26.md)・[横断検索の母集団 2026-09-27](companies/docs/記録/横断検索の母集団_2026-09-27.md)・[遡りの取込と棚卸し 2026-09-30](companies/docs/記録/遡りの取込と棚卸し_2026-09-30.md)・[書類をまたぐ修正の実測 2026-09-30](companies/docs/記録/書類をまたぐ修正の実測_2026-09-30.md)・[区分の年をまたぐ続き具合の実測 2026-09-30](companies/docs/記録/区分の年をまたぐ続き具合の実測_2026-09-30.md) |
-| **サービス**（各 DB の入口と契約） | [recommendations/README](recommendations/README.md)／[stats/README](stats/README.md)／[polyarchy_common/README](polyarchy_common/README.md)＝**共通契約の正典**／各論＝[stats 共通契約](stats/docs/共通契約.md)・[recommendations 共通契約](recommendations/docs/共通契約.md)／[deploy/pages/README](deploy/pages/README.md)＝公開ページ | stats 設計 5 本（[指標棚卸し](stats/docs/指標棚卸し.md)・[データソース選定](stats/docs/データソース選定.md)・[参照粒度設計](stats/docs/参照粒度設計.md)・[再配布条件](stats/docs/再配布条件.md)・[業種分類対応表](stats/docs/業種分類対応表.md)）／recommendations（[コーパス収録範囲の明示](recommendations/docs/コーパス収録範囲の明示.md)・[再配布条件](recommendations/docs/再配布条件.md)・[収録拡充計画：AI・デジタル改革の決定文書](recommendations/docs/収録拡充計画_AI・デジタル改革の決定文書.md)＝gov への追加の対象・評価問（案））／[polyarchy_common/](polyarchy_common/__init__.py)＝共通契約パッケージ本体（docstring が詳細仕様） | [公式コネクタ要件](docs/公式コネクタ要件.md)（2026-08-18 調査） |
+| **サービス**（各 DB の入口と契約） | [recommendations/README](recommendations/README.md)／[stats/README](stats/README.md)／[polyarchy_common/README](polyarchy_common/README.md)＝**共通契約の正典**／各論＝[stats 共通契約](stats/docs/共通契約.md)・[recommendations 共通契約](recommendations/docs/共通契約.md)／[deploy/pages/README](deploy/pages/README.md)＝公開ページ | stats 設計 5 本（[指標棚卸し](stats/docs/指標棚卸し.md)・[データソース選定](stats/docs/データソース選定.md)・[参照粒度設計](stats/docs/参照粒度設計.md)・[再配布条件](stats/docs/再配布条件.md)・[業種分類対応表](stats/docs/業種分類対応表.md)）／recommendations（[コーパス収録範囲の明示](recommendations/docs/コーパス収録範囲の明示.md)・[再配布条件](recommendations/docs/再配布条件.md)・[収録拡充計画：AI・デジタル改革の決定文書](recommendations/docs/収録拡充計画_AI・デジタル改革の決定文書.md)＝gov への追加の対象・評価問（案））／[polyarchy_common/](polyarchy_common/__init__.py)＝共通契約パッケージ本体（docstring が詳細仕様）／[polyarchy_retrieval/](polyarchy_retrieval/__init__.py)＝文書検索の部品の共有ライブラリ（docstring が仕様） | [公式コネクタ要件](docs/公式コネクタ要件.md)（2026-08-18 調査） |
 | **運用**（動かし続ける） | [運用設計](docs/運用設計.md)＝監視・更新・ロールの設計と実施状況／[deploy/README](deploy/README.md)＝AWS runbook（§9.5 が入口ガード/ログ保持の正典）／[deploy/RUNBOOK_OPS](deploy/RUNBOOK_OPS.md)＝障害対応・データ更新・切り戻し | [個人認証_案B設計](docs/個人認証_案B設計.md)＝外部 IdP・②名簿限定→③個人向け提供の段組み | — |
 | **導入団体向け**（移行・合意・監査・対外説明） | [監査ガイド](docs/導入団体側_監査ガイド.md)＝公開リポジトリと CI で誰でも再現できる独立監査の仕組み | [PROD_MIGRATION](deploy/PROD_MIGRATION.md)＝導入団体 AWS への転写手順／[運用モデルと事業継続性](docs/運用モデルと事業継続性.md)＝なぜ依存しなくて済むか（対外説明）／[非公開コーパスの参照設計](docs/非公開コーパスの参照設計.md)＝導入団体が内部文書の検索を**別リポジトリで**作るときの型（不変条件・認可関門・検査。本リポジトリでは実装しない） | — |
 | **規約**（セッション作業規約＝新しい開発者・AI が最初に読む） | [CLAUDE.md](CLAUDE.md)＝**リポジトリ root の規約（記憶ゼロのセッションはまずこれ**・読む順・性格・運用地雷）／[stats/CLAUDE.md](stats/CLAUDE.md)／[recommendations/CLAUDE.md](recommendations/CLAUDE.md)／[companies/CLAUDE.md](companies/CLAUDE.md) | — | — |

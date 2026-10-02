@@ -14,7 +14,12 @@ Phase 3：埋め込みモデルの定義（レジストリ）。
 各モデルは「キー → embed_model インスタンスを生成する関数」で登録する。
 遅延生成（関数）にしているのは、HuggingFace 系がモデルDLを伴い import も重いため、
 実際に使うモデルの分だけ初期化するため。
+
+ローカル HF のモデル（ruri ほか）の登録と読み込みは共有ライブラリ `polyarchy_retrieval.models`
+（2026-10-03 に切り出し＝モデルの版の固定を 1 箇所に）。本モジュールは OpenAI（API 鍵＝本コーパスの config）
+の登録と、本番のキー（config.PRODUCTION_EMBEDDING）の解決を持つ。
 """
+from polyarchy_retrieval.models import HF_EMBEDDING_MODELS
 from recommendations.core.config import OPENAI_API_KEY, PRODUCTION_EMBEDDING
 
 
@@ -26,39 +31,6 @@ def _openai(model_name: str):
     return build
 
 
-def _hf(model_name: str, query_instruction: str = None, text_instruction: str = None):
-    """HuggingFace 埋め込み（ローカル推論）。要 `llama-index-embeddings-huggingface`。
-
-    未インストールの場合は import 時に分かりやすいエラーを出す（phase3 の
-    モデル単位 try/except に拾われ、他モデルの結果は失われない）。
-
-    query_instruction/text_instruction を渡すと、検索クエリ/格納文書の各テキストに
-    モデル指定のプレフィックスを付与する（e5 の 'query: '/'passage: '、
-    ruri の '検索クエリ: '/'検索文書: ' 等）。プレフィックスは埋め込み値を変えるため、
-    付与版は別コレクションとして再インデックスすること。
-
-    キャッシュ先は HF 標準（HF_HOME/hub）に揃える。cache_folder を省くと llama_index は
-    自前の get_cache_dir()（LLAMA_INDEX_CACHE_DIR／OS のユーザキャッシュ）を使い、HF_HOME を見ない
-    ＝事前DL（deploy/bootstrap/prefetch_models.py）やリランカー（CrossEncoder）と食い違う。
-    """
-    def build():
-        try:
-            from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-        except ImportError as e:
-            raise ImportError(
-                f"'{model_name}' には HuggingFace 埋め込みが必要です。"
-                "`pip install llama-index-embeddings-huggingface` を実行してください。"
-            ) from e
-        from huggingface_hub.constants import HF_HUB_CACHE
-        kwargs = {"cache_folder": HF_HUB_CACHE}
-        if query_instruction is not None:
-            kwargs["query_instruction"] = query_instruction
-        if text_instruction is not None:
-            kwargs["text_instruction"] = text_instruction
-        return HuggingFaceEmbedding(model_name=model_name, **kwargs)
-    return build
-
-
 # キー → embed_model 生成関数。比較対象はここを増減するだけで拡張できる。
 # キーはそのままコレクション名の一部（policy_docs_emb_<key>）になるので簡潔に。
 EMBEDDING_MODELS: dict[str, callable] = {
@@ -66,19 +38,8 @@ EMBEDDING_MODELS: dict[str, callable] = {
     "openai_small": _openai("text-embedding-3-small"),  # 現行本番。1536次元・安価
     "openai_large": _openai("text-embedding-3-large"),  # 3072次元・高精度・高料金
 
-    # --- 日本語特化 / 多言語（ローカル・要 llama-index-embeddings-huggingface） ---
-    # プレフィックス無し（out-of-the-box。第1ラウンドの比較で使用）
-    "multilingual_e5_large": _hf("intfloat/multilingual-e5-large"),  # 1024次元・多言語強い
-    "ruri_v3_310m": _hf("cl-nagoya/ruri-v3-310m"),                    # 日本語特化・高性能
-    # プレフィックス付き（各モデルカード指定。検索用途の正当な使い方）
-    "multilingual_e5_large_pfx": _hf(
-        "intfloat/multilingual-e5-large",
-        query_instruction="query: ", text_instruction="passage: ",
-    ),
-    "ruri_v3_310m_pfx": _hf(
-        "cl-nagoya/ruri-v3-310m",
-        query_instruction="検索クエリ: ", text_instruction="検索文書: ",
-    ),
+    # --- 日本語特化 / 多言語（ローカル・要 llama-index-embeddings-huggingface）＝共有ライブラリの登録 ---
+    **HF_EMBEDDING_MODELS,
 }
 
 # 追加依存(HuggingFace)なしで即実行できるモデル。既定の比較対象。

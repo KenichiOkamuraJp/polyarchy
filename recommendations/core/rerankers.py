@@ -10,63 +10,12 @@ Phase 5：リランカー（クロスエンコーダ）の定義（レジスト�
 日本語対応クロスエンコーダ（sentence-transformers の CrossEncoder で読める重み）に限定する。
 API は使わない。
 
-embeddings.py の EMBEDDING_MODELS と同じく「キー → 生成関数（遅延）」で登録する。
-遅延生成にしているのは HF モデルの DL/ロードが重く、使うモデルだけ初期化するため。
+登録（キー → 生成関数〔遅延〕）とクロスエンコーダの読み込みは共有ライブラリ
+`polyarchy_retrieval.models` の RERANKERS（2026-10-03 に切り出し＝モデルの版の固定を 1 箇所に）。
+本モジュールに残すのは llama_index の postprocessor の包装と、本番のキー（config.PRODUCTION_RERANKER）の解決。
 CrossEncoder は初回のみモデルを DL しローカルにキャッシュする（以降はオフラインで動く）。
 """
-
-
-def _cross_encoder(model_name: str, max_length: int = 512):
-    """ローカル HF クロスエンコーダ（sentence-transformers CrossEncoder）。
-
-    未インストール時は import で分かりやすいエラーを出す（ランナーのモデル単位
-    try/except に拾われ、他モデルの結果は失われない）。
-    返すのは「(query, [passage,...]) → スコア列」の rerank 関数。スコアは相対順位のみ
-    使う（モデルにより sigmoid 済み/生ロジットで絶対値の意味は異なるが順位付けには十分）。
-    """
-    def build():
-        try:
-            from sentence_transformers import CrossEncoder
-        except ImportError as e:
-            raise ImportError(
-                f"'{model_name}' には sentence-transformers が必要です。"
-                "`pip install sentence-transformers` を実行してください。"
-            ) from e
-        model = CrossEncoder(model_name, max_length=max_length)
-
-        def rerank(query: str, passages: list[str]) -> list[float]:
-            pairs = [(query, p) for p in passages]
-            scores = model.predict(pairs)
-            return [float(s) for s in scores]
-
-        return rerank
-    return build
-
-
-# キー → rerank関数生成関数（遅延）。比較対象はここを増減するだけで拡張できる。
-# 全て日本語対応・ローカル HF・クロスエンコーダ（ローカル完結要件を満たす）。
-RERANKERS: dict[str, callable] = {
-    # ruri 埋め込みと同じ cl-nagoya ファミリ。本番埋め込みと学習思想が揃う。337M。
-    # 要 fugashi+unidic-lite（BERT-japanese の MeCab トークナイザ）。
-    "ruri_reranker_large": _cross_encoder("cl-nagoya/ruri-reranker-large"),
-    # 日本語特化の定番クロスエンコーダ（hotchpotch）。337M(large)。要 fugashi。
-    "japanese_reranker_large": _cross_encoder(
-        "hotchpotch/japanese-reranker-cross-encoder-large-v1"),
-    # 強力な多言語リランカー。日本語も強い。568M。追加トークナイザ依存なし。
-    # Phase 5 の78問比較で総合 hit@5 最良(90.0%)・MRR 非劣化 → Phase 5〜7.6 の本番。
-    "bge_reranker_v2_m3": _cross_encoder("BAAI/bge-reranker-v2-m3"),
-    # 日本語特化の軽量クロスエンコーダ（hotchpotch）。107M だが層が浅く MPS で桁違いに速い。
-    # Phase 8 前哨の167問ベンチで hit@5 93.6%（bge と同値）・MRR 0.771（bge 0.741 を上回る）・
-    # rerank p50 318ms（bge 4088ms の 1/12.9）→ **本番採用**（config.PRODUCTION_RERANKER 既定）。
-    # 要 fugashi（BERT-japanese MeCab トークナイザ）。ローカル/無料/プライベート。
-    "jp_reranker_xsmall_v1": _cross_encoder(
-        "hotchpotch/japanese-reranker-cross-encoder-xsmall-v1"),
-    # 同ファミリの中型（111M・層が深い）。B21 ベンチ（2026-09-08）で**不採用が確定**＝
-    # hit@5 86.2→84.1%・MRR 0.713→0.633 と劣化し CPU p50 も 4.4 倍（残タスク §E-B21）。
-    # 比較記録のため残置。要 fugashi。
-    "jp_reranker_base_v1": _cross_encoder(
-        "hotchpotch/japanese-reranker-cross-encoder-base-v1"),
-}
+from polyarchy_retrieval.models import RERANKERS  # モデルの登録は共有ライブラリの 1 箇所
 
 
 # ---------------------------------------------------------------------------

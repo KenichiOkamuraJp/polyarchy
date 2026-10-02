@@ -7,7 +7,7 @@ recommendations の開発は主にリポ root で全体を見ながら行われ�
 
 ## 読む範囲（厳守）
 
-- 読んでよい：`recommendations/` 配下すべて、`polyarchy_common/`（共通契約＝**`polyarchy_common/README.md` が正典**・各 docstring が詳細仕様）、`deploy/`（配信）、`docs/`（全体計画）
+- 読んでよい：`recommendations/` 配下すべて、`polyarchy_common/`（共通契約＝**`polyarchy_common/README.md` が正典**・各 docstring が詳細仕様）、`polyarchy_retrieval/`（検索部品の共有ライブラリ＝審議会議事録DB も使う。変えたら両方のゲートで不変を確認）、`deploy/`（配信）、`docs/`（全体計画）
 - **読まない**：`stats/`（統計参照DB）のソース。必要なのは契約だけで、それは `polyarchy_common/README.md`（共通部）＋
   `recommendations/docs/共通契約.md`（本サービスの各論）に書いてある。stats/docs/共通契約.md はあちらの各論＝読まなくてよい。
 
@@ -35,3 +35,4 @@ python -m recommendations.eval.mcp_smoke
 - ★ **MCP の IP 許可リストは使えない**：コネクタは Anthropic/OpenAI のサーバ側 IP から接続してくる。
 - ★ **bootstrap 再走行はコードを更新しない**：箱へのコード反映は tar 再展開が必須＝2026-09-03 から自動適用（`polyarchy-data-apply`）が tar を再展開する。手動は非常時のみ（deploy/README「コード/データ更新」）。
 - 秘密は SSM。`.env` を箱に運ばない。qdrant の data sync は qdrant 停止中にのみ行う。
+- ★ **BM25 の語彙（`data/bm25/<collection>_vocab.json.gz`）は索引と別ファイル**：索引を別のフォルダ（配布用のクローン）と共有している手元では、あちらで取り込むと語彙だけ古く残り、ゲートの MRR が黙って下がる（2026-10-02：0.710→0.692）。起動ログに「n_docs と索引のチャンク数が食い違う」の警告が出たら、索引を作った側の語彙を複製する。
