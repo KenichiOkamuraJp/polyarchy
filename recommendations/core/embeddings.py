@@ -36,6 +36,10 @@ def _hf(model_name: str, query_instruction: str = None, text_instruction: str = 
     モデル指定のプレフィックスを付与する（e5 の 'query: '/'passage: '、
     ruri の '検索クエリ: '/'検索文書: ' 等）。プレフィックスは埋め込み値を変えるため、
     付与版は別コレクションとして再インデックスすること。
+
+    キャッシュ先は HF 標準（HF_HOME/hub）に揃える。cache_folder を省くと llama_index は
+    自前の get_cache_dir()（LLAMA_INDEX_CACHE_DIR／OS のユーザキャッシュ）を使い、HF_HOME を見ない
+    ＝事前DL（deploy/bootstrap/prefetch_models.py）やリランカー（CrossEncoder）と食い違う。
     """
     def build():
         try:
@@ -45,7 +49,8 @@ def _hf(model_name: str, query_instruction: str = None, text_instruction: str = 
                 f"'{model_name}' には HuggingFace 埋め込みが必要です。"
                 "`pip install llama-index-embeddings-huggingface` を実行してください。"
             ) from e
-        kwargs = {}
+        from huggingface_hub.constants import HF_HUB_CACHE
+        kwargs = {"cache_folder": HF_HUB_CACHE}
         if query_instruction is not None:
             kwargs["query_instruction"] = query_instruction
         if text_instruction is not None:
