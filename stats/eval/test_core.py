@@ -123,6 +123,10 @@ def main() -> int:
     def _v(sid, p):
         r = _vs.lookup(sid, p, "JP")
         return float(r.value) if r else None
+
+    def _v_r(sid, p, region):
+        r = _vs.lookup(sid, p, region)
+        return int(r.value) if r else None
     if _vs.has_data("cao.sna_sector.saving_net.nfc.fy"):
         bad = []
         for slug in ("nfc", "fin", "gg", "hh", "npish"):
@@ -151,6 +155,33 @@ def main() -> int:
     chk(_pb_label("sna_sector_bs", "net_worth", "a") == "暦年末" and _pb_label("fof", "stock.assets_total", "fy") == "年度末"
         and _pb_label("fof", "flow.assets_total", "fy") == "年度（期中）" and _pb_label("roudou", "unemployment_rate", "m") is None,
         "第12弾 期の定義：代表例（SNA の BS＝暦年末・資金循環ストック＝年度末・フロー＝期中・労調＝未宣言）")
+    # 第 12 弾 第 4 便（2026-10-02）：統一的な基準による財務書類（都道府県）。原表の中で常に成り立つ関係だけを固定する
+    # （資産合計＝負債合計＋純資産合計は原表自体が外れる団体・年度がある＝FY2024 福井県 全体 等＝固定しない・注記に事実）
+    if _vs.has_data("soumu.tokitsu.net_assets.general.fy.pref"):
+        def _t(m, b, fy, p):
+            return _v_r(f"soumu.tokitsu.{m}.{b}.fy.pref", f"FY{fy}", p)
+        bad, n_chk = [], 0
+        for b in ("general", "whole", "consolidated"):
+            for fy in (2016, 2020, 2024):
+                for p in (f"{i:02d}" for i in range(1, 48)):
+                    a_ = _t("assets_total", b, fy, p)
+                    if a_ is None:
+                        continue
+                    n_chk += 1
+                    if a_ != _t("liabilities_net_assets_total", b, fy, p):
+                        bad.append(f"A=負債及び純資産/{b}/{fy}/{p}")
+                    if _t("net_assets", b, fy, p) != _t("nw_closing", b, fy, p):
+                        bad.append(f"BS=NW/{b}/{fy}/{p}")
+                    nc, nn = _t("net_cost", b, fy, p), _t("nw_net_cost", b, fy, p)
+                    if nc is not None and nn is not None and abs(nc + nn) > 1:
+                        bad.append(f"PL=NW/{b}/{fy}/{p}")
+                    cc, cd = _t("cf_cash_closing", b, fy, p), _t("cash_deposits", b, fy, p)
+                    if cc is not None and cd is not None and abs(cc - cd) > 1:
+                        bad.append(f"CF=BS/{b}/{fy}/{p}")
+        chk(not bad and n_chk > 300, f"第12弾 統一的な基準：資産合計＝負債及び純資産合計・BS 純資産＝NW 期末・純行政コスト PL＝NW・期末現金預金 CF＝BS（±1・{n_chk} 組）{bad[:4]}")
+        cov = {fy: sum(1 for p in (f"{i:02d}" for i in range(1, 48)) if _t("assets_total", "general", fy, p) is not None) for fy in (2016, 2017, 2018, 2024)}
+        chk(cov == {2016: 40, 2017: 46, 2018: 47, 2024: 47} and _t("net_assets", "general", 2016, "13") is None,
+            f"第12弾 統一的な基準：収録団体数（FY2016 は 40＝H28 版 39＋H29 版の前年度シート 1・東京都は無い）{cov}")
     # 第 12 弾 第 3 便（2026-10-02）：国の財務書類＝貸借の恒等式・増減計算書の式・期首＝前期末（百万円の丸めで ±2）
     if _vs.has_data("mof.zaimu_shorui.net_assets.national.fy"):
         def _z(m, k, fy):

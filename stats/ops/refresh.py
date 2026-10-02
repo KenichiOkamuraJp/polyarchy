@@ -45,6 +45,7 @@ TYPE_TO_MODULE = {
     "mof_csv": "mof",
     "mof_zaisei": "mof_zaisei",
     "mof_zaimu_xlsx": "mof_zaimu",
+    "soumu_tokitsu_xlsx": "soumu_tokitsu",
     "imf_dm": "intl", "oecd_sdmx": "intl", "wb_api": "intl",
     "soumu_hakusho": "soumu_hakusho",
     "pdf_table": "pdf_shunto",   # 系列指定不可＝ --all で回す（現収録は guide のみ＝実質 no-op）

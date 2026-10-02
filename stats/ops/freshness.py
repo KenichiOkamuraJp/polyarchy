@@ -109,6 +109,9 @@ def build_probes(registry: Registry) -> dict:
         elif t == "mof_zaimu_xlsx":
             # 国の財務書類（第 12 弾 第 3 便）＝新しい年版は索引ページに頁が足される＝索引の変化を signal に（年版の追加は seed の ZAIMU_EDITIONS）
             p["kind"] = "head"; p["urls"].add(str(s.source_url))
+        elif t == "soumu_tokitsu_xlsx":
+            # 統一的な基準による財務書類（第 12 弾 第 4 便）＝新しい年版は索引に頁が足される（年版→ファイル番号は ingest の FILES）
+            p["kind"] = "head"; p["urls"].add(str(s.source_url))
         elif t == "estat_file":
             p["kind"] = "head"; p["urls"].add(str(a.get("file", "")))
         elif t == "estat_catalog_xlsx":

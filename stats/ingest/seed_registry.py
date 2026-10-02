@@ -1324,15 +1324,98 @@ def zaimu_shorui_series() -> list[Series]:
     return out
 
 
+# ---------------------------------------------------------------- 第 12 弾 第 4 便（2026-10-02）：総務省「統一的な基準による財務書類」都道府県分
+# 行は原表の字下げの道筋（stats/ingest/soumu_tokitsu.py）。2026-10-02 に FY2016〜FY2024 の 9 年版・各 2 シートで道筋が 1 行に確定することを確認。
+TOKITSU_EDITIONS = (2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024)
+TOKITSU_BASIS = {"general": "一般会計等", "whole": "全体", "consolidated": "連結"}
+TOKITSU_SECTION = {"BS": "貸借対照表（年度末）", "PL": "行政コスト計算書（年度中）", "NW": "純資産変動計算書（年度中）", "CF": "資金収支計算書（年度中）"}
+# (measure, 表示名, 表, 道筋)
+TOKITSU_ROWS = [
+    ("fixed_assets", "固定資産", "BS", "固定資産"),
+    ("tangible_fixed_assets", "有形固定資産", "BS", "固定資産/有形固定資産"),
+    ("business_assets", "事業用資産", "BS", "固定資産/有形固定資産/事業用資産"),
+    ("business_assets_land", "事業用資産の土地", "BS", "固定資産/有形固定資産/事業用資産/土地"),
+    ("infrastructure_assets", "インフラ資産", "BS", "固定資産/有形固定資産/インフラ資産"),
+    ("infrastructure_land", "インフラ資産の土地", "BS", "固定資産/有形固定資産/インフラ資産/土地"),
+    ("movables", "物品", "BS", "固定資産/有形固定資産/物品"),
+    ("investments_other", "投資その他の資産", "BS", "固定資産/投資その他の資産"),
+    ("funds_fixed", "基金（固定資産）", "BS", "固定資産/投資その他の資産/基金"),
+    ("current_assets", "流動資産", "BS", "流動資産"),
+    ("cash_deposits", "現金預金", "BS", "流動資産/現金預金"),
+    ("funds_current", "基金（流動資産）", "BS", "流動資産/基金"),
+    ("assets_total", "資産合計", "BS", "資産合計"),
+    ("fixed_liabilities", "固定負債", "BS", "固定負債"),
+    ("local_bonds", "地方債（固定負債）", "BS", "固定負債/地方債"),
+    ("temporary_finance_bonds", "臨時財政対策債（固定負債の地方債の内訳）", "BS", "固定負債/地方債/臨時財政対策債"),
+    ("retirement_allowances", "退職手当引当金", "BS", "固定負債/退職手当引当金"),
+    ("current_liabilities", "流動負債", "BS", "流動負債"),
+    ("local_bonds_due_within_year", "１年内償還予定地方債", "BS", "流動負債/１年内償還予定地方債"),
+    ("liabilities_total", "負債合計", "BS", "負債合計"),
+    ("net_assets_fixed_formation", "固定資産等形成分（純資産の内訳）", "BS", "負債合計/固定資産等形成分"),
+    ("net_assets_surplus_deficit", "余剰分（不足分）（純資産の内訳）", "BS", "負債合計/余剰分（不足分）"),
+    ("net_assets", "純資産合計", "BS", "純資産合計"),
+    ("liabilities_net_assets_total", "負債及び純資産合計", "BS", "負債及び純資産合計"),
+    ("ordinary_costs", "経常費用", "PL", "経常費用"),
+    ("operating_costs", "業務費用", "PL", "経常費用/業務費用"),
+    ("personnel_costs", "人件費", "PL", "経常費用/業務費用/人件費"),
+    ("goods_costs", "物件費等", "PL", "経常費用/業務費用/物件費等"),
+    ("depreciation", "減価償却費", "PL", "経常費用/業務費用/物件費等/減価償却費"),
+    ("interest_paid", "支払利息", "PL", "経常費用/業務費用/その他の業務費用/支払利息"),
+    ("transfer_costs", "移転費用", "PL", "経常費用/移転費用"),
+    ("subsidies", "補助金等", "PL", "経常費用/移転費用/補助金等"),
+    ("social_security_benefits", "社会保障給付", "PL", "経常費用/移転費用/社会保障給付"),
+    ("ordinary_revenue", "経常収益", "PL", "経常収益"),
+    ("net_ordinary_cost", "純経常行政コスト", "PL", "純経常行政コスト"),
+    ("extraordinary_losses", "臨時損失", "PL", "臨時損失"),
+    ("extraordinary_gains", "臨時利益", "PL", "臨時利益"),
+    ("net_cost", "純行政コスト", "PL", "純行政コスト"),
+    ("nw_opening", "前年度末純資産残高", "NW", "前年度末純資産残高"),
+    ("nw_net_cost", "純行政コスト（△）（純資産変動計算書）", "NW", "純行政コスト（△）"),
+    ("nw_financing", "財源", "NW", "財源"),
+    ("nw_tax_revenue", "税収等", "NW", "財源/税収等"),
+    ("nw_grants", "国県等補助金", "NW", "財源/国県等補助金"),
+    ("nw_difference", "本年度差額", "NW", "本年度差額"),
+    ("nw_change", "本年度純資産変動額", "NW", "本年度純資産変動額"),
+    ("nw_closing", "本年度末純資産残高", "NW", "本年度末純資産残高"),
+    ("cf_operating", "業務活動収支", "CF", "業務活動収支"),
+    ("cf_investing", "投資活動収支", "CF", "投資活動収支"),
+    ("cf_financing", "財務活動収支", "CF", "財務活動収支"),
+    ("cf_public_facilities", "公共施設等整備費支出", "CF", "投資活動支出/公共施設等整備費支出"),
+    ("cf_bond_issue", "地方債等発行収入", "CF", "財務活動収入/地方債等発行収入"),
+    ("cf_bond_redemption", "地方債等償還支出", "CF", "財務活動支出/地方債等償還支出"),
+    ("cf_cash_closing", "本年度末現金預金残高", "CF", "本年度末現金預金残高"),
+]
+TOKITSU_NOTE = ("総務省「統一的な基準による財務書類に関する情報」の都道府県分（Excel・百万円）＝地方公共団体の財務書類（地方公会計）。"
+                "会計の区分＝一般会計等／全体（公営企業会計等を含む）／連結（一部事務組合・第三セクター等を含む）。"
+                "**全国計は原表に無い**＝region は都道府県（JIS 2 桁）のみ（stats は合計しない）。市区町村は収録しない。"
+                "原表の中で恒等式が外れる団体・年度がある＝stats は原表どおり返す。年版の採り方・外れの件数と例・SNA との違いは list_datasets の tokitsu の analysis_notes。")
+# 系列の notes には科目名を書かない（全系列に同じ語が載ると発見層で全系列が当たる＝第 1 便の地雷）
+
+
+def tokitsu_series() -> list[Series]:
+    """統一的な基準による財務書類（都道府県・一般会計等／全体／連結）の 4 表の主要行（年度・百万円・47 都道府県）。"""
+    out: list[Series] = []
+    for meas, ttl, sec, path in TOKITSU_ROWS:
+        for slug, bname in TOKITSU_BASIS.items():
+            out.append(_s(series_id=f"soumu.tokitsu.{meas}.{slug}.fy.pref",
+                          title=f"統一的な基準による財務書類 {ttl}（都道府県・{bname}・{TOKITSU_SECTION[sec]}・百万円）",
+                          org="soumu", org_name="総務省", source_url="https://www.soumu.go.jp/iken/kokaikei/index.html",
+                          sector="財政", unit="百万円", granularity="年度", freq="fy", dataset="tokitsu", measure=meas, dims=slug,
+                          region_level="pref", region_codes=tuple(f"{i:02d}" for i in range(1, 48)),
+                          stat_name="統一的な基準による財務書類", table_id=f"tokitsu:pref:{sec}",
+                          table_title=f"都道府県 {bname} {TOKITSU_SECTION[sec].split('（')[0]}", policy_tags=(TAG_FISCAL, TAG_REGION),
+                          first_period="FY2016", status="registered",
+                          accessor={"type": "soumu_tokitsu_xlsx", "section": sec, "path": path, "basis": bname, "editions": list(TOKITSU_EDITIONS)},
+                          citation_template=f"総務省「統一的な基準による財務書類に関する情報」都道府県 {bname} {TOKITSU_SECTION[sec].split('（')[0]}（" + "{item}／{period}）取得 {retrieved_at}",
+                          notes=TOKITSU_NOTE))
+    return out
+
+
 def fiscal_planned_series() -> list[Series]:
     """第 12 弾 第 3〜6 便の対象（2026-10-02 登録）＝未収録だが取得元は特定済み。find_statistics で『未収録・取得元はここ』を返すための planned。
     単位・表・コードは取込時に原表で確定する（ここでは決めない）。"""
     note = "未収録（第 12 弾 第 {n} 便の計画＝stats/docs/データ拡充計画.md §4g）。取得元は source_url。lookup は found=false。単位・表は取込時に原表で確定する。{x}"
     return [
-        planned("soumu.tokitsu.net_assets.pref.fy", "統一的な基準による財務書類（都道府県・一般会計等）純資産（年度末）", "soumu", "総務省", "財政", "（取込時に確定）",
-                "fy", "年度", "tokitsu", "net_assets", (TAG_FISCAL, TAG_REGION), {"type": "soumu_tokitsu"}, "統一的な基準による財務書類",
-                "https://www.soumu.go.jp/iken/kokaikei/R05_chihou_zaimusyorui.html", dims="pref", region_level="pref",
-                notes=note.format(n=4, x="都道府県まで（市区町村は収録しない＝2026-10-02 判断）。")),
         planned("mof.gbb.debt_total.q", "国債及び借入金並びに政府保証債務現在高（四半期末）", "mof", "財務省", "財政", "（取込時に確定）",
                 "q", "四半期", "gbb", "debt_total", (TAG_FISCAL,), {"type": "mof_gbb"}, "国債及び借入金並びに政府保証債務現在高",
                 "https://www.mof.go.jp/jgbs/reference/gbb/index.htm", notes=note.format(n=5, x="")),
@@ -2787,6 +2870,7 @@ def build() -> list[Series]:
     S += sna_gg_series()         # 第 12 弾 第 1 便（2026-10-02）＝一般政府の部門別（付表 3 BS・付表 6 勘定）
     S += fiscal_planned_series() # 第 12 弾 第 3〜6 便の対象を planned で先に登録（未収録の明示・取得元 URL）
     S += zaimu_shorui_series()   # 第 12 弾 第 3 便（2026-10-02）＝財務省「国の財務書類」Excel 版（planned→registered）
+    S += tokitsu_series()        # 第 12 弾 第 4 便（2026-10-02）＝総務省「統一的な基準による財務書類」都道府県（planned→registered）
     S += boj_fof_sector_series() # 第 8 弾 第 2 便（資金循環 部門別・年度）
     S += sna_fixed_capital_stock_series() + roudou_emp_type_series() + shaho_series()  # 第 8 弾 第 2 便（F-4／F-6／F-7）
     return S
