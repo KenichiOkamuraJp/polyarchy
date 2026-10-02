@@ -64,7 +64,7 @@ streamlit run recommendations/serving/app.py --server.headless true   # ブラ�
 - **層＝公開固定＋フェイルクローズ**（`PolicySearchService`）。機密は UI から広げる術がない
   （Phase 8 の「機密層 opt-in」は PoC で撤去。多人数化で価値が増す物理境界）。
 - **利用者質問の捕捉（第2チャネル）**：app.py も `capture_query(source="app")` で実質問を追記 JSONL に
-  残す（共有層 `search_api` には置かない＝eval 197問の非混入）。Phase 12 の器の燃料。
+  残す（共有層 `search_api` には置かない＝評価問の非混入）。Phase 12 の器の燃料。
 - モデル・DB・BM25 索引・リランカーは `@st.cache_resource` で起動時1回だけロードし常駐。
 - サイドバーで団体・日付・分野タグの絞り込み（多段に primitive で渡す）。
 - 回答生成（集約型以外）は Anthropic API のクレジットを消費する（動作確認は少数クエリで）。

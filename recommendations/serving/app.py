@@ -18,7 +18,7 @@ Phase 8（§24）の一発QA UI を、Phase 10 の多段オーケストレーシ
 - 生成は集約型のみ決定論（scan の判定＝クレジット0）、それ以外は本番と同一の SYSTEM_PROMPT で
   多段が選んだチャンクを compact 合成（1回だけ・Anthropic）。回答が棄却語を含めば明示する。
 - **利用者質問の捕捉（第2チャネル）**：app.py も MCP と同様に実質問を `capture_query(source="app")`
-  で永続 JSONL に残す（Phase 12 の器の燃料）。共有層 `search_api` には置かない＝eval 197問の非混入。
+  で永続 JSONL に残す（Phase 12 の器の燃料）。共有層 `search_api` には置かない＝評価問の非混入。
 - モデル・DB・BM25 索引・リランカーは起動時に1回だけロードしセッションで使い回す（@st.cache_resource）。
 
 起動：

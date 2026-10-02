@@ -4,7 +4,7 @@ Phase 12：実運用クエリの永続捕捉（質問→検証文パイプライ
 MCP サーバ（`recommendations.serving.mcp_server` の search_policy_docs）が受けた実クエリを、揮発的な
 stderr ログとは別に **追記専用 JSONL** へ残す。これが Phase 12 パイプラインの
 「燃料タンク」＝トリアージ→ゴールド構築→ゲート→ユーザー由来 eval への原資になる。
-※`recommendations.eval.eval` は search_api を直呼びするため、捕捉を MCP 側に置けば評価 197 問は混入しない。
+※`recommendations.eval.eval` は search_api を直呼びするため、捕捉を MCP 側に置けば評価問は混入しない。
 
 設計上の鉄則：
 1. **検索経路を絶対に壊さない**（fail-open）。捕捉は付随機能であり、書き込み失敗・

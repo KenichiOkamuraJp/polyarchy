@@ -5,8 +5,9 @@
 バイト不変追記** までを1本の CLI に束ねる。
 
 ■ 正典とユーザー由来は別扱い（provenance 分離）
-  - 正典 `data/eval/eval_set.json`（197問・sha256 4a51f5f5…）は**このツールが一切書かない**
-    ＝自明にバイト不変。固定の物差し。
+  - 正典 `data/eval/eval_set.json`（sha256＝下の CANONICAL_SHA256）は**このツールが一切書かない**
+    ＝自明にバイト不変。固定の物差し。収録の拡充で正典に評価問を足したときは、CANONICAL_SHA256 を
+    同じコミットで更新する（ここが期待値の唯一の置き場＝upload_to_s3.sh もここを読む）。
   - ユーザー由来ゴールドは別名前空間 `data/eval/eval_set_userderived.json` に蓄積。
     id は `u001, u002, …`（既存の数値 id と物理的に非衝突・由来が一目でわかる）。
 
@@ -46,7 +47,8 @@ USERDERIVED = EVAL_DIR / "eval_set_userderived.json"
 GATE_MODULE = "recommendations.eval.evalset_gate"  # 起動は python -m（cwd=リポ root 前提・ファイルパス直指定をやめた）
 
 # 正典の不変アンカー（§30.7・引き継ぎ）。append は前後でこの一致を assert する。
-CANONICAL_SHA256 = "4a51f5f519b92650a0747c004df2c8fa336bd72985daabf544871d44f9fee6b1"
+# 正典を変えたコミットで更新する（197 問＝4a51f5f5… → B26 で 209 問＝a15e842f…）。
+CANONICAL_SHA256 = "a15e842f3e9e86a9e4aaa2fc6ae696fd35dabec801c0ab4cdea5f78f4405deca"
 
 _U_ID = re.compile(r"^u(\d+)$")
 

@@ -117,6 +117,14 @@ echo "[upload] 完了（S3 へ置いただけ＝箱への反映はこのスク�
 echo "[upload]   release.sh 経由＝続けてマニフェストが書かれ、箱が 15 分以内に自動適用する（人手の箱操作は不要）。"
 echo "[upload]   新規の箱＝EC2 初回起動（user_data）が S3 から取得する。"
 echo "[upload]   単体実行＝稼働中の箱には反映されない（bootstrap の再走行はコードを更新しない）。反映は release.sh で。"
-echo "[upload] 正典 eval の sha256（バイト不変の確認用・期待 4a51f5f5…）:"
-shasum -a 256 "$REPO_DIR/recommendations/data/eval/eval_set.json" 2>/dev/null || \
-  echo "  （shasum 不可の環境。recommendations/eval/phase12_pipeline.py の CANONICAL_SHA256 を参照）"
+# 期待値は recommendations/eval/phase12_pipeline.py の CANONICAL_SHA256 だけに置く（ここに値を写さない）。表示のみ＝配布は止めない。
+EVAL_EXPECT=$(sed -n 's/^CANONICAL_SHA256 = "\([0-9a-f]*\)".*/\1/p' "$REPO_DIR/recommendations/eval/phase12_pipeline.py")
+EVAL_ACTUAL=$(shasum -a 256 "$REPO_DIR/recommendations/data/eval/eval_set.json" 2>/dev/null | cut -d' ' -f1)
+if [[ -z "$EVAL_ACTUAL" ]]; then
+  echo "[upload] 正典 eval の sha256：shasum 不可の環境（期待＝phase12_pipeline.py の CANONICAL_SHA256 ${EVAL_EXPECT:0:8}…）"
+elif [[ "$EVAL_ACTUAL" == "$EVAL_EXPECT" ]]; then
+  echo "[upload] 正典 eval の sha256 ${EVAL_ACTUAL:0:8}…＝CANONICAL_SHA256 と一致"
+else
+  echo "[upload] ★正典 eval の sha256 ${EVAL_ACTUAL:0:8}… が CANONICAL_SHA256 ${EVAL_EXPECT:0:8}… と不一致"
+  echo "[upload]   正典に評価問を足したなら phase12_pipeline.py の CANONICAL_SHA256 を更新する（append が中止する）。"
+fi

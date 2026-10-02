@@ -159,7 +159,7 @@ BUCKET=$(terraform output -raw s3_bucket)
 
 # コード tar ＋ データ（Qdrant 2.0G/PDF 2.0G 等）を投入。初回は時間がかかる。
 BUCKET=$BUCKET PROFILE=polyarchy-staging bash ../scripts/upload_to_s3.sh
-# → 末尾に eval_set.json の sha256 が出る。4a51f5f5… であること（バイト不変・仕様§4.2）を確認。
+# → 末尾に eval_set.json の sha256 と、recommendations/eval/phase12_pipeline.py の CANONICAL_SHA256 との一致が出る（バイト不変・仕様§4.2）。
 ```
 
 ---
@@ -341,7 +341,7 @@ aws s3api get-bucket-lifecycle-configuration --bucket <bucket>   # S3 側の確�
 - [ ] （web 廃止 2026-09-02＝以下は chat_app 残置コード向け）**`st.table`/`st.dataframe` 不可**（pyarrow/mimalloc が Streamlit スレッドで SIGSEGV・§32.3）→ Markdown 表（コード済）。
 - [ ] MCP streamable-http の **`transport_security` off**（421＝DNSリバインディング保護・§33.5。既定 off）。
 - [ ] **secrets を `.env` で運ばない**（SSM）。**フォルダ/tar に `.env` を混ぜない**（upload_to_s3.sh は除外済）。
-- [ ] **正典 eval バイト不変**（sha256 `4a51f5f5…`）・**prod v5 不変**・**層公開固定**。
+- [ ] **正典 eval バイト不変**（sha256＝`phase12_pipeline.py` の `CANONICAL_SHA256`）・**prod v5 不変**・**層公開固定**。
 
 ---
 
