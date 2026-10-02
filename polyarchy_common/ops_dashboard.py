@@ -166,7 +166,8 @@ def code_version() -> str:
 def data_scale() -> dict:
     d = {}
     try:
-        d["stats_series"] = sum(1 for _ in open(SERIES_PATH, encoding="utf-8"))
+        with open(SERIES_PATH, encoding="utf-8") as f:  # 空行・先頭の「# 生成物」行は系列ではない（registry の読み込みと同じ規則）
+            d["stats_series"] = sum(1 for ln in f if ln.strip() and not ln.lstrip().startswith("#"))
     except Exception:  # noqa: BLE001
         pass
     try:
