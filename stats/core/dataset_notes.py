@@ -109,7 +109,7 @@ SNA_GG_BS_NOTES = {
                            "②年金：SNA の一般政府は公的年金の給付の約束を負債に計上しない（付表 3 の保険・年金・定型保証（負債）は 0）。"
                            "③資産の範囲：SNA の固定資産は研究開発・防衛装備品を含む（資産別は cao.sna_fcs.<資産>.gg.a）。"
                            "④評価：SNA のストックは時価（固定資産は再調達価格ベース）。公会計側の評価基準は各作成基準で確認する。"
-                           "⑤期：SNA は暦年末・国と地方の財務書類は年度末。国の財務書類・地方の財務書類は未収録（第 12 弾 第 3・4 便の計画）。"),
+                           "⑤期：SNA は暦年末・国と地方の財務書類は年度末。国の財務書類は mof.zaimu_shorui.*（例 net_assets.national.fy／net_assets.consolidated.fy）・地方（都道府県）の財務書類は soumu.tokitsu.*.pref。"),
 }
 SNA_GG_NOTES = {
     "structure": ("付表 6 一般政府の部門別勘定（**年度**・10 億円）。series_id は cao.sna_gg.<項目>.<部門>.fy・部門＝cg／lg／ssf／total。"
