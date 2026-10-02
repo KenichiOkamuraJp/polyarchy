@@ -97,6 +97,9 @@ def _by_measure(dataset: str, measure: str, freq: str) -> Optional[str]:
         if measure == "nw_opening":
             return None
         return "end" if measure in _TOKITSU_STOCK else "flow"
+    if dataset in ("infra_stock", "infra_stock_pref"):
+        # 社会資本ストック推計（第 12 弾 第 6 便）：投資額は期中。ストックの時点（年度内のどの時点か）は原表に明記が無い＝宣言しない
+        return "flow" if measure in ("nominal_investment", "real_investment") else None
     if dataset in ("us", "eu"):
         return None if measure == "unemployment_rate" else "flow"
     return None
@@ -107,7 +110,7 @@ UNDECLARED_DATASETS = {
     "roudou": "労働力調査は月末 1 週間の就業状態＝『月（期中）』とも『月末』とも言い切れない",
     "fm": "IMF Fiscal Monitor の債務残高の時点（暦年末／会計年度末）は国で違い得る",
 }
-_MEASURE_RULE_DATASETS = ("hojin", "fof", "sna2020", "maikin", "rates", "weo", "wdi", "sdbs", "us", "eu", "zaimu_shorui", "tokitsu")
+_MEASURE_RULE_DATASETS = ("hojin", "fof", "sna2020", "maikin", "rates", "weo", "wdi", "sdbs", "us", "eu", "zaimu_shorui", "tokitsu", "infra_stock", "infra_stock_pref")
 
 
 def basis_of(dataset: str, measure: str, freq: str) -> Optional[str]:

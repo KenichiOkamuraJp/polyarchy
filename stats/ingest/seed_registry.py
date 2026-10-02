@@ -1411,6 +1411,57 @@ def tokitsu_series() -> list[Series]:
     return out
 
 
+# ---------------------------------------------------------------- 第 12 弾 第 6 便（2026-10-02）：内閣府「社会資本ストック推計」（年度版 Excel）
+# (シート名, slug, 表示名, 都道府県ファイルにあるか)。④鉄道（鉄輸機構等・地下鉄等）は全国のみ（都道府県は 16 部門）。2026-10-02 に全 22／20 シートで見出しの一致を確認。
+INFRA_SECTORS = [("17部門計", "total", "17部門計", False), ("①道路", "roads", "道路", True), ("②港湾", "ports", "港湾", True),
+                 ("③航空", "airports", "航空", True), ("④鉄輸機構等", "railway_jrtt", "鉄道（鉄道・運輸機構等）", False),
+                 ("④地下鉄等", "subways", "鉄道（地下鉄等）", False), ("⑤公共住宅", "public_housing", "公共賃貸住宅", True),
+                 ("⑥下水道", "sewerage", "下水道", True), ("⑦廃棄物", "waste", "廃棄物処理", True), ("⑧水道", "water_supply", "水道", True),
+                 ("⑨都市公園", "urban_parks", "都市公園", True), ("⑩学校施設", "school_facilities", "文教施設（学校施設・学術施設）", True),
+                 ("⑩社会教育", "social_education", "文教施設（社会教育施設・社会体育施設・文化施設）", True), ("⑪治水", "flood_control", "治水", True),
+                 ("⑫治山", "forest_conservation", "治山", True), ("⑬海岸", "coast", "海岸", True), ("⑭農業", "agriculture", "農林漁業（農業）", True),
+                 ("⑭林業", "forestry", "農林漁業（林業）", True), ("⑭漁業", "fisheries", "農林漁業（漁業）", True), ("⑮国有林", "national_forests", "国有林", True),
+                 ("⑯工業用水", "industrial_water", "工業用水道", True), ("⑰庁舎", "government_buildings", "庁舎", True)]
+INFRA_NATIONAL = [("gross_stock", "ストック（2015暦年基準）", "粗", "粗資本ストック"), ("net_stock", "ストック（2015暦年基準）", "純", "純資本ストック"),
+                  ("productive_stock", "ストック（2015暦年基準）", "生産的", "生産的資本ストック"),
+                  ("nominal_investment", "名目投資額", "新設改良費", "名目投資額（新設改良費）"), ("real_investment", "実質投資額", "新設改良費", "実質投資額（新設改良費）")]
+INFRA_PREF = [("gross_stock", "pref_gross_fy.xlsx", "粗資本ストック"), ("net_stock", "pref_net_fy.xlsx", "純資本ストック"),
+              ("productive_stock", "pref_prod_fy.xlsx", "生産的資本ストック"), ("real_investment", "pref_flow_fy.xlsx", "実質投資額")]
+INFRA_NOTE = ("内閣府「社会資本ストック推計」（年度版）。**金額は 2015 年価格（実質）・百万円**（名目投資額だけ名目）。粗＝取得時の価格で評価した総量・純＝減耗を控除・"
+              "生産的＝効率性の低下を考慮した生産能力（定義は『日本の社会資本』）。部門計は各部門を連鎖統合した値＝**部門の和とは一致しない**（原表の注）。"
+              "ストックの時点（年度内のどの時点か）は原表に明記が無い＝期の定義は宣言していない。分析の注意は list_datasets の infra_stock の analysis_notes。")
+INFRA_URL = "https://www5.cao.go.jp/keizai2/ioj/result/ioj_data.html"
+
+
+def infra_stock_series() -> list[Series]:
+    out: list[Series] = []
+    for sheet, slug, name, _p in INFRA_SECTORS:
+        for meas, group, sub, ttl in INFRA_NATIONAL:
+            out.append(_s(series_id=f"cao.infra_stock.{meas}.{slug}.fy", title=f"社会資本ストック推計 {ttl}（全国・{name}・年度・{'名目' if meas == 'nominal_investment' else '2015年価格'}・百万円）",
+                          org="cao", org_name="内閣府", source_url=INFRA_URL, sector="財政", unit="百万円", granularity="年度", freq="fy",
+                          dataset="infra_stock", measure=meas, dims=slug, stat_name="社会資本ストック推計", table_id="stock_fy.xlsx",
+                          table_title=f"全国ストック（年度）{sheet}", policy_tags=(TAG_FISCAL, TAG_REGION), first_period="FY1953", status="registered",
+                          basis="" if meas == "nominal_investment" else "2015年価格（実質）",
+                          accessor={"type": "cao_infra_xlsx", "file": "stock_fy.xlsx", "layout": "national", "sheet": sheet, "group": group, "sub": sub},
+                          citation_template=f"内閣府「社会資本ストック推計」全国ストック（年度）{sheet}（" + "{item}／{period}）取得 {retrieved_at}",
+                          notes=INFRA_NOTE))
+    for meas, file, ttl in INFRA_PREF:
+        for sheet, slug, name, in_pref in INFRA_SECTORS:
+            if not in_pref and slug != "total":
+                continue
+            sh, sname = ("16部門計", "16部門計（鉄道を除く）") if slug == "total" else (sheet, name)
+            out.append(_s(series_id=f"cao.infra_stock_pref.{meas}.{'total16' if slug == 'total' else slug}.fy.pref",
+                          title=f"社会資本ストック推計 {ttl}（都道府県・{sname}・年度・2015年価格・百万円）",
+                          org="cao", org_name="内閣府", source_url=INFRA_URL, sector="財政", unit="百万円", granularity="年度", freq="fy",
+                          dataset="infra_stock_pref", measure=meas, dims="total16" if slug == "total" else slug, region_level="pref", region_codes=PREFS,
+                          stat_name="社会資本ストック推計", table_id=file, table_title=f"都道府県別 {ttl}（年度）{sh}", policy_tags=(TAG_FISCAL, TAG_REGION),
+                          first_period="FY1960", status="registered", basis="2015年価格（実質）",
+                          accessor={"type": "cao_infra_xlsx", "file": file, "layout": "pref", "sheet": sh},
+                          citation_template=f"内閣府「社会資本ストック推計」都道府県別 {ttl}（年度）{sh}（" + "{item}／{period}）取得 {retrieved_at}",
+                          notes=INFRA_NOTE + "都道府県別は鉄道を除く 16 部門・県ごとに部門を連鎖統合。region=JP は原表の『全国』行（16 部門の連鎖統合＝全国ファイルの 17 部門計とは別）。"))
+    return out
+
+
 # 第 12 弾（2026-10-02 PdM 判断）：財投＝取得元は PDF のグラフのみ（filp_statistics の gaku_suii.pdf・zandaka_suii07.pdf）＝値を持たず読み方だけ（guide）。
 def filp_guide_series() -> list[Series]:
     base = "https://www.mof.go.jp/policy/filp/reference/filp_statistics/"
@@ -1449,10 +1500,6 @@ def fiscal_planned_series() -> list[Series]:
                 "https://www.mof.go.jp/jgbs/reference/gbb/index.htm",
                 notes=note.format(n=5, x="★ 2026-10-02 見送りと判断（PdM）：機械可読は直近 5 年（20 四半期）の窓の Excel（gbb/suii.xls）だけ＝再取込のたびに古い期が消える"
                                          "（短観と同じ構造）。値は財務省サイトの各四半期の公表で確認する。国債の残高の年度末の長期系列は資金循環（boj.fof_jgb.jgb_outstanding.*）。")),
-        planned("cao.infra_stock.net_capital_stock.total.fy", "社会資本ストック推計 純資本ストック（17 部門計・年度）", "cao", "内閣府", "財政", "（取込時に確定）",
-                "fy", "年度", "infra_stock", "net_capital_stock", (TAG_FISCAL, TAG_MACRO), {"type": "cao_infra_stock"}, "社会資本ストック推計",
-                "https://www5.cao.go.jp/keizai2/ioj/result/ioj_data.html", dims="total",
-                notes=note.format(n=6, x="17 部門・都道府県別・粗／純／生産的資本ストック。")),
     ]
 
 
@@ -2975,6 +3022,7 @@ def build() -> list[Series]:
     S += sna_gg_series()         # 第 12 弾 第 1 便（2026-10-02）＝一般政府の部門別（付表 3 BS・付表 6 勘定）
     S += fiscal_planned_series() # 第 12 弾 第 3〜6 便の対象を planned で先に登録（未収録の明示・取得元 URL）
     S += filp_guide_series()     # 第 12 弾（2026-10-02）＝財投は PDF のグラフのみ＝guide
+    S += infra_stock_series()    # 第 12 弾 第 6 便（2026-10-02）＝社会資本ストック推計（全国・都道府県・年度）
     S += zaimu_shorui_series()   # 第 12 弾 第 3 便（2026-10-02）＝財務省「国の財務書類」Excel 版（planned→registered）
     S += tokitsu_series()        # 第 12 弾 第 4 便（2026-10-02）＝総務省「統一的な基準による財務書類」都道府県（planned→registered）
     S += boj_fof_sector_series() # 第 8 弾 第 2 便（資金循環 部門別・年度）

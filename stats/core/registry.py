@@ -39,13 +39,15 @@ from stats.core.dataset_notes import (CAO_GAP_NOTES as _CAO_GAP_NOTES, FCS_NOTES
                                        SDBS_ANALYSIS_NOTES as _SDBS_NOTES, SHAHO_NOTES as _SHAHO_NOTES,
                                        SNA_ACTIVITY_NOTES as _SNA_ACT_NOTES, SNA_SECTOR_BS_NOTES as _SEC_BS_NOTES,
                                        SNA_SECTOR_NOTES as _SEC_NOTES, STAN_ANALYSIS_NOTES as _STAN_NOTES,
-                                       SNA_GG_BS_NOTES as _GG_BS_NOTES, SNA_GG_NOTES as _GG_NOTES, TOKITSU_NOTES as _TOKITSU_NOTES)
+                                       SNA_GG_BS_NOTES as _GG_BS_NOTES, SNA_GG_NOTES as _GG_NOTES, TOKITSU_NOTES as _TOKITSU_NOTES,
+                                       INFRA_STOCK_NOTES as _INFRA_NOTES)
 from stats.core.hojin_vocab import HOJIN_ANALYSIS_NOTES as _HOJIN_NOTES  # noqa: E402
 DATASET_ANALYSIS_NOTES = {"hojin": _HOJIN_NOTES, "sna_activity": _SNA_ACT_NOTES, "sdbs": _SDBS_NOTES, "stan": _STAN_NOTES,
                           "gap": _GAP_NOTES, "cao_gap": _CAO_GAP_NOTES, "sna_sector": _SEC_NOTES, "sna_sector_bs": _SEC_BS_NOTES,
                           "fof": _FOF_NOTES, "sna_fcs": _FCS_NOTES, "roudou_emp": _REMP_NOTES, "shaho": _SHAHO_NOTES,
                           "maikin": _MAIKIN_NOTES, "cpi2025": _CPI25_NOTES, "shokugyo": _SHOKUGYO_NOTES, "mitoshi": _MITOSHI_NOTES,
-                          "sna_gg_bs": _GG_BS_NOTES, "sna_gg": _GG_NOTES, "tokitsu": _TOKITSU_NOTES}
+                          "sna_gg_bs": _GG_BS_NOTES, "sna_gg": _GG_NOTES, "tokitsu": _TOKITSU_NOTES,
+                          "infra_stock": _INFRA_NOTES, "infra_stock_pref": _INFRA_NOTES}
 
 _ID_RE = re.compile(r"^[a-z][a-z0-9]*(\.[a-z0-9][a-z0-9_\-]*){3,5}$")
 _TOKEN_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]*$")

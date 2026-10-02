@@ -124,6 +124,10 @@ def build_probes(registry: Registry) -> dict:
             # e-Stat file-download は Last-Modified/ETag を返さない＝Content-Length を signal に（head() の第 3 候補）
             from stats.ingest.maikin import url_of as _maikin_url
             p["kind"] = "head"; p["urls"].add(_maikin_url(str(a.get("statInfId", ""))))
+        elif t == "cao_infra_xlsx":
+            # 社会資本ストック推計（第 12 弾 第 6 便）＝Excel の更新（Last-Modified）を signal に
+            from stats.ingest.cao_infra import BASE as _INFRA_BASE
+            p["kind"] = "head"; p["urls"].add(_INFRA_BASE + str(a.get("file", "")))
         elif t == "pdf_chart":
             # 財投（第 12 弾・guide）＝PDF のグラフ＝PDF 自体の更新を signal に（値は持たないので更新時は guide の年度範囲の記述を見直す）
             p["kind"] = "head"; p["urls"].add(str(s.source_url))

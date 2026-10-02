@@ -155,6 +155,15 @@ def main() -> int:
     chk(_pb_label("sna_sector_bs", "net_worth", "a") == "暦年末" and _pb_label("fof", "stock.assets_total", "fy") == "年度末"
         and _pb_label("fof", "flow.assets_total", "fy") == "年度（期中）" and _pb_label("roudou", "unemployment_rate", "m") is None,
         "第12弾 期の定義：代表例（SNA の BS＝暦年末・資金循環ストック＝年度末・フロー＝期中・労調＝未宣言）")
+    # 第 12 弾 第 6 便（2026-10-02）：社会資本ストック推計＝部門の『全国』行（都道府県ファイル）＝全国ファイルの部門の値・沖縄の復帰前は値なし・粗≧純
+    if _vs.has_data("cao.infra_stock.net_stock.total.fy"):
+        bad = [f"{sec}/{m}/{y}" for sec in ("roads", "sewerage", "water_supply") for m in ("net_stock", "gross_stock")
+               for y in ("FY1980", "FY2020")
+               if _v(f"cao.infra_stock.{m}.{sec}.fy", y) is None or _v(f"cao.infra_stock.{m}.{sec}.fy", y) != _v(f"cao.infra_stock_pref.{m}.{sec}.fy.pref", y)]
+        bad += [f"粗<純/{y}" for y in ("FY1953", "FY2020") if (_v("cao.infra_stock.gross_stock.total.fy", y) or 0) < (_v("cao.infra_stock.net_stock.total.fy", y) or 1e18)]
+        ok_okinawa = _v_r("cao.infra_stock_pref.net_stock.total16.fy.pref", "FY1971", "47") is None and _v_r("cao.infra_stock_pref.net_stock.total16.fy.pref", "FY1972", "47") is not None
+        n47 = sum(1 for i in range(1, 48) if _v_r("cao.infra_stock_pref.net_stock.total16.fy.pref", "FY2020", f"{i:02d}") is not None)
+        chk(not bad and ok_okinawa and n47 == 47, f"第12弾 社会資本ストック：部門の全国行＝全国ファイル・粗≧純・沖縄は 1972 年度から・47 都道府県{bad}{n47}")
     # 第 12 弾 第 5 便（2026-10-02）：純計（財政統計 第16表）・社会保障財源（第14表）・国債の保有者別（資金循環の細目）＋財政統計の単位の整合
     if _vs.has_data("mof.zaisei.junkei_net_total.revenue.fy"):
         bad = []
