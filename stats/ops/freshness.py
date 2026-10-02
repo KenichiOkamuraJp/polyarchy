@@ -124,6 +124,9 @@ def build_probes(registry: Registry) -> dict:
             # e-Stat file-download は Last-Modified/ETag を返さない＝Content-Length を signal に（head() の第 3 候補）
             from stats.ingest.maikin import url_of as _maikin_url
             p["kind"] = "head"; p["urls"].add(_maikin_url(str(a.get("statInfId", ""))))
+        elif t == "pdf_chart":
+            # 財投（第 12 弾・guide）＝PDF のグラフ＝PDF 自体の更新を signal に（値は持たないので更新時は guide の年度範囲の記述を見直す）
+            p["kind"] = "head"; p["urls"].add(str(s.source_url))
         elif t == "pdf_table":
             p["kind"] = "head"
             g = a.get("guide", {}) or {}

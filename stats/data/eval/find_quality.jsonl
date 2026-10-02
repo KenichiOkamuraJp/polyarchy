@@ -245,3 +245,4 @@
 {"id": "g12-shaho-fin", "query": "社会保障財源 国庫負担", "facets": {"scope": "jp"}, "limit": 20, "targets": ["ipss.shaho_fin.tax_state.total.fy"], "status": "pass", "note": "第12弾第5便", "added": "2026-10-02", "source": "usage"}
 {"id": "g12-jgb-boj", "query": "国債 保有者 日本銀行", "facets": {"scope": "jp"}, "limit": 20, "targets": ["boj.fof_jgb.jgb_holdings.central_bank.fy"], "status": "pass", "note": "第12弾第5便（財務省の保有者別内訳は PDF のみ＝資金循環で）", "added": "2026-10-02", "source": "usage"}
 {"id": "g12-jgb-overseas", "query": "国債 海外 保有", "facets": {"scope": "jp"}, "limit": 20, "targets": ["boj.fof_jgb.jgb_holdings.overseas.fy"], "status": "pass", "note": "第12弾第5便", "added": "2026-10-02", "source": "usage"}
+{"id": "g12-filp", "query": "財政投融資計画", "facets": {"scope": "jp"}, "limit": 20, "targets": ["mof.filp.plan_initial.total.fy", "mof.filp.outstanding.total.fy"], "status": "pass", "note": "第12弾 財投（guide に到達＝読み方を返せる）", "added": "2026-10-02", "source": "usage"}

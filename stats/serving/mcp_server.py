@@ -286,11 +286,12 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
         if s.status == "guide":
             # guide.why があるもの＝原典がこの組合せを推計・公表していない（例 付表 3 の部門別の固定資産）。原典を読んでも値は無い＝読み方ではなく理由を返す。
             # reason は既存の not_published（範囲内だが公表値がない）＝guide_only（再配布条件）とは別（ツール説明は変えない）
+            # guide.reason があればそれを案内文の理由に使う（第 12 弾・財投＝PDF のグラフのみ）。無ければ従来どおり再配布条件（経団連 春季妥結）
             not_in_source = bool(s.accessor.get("guide", {}).get("why"))
             return nf("not_published" if not_in_source else "guide_only", hint=("この組合せは原典で推計・公表されていません（guide.why）。値は存在しない＝近い項目・按分で埋めない。"
                                           "引ける項目は guide.where。") if not_in_source else
-                                         ("この系列は値を保持しません（取得元の再配布条件により発見層のみ）。guide に従って原典を読んでください。"
-                                          "stats は読み取った値を保証しません＝原典で確認すること。"),
+                                         (f"この系列は値を保持しません（{s.accessor.get('guide', {}).get('reason') or '取得元の再配布条件により発見層のみ'}）。"
+                                          "guide に従って原典を読んでください。stats は読み取った値を保証しません＝原典で確認すること。"),
                       guide={**s.accessor.get("guide", {}), "unit": s.unit, "period_format": hint_for(s.freq),
                              "source_url": s.source_url, "notes": s.notes, "license": s.license})
         is_range = ".." in period

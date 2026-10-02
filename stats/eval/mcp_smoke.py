@@ -137,6 +137,12 @@ async def main() -> int:
             r = _payload(await session.call_tool("lookup_statistic", {"series_id": "cao.sna_gg_bs.net_worth.total.a", "period": "2024"}))
             print(f"[3p] lookup_statistic の period_basis: {r.get('period_basis')}")
             ok &= r.get("period_basis") == "暦年末"
+            # 第 12 弾（2026-10-02）：guide の案内文は系列ごとの理由（guide.reason）＝財投は「PDF のグラフのみ」。再配布条件の文面を一律に出さない
+            r = _payload(await session.call_tool("lookup_statistic", {"series_id": "mof.filp.outstanding.total.fy", "period": "FY2024"}))
+            print(f"[3q] guide の理由（財投）: reason={r.get('reason')} hint={str(r.get('hint'))[:40]}")
+            ok &= r.get("reason") == "guide_only" and "再配布" not in (r.get("hint") or "") and "PDF" in (r.get("hint") or "")
+            r = _payload(await session.call_tool("lookup_statistic", {"series_id": "keidanren.shunto.wage_hike_rate.large.a", "period": "2024"}))
+            ok &= r.get("reason") == "guide_only" and "再配布" in (r.get("hint") or "")
             r = _payload(await session.call_tool("find_statistics", {"query": "固定資本減耗 雇用者報酬 営業余剰", "dataset": "sna2020"}))
             print(f"[3h] find_statistics 複数語 0 件診断: total={r.get('total')} matched_tokens={r.get('matched_tokens')}")
             ok &= r.get("total") == 0 and (r.get("matched_tokens") or {}).get("固定資本減耗", 0) > 0 and "語を減らして" in (r.get("hint") or "")

@@ -1411,6 +1411,34 @@ def tokitsu_series() -> list[Series]:
     return out
 
 
+# 第 12 弾（2026-10-02 PdM 判断）：財投＝取得元は PDF のグラフのみ（filp_statistics の gaku_suii.pdf・zandaka_suii07.pdf）＝値を持たず読み方だけ（guide）。
+def filp_guide_series() -> list[Series]:
+    base = "https://www.mof.go.jp/policy/filp/reference/filp_statistics/"
+    common = {"reason": "取得元は PDF のグラフのみ＝機械で読める表が無い（2026-10-02 判断）",
+              "value_form": "グラフのデータラベル（兆円・小数 1 桁）。表ではないので桁・年度の対応を図で確かめる",
+              "where": "財務省 財政投融資関連統計 " + base + "index.html"}
+    rows = [("plan_initial", "財政投融資計画額（当初計画）", "fy", "年度", "flow", base + "gaku_suii.pdf",
+             {"document": "財政投融資計画額の推移（フロー）（PDF・1 ページの棒グラフ）", "table": "棒グラフ『当初計画額』",
+              "row": "年度（平成13（2001）・20（2008）・21（2009）・23（2011）・29（2017）〜令和8（2026）＝**飛び飛びの年度だけ**）",
+              "column": "各棒の上の数値（当初計画ベース）",
+              "caveats": "毎年度の値ではない（図に載る年度のみ）。【】の数値は補正・弾力追加を加えた改定額＝別系列 mof.filp.plan_revised.total.fy"}),
+            ("plan_revised", "財政投融資計画額（改定額＝補正＋弾力追加）", "fy", "年度", "flow", base + "gaku_suii.pdf",
+             {"document": "財政投融資計画額の推移（フロー）（PDF・1 ページの棒グラフ）", "table": "棒グラフ『改定額（補正＋弾力）』",
+              "row": "年度（当初計画と同じ飛び飛びの年度）", "column": "【】で囲まれた数値",
+              "caveats": "当初計画額に補正による改定額と弾力追加額を加えた計数（原表の注）。"}),
+            ("outstanding", "財政投融資計画残高（年度末・実績）", "fy", "年度", "end", base + "zandaka_suii07.pdf",
+             {"document": "財政投融資計画残高の推移（ストック）（PDF・1 ページの棒グラフ）", "table": "棒グラフ",
+              "row": "年度末（平成12（2000）〜令和7（2025））", "column": "各棒の上の数値",
+              "caveats": "『令和7年度まですべて実績』（原表の注）。財政融資資金の残高（資金循環 boj.fof_jgb.jgb_holdings.fiscal_loan_fund.fy は財政融資資金が保有する国債・財投債）とは別の概念。"})]
+    return [_s(series_id=f"mof.filp.{meas}.total.fy", title=f"{ttl}（兆円・PDF のグラフ）", org="mof", org_name="財務省", source_url=url,
+               sector="財政", unit="兆円", granularity=gran, freq=freq, dataset="filp", measure=meas, dims="total",
+               stat_name="財政投融資関連統計", table_id=url.rsplit("/", 1)[-1], table_title=g["document"], policy_tags=(TAG_FISCAL, TAG_FIN),
+               accessor={"type": "pdf_chart", "guide": {**common, **g}},
+               citation_template="財務省「財政投融資関連統計」" + g["document"].split("（")[0] + "（{item}／{period}）",
+               notes="値は stats に保持しない（取得元が PDF のグラフのみ）。利用側が図のデータラベルを読む。" + g["caveats"],
+               status="guide") for meas, ttl, freq, gran, _b, url, g in rows]
+
+
 def fiscal_planned_series() -> list[Series]:
     """第 12 弾 第 3〜6 便の対象（2026-10-02 登録）＝未収録だが取得元は特定済み。find_statistics で『未収録・取得元はここ』を返すための planned。
     単位・表・コードは取込時に原表で確定する（ここでは決めない）。"""
@@ -1418,7 +1446,9 @@ def fiscal_planned_series() -> list[Series]:
     return [
         planned("mof.gbb.debt_total.q", "国債及び借入金並びに政府保証債務現在高（四半期末）", "mof", "財務省", "財政", "（取込時に確定）",
                 "q", "四半期", "gbb", "debt_total", (TAG_FISCAL,), {"type": "mof_gbb"}, "国債及び借入金並びに政府保証債務現在高",
-                "https://www.mof.go.jp/jgbs/reference/gbb/index.htm", notes=note.format(n=5, x="")),
+                "https://www.mof.go.jp/jgbs/reference/gbb/index.htm",
+                notes=note.format(n=5, x="★ 2026-10-02 見送りと判断（PdM）：機械可読は直近 5 年（20 四半期）の窓の Excel（gbb/suii.xls）だけ＝再取込のたびに古い期が消える"
+                                         "（短観と同じ構造）。値は財務省サイトの各四半期の公表で確認する。国債の残高の年度末の長期系列は資金循環（boj.fof_jgb.jgb_outstanding.*）。")),
         planned("cao.infra_stock.net_capital_stock.total.fy", "社会資本ストック推計 純資本ストック（17 部門計・年度）", "cao", "内閣府", "財政", "（取込時に確定）",
                 "fy", "年度", "infra_stock", "net_capital_stock", (TAG_FISCAL, TAG_MACRO), {"type": "cao_infra_stock"}, "社会資本ストック推計",
                 "https://www5.cao.go.jp/keizai2/ioj/result/ioj_data.html", dims="total",
@@ -2944,6 +2974,7 @@ def build() -> list[Series]:
     S += sna_sector_series()     # 第 8 弾 第 1 便（制度部門別勘定の残り・制度部門別 BS）＋第 12 弾 第 1 便（公的企業の BS・一般政府の税と補助金）
     S += sna_gg_series()         # 第 12 弾 第 1 便（2026-10-02）＝一般政府の部門別（付表 3 BS・付表 6 勘定）
     S += fiscal_planned_series() # 第 12 弾 第 3〜6 便の対象を planned で先に登録（未収録の明示・取得元 URL）
+    S += filp_guide_series()     # 第 12 弾（2026-10-02）＝財投は PDF のグラフのみ＝guide
     S += zaimu_shorui_series()   # 第 12 弾 第 3 便（2026-10-02）＝財務省「国の財務書類」Excel 版（planned→registered）
     S += tokitsu_series()        # 第 12 弾 第 4 便（2026-10-02）＝総務省「統一的な基準による財務書類」都道府県（planned→registered）
     S += boj_fof_sector_series() # 第 8 弾 第 2 便（資金循環 部門別・年度）
