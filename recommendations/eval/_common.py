@@ -35,6 +35,20 @@ def load_eval_set(which: str = "canonical") -> list[dict]:
     return canon
 
 
+def dump_topk(topk: dict[str, list[str]], path) -> None:
+    """問ごとの上位 k 件 {問ID: [file_name…]} を JSON に書く（`--dump-topk`）。
+
+    検索側の変更（部品の切り出し等）の前後で同じ機械・同じデバイスで書き出し、完全一致を確かめる道具
+    （審議会議事録DB_開発計画 §2.5）。Mac（MPS）と箱（CPU）ではリランカーのスコアが端数で変わり得る
+    ＝機械をまたいで比べない。
+    """
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(topk, f, ensure_ascii=False, indent=1)
+        f.write("\n")
+    print(f"\n上位 k 件を書き出し: {path}（{len(topk)}問）")
+
+
 def source_name(node) -> str:
     """source_node からファイル名を取り出す（file_name → file_path の basename → 不明）。"""
     metadata = node.node.metadata

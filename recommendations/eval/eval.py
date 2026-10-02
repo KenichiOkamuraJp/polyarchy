@@ -21,6 +21,7 @@ PolicySearchService＋diversify=True に一本化（所見 2026-08-19 段 5-1 �
     python -m recommendations.eval.eval --limit 3        # 先頭3問だけ（スモークテスト）
     python -m recommendations.eval.eval --top-k 8        # TOP_K を上書きして評価
     python -m recommendations.eval.eval --retrieval-only --eval-set both   # 正典＋ユーザー由来
+    python -m recommendations.eval.eval --retrieval-only --eval-set both --dump-topk out.json  # 問ごとの上位 k 件も書く
 
 Phase 9（2026-07-14）で設問型を2つ追加:
   coverage_multi … 横断・網羅型。top_k 内に拾えた「異なる団体」数が min_coverage 以上かで採点
@@ -29,6 +30,7 @@ Phase 9（2026-07-14）で設問型を2つ追加:
 """
 import argparse
 import sys
+from pathlib import Path
 
 from recommendations.core.config import TOP_K
 from recommendations.eval._common import EVAL_SET_PATH, load_eval_set
@@ -46,11 +48,16 @@ def main() -> None:
                         default="canonical",
                         help="評価対象（Phase 12）: canonical=正典のみ（既定・アンカー）／"
                              "user=ユーザー由来のみ／both=連結")
+    parser.add_argument("--dump-topk", type=Path, default=None, metavar="PATH",
+                        help="問ごとの上位 k 件 {問ID: [file_name…]} を JSON に書く"
+                             "（--retrieval-only／--filter-eval のみ・採点は不変）")
     args = parser.parse_args()
+    if args.dump_topk and not (args.retrieval_only or args.filter_eval):
+        parser.error("--dump-topk は --retrieval-only か --filter-eval と一緒に使う")
 
     if args.filter_eval:
         from recommendations.eval.filters import run_filter_eval
-        run_filter_eval(args.top_k)
+        run_filter_eval(args.top_k, args.dump_topk)
         return
 
     if not EVAL_SET_PATH.exists():
@@ -68,7 +75,7 @@ def main() -> None:
 
     if args.retrieval_only:
         from recommendations.eval.retrieval import run_retrieval_only
-        run_retrieval_only(eval_set, args.top_k)
+        run_retrieval_only(eval_set, args.top_k, args.dump_topk)
         return
 
     from recommendations.eval.full import run_full

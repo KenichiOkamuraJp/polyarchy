@@ -9,6 +9,7 @@ hit@k / MRR を団体別・設問型別に出し、Phase 9 の網羅（coverage_
 """
 
 import sys
+from pathlib import Path
 
 from recommendations.core.config import (
     COLLECTION_NAME,
@@ -18,16 +19,18 @@ from recommendations.core.config import (
     PRODUCTION_RERANKER,
 )
 from recommendations.core.orgs import ORG_DISPLAY_ORDER
+from recommendations.eval._common import dump_topk
 from recommendations.eval._scoring import expected_sources, org_of
 
 
-def run_retrieval_only(eval_set: list[dict], top_k: int) -> None:
+def run_retrieval_only(eval_set: list[dict], top_k: int, dump_path: Path | None = None) -> None:
     """検索専用評価（LLM/Anthropic不要＝クレジット0）。
 
     本番経路＝`PolicySearchService.search(diversify=True)`（ハイブリッド retrieve→rerank→
     文書単位の重複抑制→公開層フェイルクローズ）で、answerable設問の hit@k / MRR をドメイン別に
     出す。生成系①③は測らない（それらは Anthropic API が要る）。rerank/hybrid の高速反復・
     クレジット無しの回帰監視に使う。
+    dump_path を渡すと、検索した問の上位 k 件 {問ID: [file_name…]} を JSON に書く（採点は不変）。
     """
     from collections import defaultdict
 
@@ -42,9 +45,15 @@ def run_retrieval_only(eval_set: list[dict], top_k: int) -> None:
           f", hybrid={HYBRID_SEARCH}, rerank={PRODUCTION_RERANKER}"
           f" [service pool={svc.pool_k} diversify=True]")
 
-    def retrieve_top(question: str) -> list[str]:
-        """本番経路（service＋diversify）で top_k のファイル名列を返す。"""
-        return [c.file_name for c in svc.search(question, top_k=top_k, diversify=True)]
+    topk: dict[str, list[str]] = {}  # 問ID → 上位 k 件（--dump-topk）
+
+    def retrieve_top(q: dict) -> list[str]:
+        """本番経路（service＋diversify）で top_k のファイル名列を返す（問ID ごとに記録）。"""
+        got = [c.file_name for c in svc.search(q["question"], top_k=top_k, diversify=True)]
+        if dump_path and q["id"] in topk:
+            raise ValueError(f"問ID が重複: {q['id']}（--eval-set の連結で衝突）")
+        topk[q["id"]] = got
+        return got
 
     by = defaultdict(lambda: {"hit": [], "rr": []})
     byt = defaultdict(lambda: {"hit": [], "rr": []})  # Phase 6.5: 設問型別（qtype）
@@ -60,7 +69,7 @@ def run_retrieval_only(eval_set: list[dict], top_k: int) -> None:
         # 知見1（＝関連度勝ちの1団体に偏る）の物差し。primary=団体幅（expected_orgs のうち top_k
         # に現れた数）。exact-file の distinct は付随情報（別ファイルでも同団体を拾えれば網羅は成立）。
         if qt == "coverage_multi":
-            got = retrieve_top(q["question"])
+            got = retrieve_top(q)
             exp_orgs = set(q.get("expected_orgs", [])) or {org_of(s) for s in targets}
             breadth = len({org_of(s) for s in got} & exp_orgs)   # primary: 拾えた団体数
             doc_hits = len({s for s in targets if s in got})     # secondary: 正解ファイル一致数
@@ -77,7 +86,7 @@ def run_retrieval_only(eval_set: list[dict], top_k: int) -> None:
         # retrieval では測れないので対象外にカウントするだけ。日付確定できる答え可能分のみ hit@k。
         if qt == "aggregation":
             if targets:
-                got = retrieve_top(q["question"])
+                got = retrieve_top(q)
                 rank = next((i for i, s in enumerate(got, 1) if s in targets), None)
                 agg_rows.append({"id": q["id"], "hit": 1.0 if rank else 0.0,
                                  "rr": 1.0 / rank if rank else 0.0,
@@ -88,7 +97,7 @@ def run_retrieval_only(eval_set: list[dict], top_k: int) -> None:
 
         if not targets:
             continue  # 棄却設問は検索対象なし
-        got = retrieve_top(q["question"])
+        got = retrieve_top(q)
         rank = next((i for i, s in enumerate(got, 1) if s in targets), None)
         hit, rr = (1.0 if rank else 0.0), (1.0 / rank if rank else 0.0)
         by[q.get("expected_org", "?")]["hit"].append(hit)
@@ -146,3 +155,6 @@ def run_retrieval_only(eval_set: list[dict], top_k: int) -> None:
                 print(f"  {r['id']}  hit@{top_k} {mark}  MRR {r['rr']:.3f}  {r['src']}")
             print(f"  答え可能 hit@{top_k}: {m([r['hit'] for r in agg_rows])*100:.1f}%  "
                   f"MRR {m([r['rr'] for r in agg_rows]):.3f}")
+
+    if dump_path:
+        dump_topk(topk, dump_path)

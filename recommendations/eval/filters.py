@@ -13,6 +13,7 @@
 
 import json
 import sys
+from pathlib import Path
 
 from llama_index.core import Settings
 
@@ -21,7 +22,7 @@ from recommendations.core.config import (
     HYBRID_SEARCH,
     PRODUCTION_RERANKER,
 )
-from recommendations.eval._common import FILTER_EVAL_PATH, source_name
+from recommendations.eval._common import FILTER_EVAL_PATH, dump_topk, source_name
 
 
 def _filter_from_dict(d: dict):
@@ -91,13 +92,14 @@ def _layer_gate_selftest(embed_model, top_k: int) -> bool:
     return ok
 
 
-def run_filter_eval(top_k: int) -> None:
+def run_filter_eval(top_k: int, dump_path: Path | None = None) -> None:
     """Phase 6：構造化フィルタ検索の評価（検索専用・クレジット0）。
 
     eval_filter.json の各設問に filter を適用し、keep（絞っても正解が top_k に残る）/
     drop（フィルタで正解が除外される）を検証する。測定経路は本番経路＝
     `PolicySearchService.search(diversify=True)`（MCP／chat_app の既定と同一）。
     加えて合成データで層ゲートを自己検証する。既存 78問（無条件検索前提）とは別ハーネス。
+    dump_path を渡すと、各設問の上位 k 件 {設問ID: [file_name…]} を JSON に書く（判定は不変）。
     """
     if not FILTER_EVAL_PATH.exists():
         sys.exit(f"ERROR: フィルタ評価セットが見つかりません: {FILTER_EVAL_PATH}")
@@ -115,6 +117,7 @@ def run_filter_eval(top_k: int) -> None:
     print("-" * 78)
 
     passed = 0
+    topk: dict[str, list[str]] = {}  # 設問ID → 上位 k 件（--dump-topk）
     for item in fset:
         sf = _filter_from_dict(item["filter"])
         d = item["filter"]
@@ -122,6 +125,7 @@ def run_filter_eval(top_k: int) -> None:
             item["question"], orgs=d.get("orgs"), since=d.get("date_from"),
             until=d.get("date_to"), field=d.get("field_tag"), top_k=top_k,
             diversify=True)]
+        topk[item["id"]] = got
         src = item["expected_source"]
         hit = src in got
         if item["mode"] == "keep":
@@ -143,3 +147,5 @@ def run_filter_eval(top_k: int) -> None:
     gate_ok = _layer_gate_selftest(Settings.embed_model, top_k)
     print("=" * 78)
     print(f"総合: フィルタ {passed}/{len(fset)} + 層ゲート {'PASS' if gate_ok else 'FAIL'}")
+    if dump_path:
+        dump_topk(topk, dump_path)
