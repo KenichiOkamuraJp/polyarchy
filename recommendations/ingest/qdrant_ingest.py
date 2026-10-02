@@ -55,6 +55,8 @@ ISSUER_OF_GOV_PREFIX = {
     "cefp": "経済財政諮問会議",
     "kisei": "規制改革推進会議",
     "zaiseishin": "財政制度等審議会",
+    "dgk": "デジタル行財政改革会議",
+    "aiplan": "人工知能戦略本部",  # 人工知能基本計画＝本部が案を作り閣議決定（AI 法）
 }
 
 SCROLL_BATCH = 512

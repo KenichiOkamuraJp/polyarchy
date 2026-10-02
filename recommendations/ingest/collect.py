@@ -831,13 +831,112 @@ def _gov_resolve_pdf(source: str, html_url: str) -> str | None:
     return None
 
 
+# --- AI・デジタル改革の決定文書（B26・2026-10-02 追加＝収録拡充計画_AI・デジタル改革の決定文書.md）
+#   - dgk    デジタル行財政改革会議: 一覧ページの「会議決定」節の各項目から「本文」の PDF だけを採る
+#            （概要は採らない）。日付は項目の和暦（「（令和８年７月７日デジタル行財政改革会議決定）」）。
+#   - aiplan 人工知能基本計画: 内閣府の一覧ページの本文 PDF（aiplan_YYYYMMDD.pdf）だけを採る
+#            （概要 aiplan_g_*・英訳 *_eng_*/*_en_* は採らない）。改定前の版も残す。
+#            一覧のリンク文字は版を問わず「人工知能基本計画」＝版を見分ける副題は本文 1 頁目から取る。
+# 会議体の事務局が移ると一覧ページの URL が変わる＝更新チェックの失敗で気づき、URL を直す。
+# source_url は取得時の URL のまま（出典は取得時点の事実＝後から書き換えない）。
+# 後継の会議体の決定文書は、同じ形の一覧（見出し＋「本文」リンク＋和暦の決定日）なら
+# _kaigi_kettei_index に URL と見出しを渡す索引関数を GOV_SOURCES に足すだけで採れる。
+
+DGK_INDEX = "https://www.cas.go.jp/jp/seisaku/digital_gyozaikaikaku/index.html"
+AIPLAN_INDEX = "https://www8.cao.go.jp/cstp/ai/ai_plan/ai_plan.html"
+
+# ファイル名の接尾辞（gov_dgk_<決定年><接尾辞>）。取りまとめは決定年だけ・同じ年の他の決定は文書の種類で区別する。
+DGK_SUFFIX = [("データ利活用制度", "data"), ("共通基盤", "kiban"), ("ライフライン", "lifeline"),
+              ("取りまとめ", ""), ("とりまとめ", "")]
+
+
+def _kaigi_kettei_index(page_url: str, heading: str, source: str,
+                        suffixes: list[tuple[str, str]]) -> list[dict]:
+    """会議の一覧ページの「<heading>」節（直後の ul）から、各項目の「本文」PDF を返す。
+
+    項目＝「<文書名>（概要（PDF…）／本文（PDF…））（令和N年M月D日<会議名>決定）」の形。
+    本文リンクが無い項目は採らない（概要だけの決定は本文が別にある＝見落としを出力で示す）。
+    接尾辞が決まらない文書名はエラーで止める（ファイル名を推測で作らない）。
+    """
+    soup = BeautifulSoup(_get(page_url).text, "html.parser")
+    h = soup.find(lambda t: t.name in ("h2", "h3", "h4") and t.get_text(strip=True) == heading)
+    if h is None:
+        raise RuntimeError(f"{page_url}: 見出し「{heading}」が見つからない（一覧ページの移転・改装）")
+    ul = h.find_next("ul")
+    entries, seen = [], set()
+    for li in ul.find_all("li"):
+        text = " ".join(li.get_text().split())
+        honbun = [a for a in li.find_all("a", href=True)
+                  if a.get_text(strip=True).startswith("本文") and a["href"].lower().endswith(".pdf")]
+        if not honbun:
+            print(f"  – 本文リンク無し（採らない）: {text[:50]}", file=sys.stderr)
+            continue
+        title = text.split("（", 1)[0].strip()
+        iso = _wareki_to_iso(text)
+        if not iso:
+            raise RuntimeError(f"{page_url}: 決定日（和暦）が読めない: {text[:60]}")
+        suffix = next((s for kw, s in suffixes if kw in title), None)
+        if suffix is None:
+            raise RuntimeError(f"{page_url}: ファイル名の接尾辞が未定義の文書: {title}"
+                               f"（{source} の接尾辞の表に足す）")
+        num = iso[:4] + suffix
+        if num in seen:
+            raise RuntimeError(f"{page_url}: ファイル名が重複: gov_{source}_{num}（{title}）")
+        seen.add(num)
+        entries.append({
+            "source": source, "num": num, "title": title, "date": iso, "doc_type": "方針",
+            "pdf_url": urljoin(page_url, honbun[0]["href"]), "html_url": None,
+        })
+    return entries
+
+
+def gov_dgk_index() -> list[dict]:
+    """デジタル行財政改革会議の会議決定（取りまとめ・基本方針・整備計画）の本文 PDF を返す。"""
+    return _kaigi_kettei_index(DGK_INDEX, "会議決定", "dgk", DGK_SUFFIX)
+
+
+def gov_aiplan_index() -> list[dict]:
+    """人工知能基本計画の本文 PDF（aiplan_YYYYMMDD.pdf）を全版返す。日付は直前の段落の和暦（無ければ stem）。"""
+    soup = BeautifulSoup(_get(AIPLAN_INDEX).text, "html.parser")
+    pat = re.compile(r"(?:^|/)aiplan_(\d{8})\.pdf$")
+    entries, seen = [], set()
+    for a in _main_node(soup).find_all("a", href=True):
+        m = pat.search(a["href"])
+        if not m or m.group(1) in seen:
+            continue
+        ymd = m.group(1)
+        seen.add(ymd)
+        p = a.find_previous("p")
+        iso = _wareki_to_iso(p.get_text()) if p else ""
+        if not iso:
+            iso = f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}"
+        entries.append({
+            "source": "aiplan", "num": ymd, "title": "人工知能基本計画", "date": iso,
+            "doc_type": "方針", "pdf_url": urljoin(AIPLAN_INDEX, a["href"]), "html_url": None,
+            "title_from_pdf": True,
+        })
+    return entries
+
+
+def _title_with_subtitle(pdf_path: Path, title: str) -> str:
+    """本文 1 頁目の「<title>」の次の行が「～…～」なら副題として足す（版の見分け）。無ければ title のまま。"""
+    import fitz  # PyMuPDF（取込側と同じ抽出器）
+    with fitz.open(pdf_path) as doc:
+        lines = [ln.strip() for ln in doc[0].get_text().splitlines() if ln.strip()]
+    for i, ln in enumerate(lines[:-1]):
+        if ln == title and lines[i + 1].startswith("～"):
+            return f"{title} {lines[i + 1]}"
+    return title
+
+
 GOV_SOURCES = {"cefp": gov_cefp_index, "kisei": gov_kisei_index,
-               "zaiseishin": gov_zaiseishin_index}
+               "zaiseishin": gov_zaiseishin_index,
+               "dgk": gov_dgk_index, "aiplan": gov_aiplan_index}
 
 
 def collect_gov(years: list[int] | None, limit: int | None,
                 skip_existing: bool = False, source: str | None = None) -> list[dict]:
-    """政府(諮問会議/規制改革/財政審)の成果文書を収集。
+    """政府(諮問会議/規制改革/財政審/デジタル行財政改革会議/人工知能基本計画)の成果文書を収集。
 
     source 指定で単一サブ系統のみ（スパイク/テスト用）。years 指定で発行年フィルタ。
     limit はサブ系統ごとの取得上限（横断合計でなく各系統に適用）。
@@ -868,6 +967,8 @@ def collect_gov(years: list[int] | None, limit: int | None,
                 "html_text": None,  # 政府系は HTML 本文化しない＝本文 PDF 無しは html_only
                 "resolve_error": resolve_error, "source_url": "page_first", "log_date": True,
             }, "gov", out_dir, today, skip_existing)
+            if e.get("title_from_pdf") and row["status"] == "ok":
+                row["title"] = _title_with_subtitle(out_dir / row["file_name"], e["title"])
             if row["status"] == "ok":
                 taken += 1
             rows.append(row)
@@ -1010,7 +1111,7 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None, help="取得PDF数の上限（スパイク用）")
     ap.add_argument("--skip-existing", action="store_true", help="既存ファイルは再取得しない")
     ap.add_argument("--source", choices=list(GOV_SOURCES), default=None,
-                    help="政府のサブ系統を1つに限定（cefp/kisei/zaiseishin, スパイク用）")
+                    help="政府のサブ系統を1つに限定（cefp/kisei/zaiseishin/dgk/aiplan）")
     args = ap.parse_args()
 
     print(f"収集: {args.org}  years={args.years}  limit={args.limit}  "

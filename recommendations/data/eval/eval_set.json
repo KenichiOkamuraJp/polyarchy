@@ -2483,5 +2483,165 @@
   "expected_source": "nissho_2025_0304161243_1.pdf",
   "expected_org": "nissho",
   "qtype": "aggregation"
+ },
+ {
+  "id": "220",
+  "question": "デジタル行財政改革 取りまとめ2026では、デジタル行財政改革会議を今後どのような会議に改組し、どの本部・会議と連携してAIの法制度の見直しを進めるとしていますか。事務局の移管先も答えてください。",
+  "expected_keywords": [
+   "AI・デジタル改革推進会議",
+   "人工知能戦略本部",
+   "規制改革推進会議",
+   "デジタル庁"
+  ],
+  "expected_source": "gov_dgk_2026.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "221",
+  "question": "取りまとめ2026で、政府の会計DXは2026年度にどこまで調査対象を広げ、何を用いて業務・データの標準化の合意形成を進めるとしていますか。",
+  "expected_keywords": [
+   "会計DX",
+   "地方支分部局",
+   "要件定義",
+   "プロトタイプ"
+  ],
+  "expected_source": "gov_dgk_2026.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "222",
+  "question": "デジタル行財政改革の2026年の取りまとめで、重点的に取り組むとされた4つのDX分野は何ですか。",
+  "expected_keywords": [
+   "医療・介護DX",
+   "交通・インフラDX",
+   "働く環境DX",
+   "行政手続・サービス等DX"
+  ],
+  "expected_source": "gov_dgk_2026.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "223",
+  "question": "デジタル行財政改革 取りまとめ2025は、取組方針の1点目と2点目で、地方の価値の再定義とAI・データについて何を掲げていますか。",
+  "expected_keywords": [
+   "地方創生2.0",
+   "web3",
+   "燃料"
+  ],
+  "expected_source": "gov_dgk_2025.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "224",
+  "question": "デジタル行財政改革 取りまとめ2024は、学校における押印やFAXについていつまでに原則廃止するとしていますか。",
+  "expected_keywords": [
+   "押印",
+   "FAX",
+   "2025年度末"
+  ],
+  "expected_source": "gov_dgk_2024.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "225",
+  "question": "2023年12月のデジタル行財政改革 中間とりまとめは、どの分野で予算事業と規制・制度の見直しを一体的に進めるとし、現場の課題をどのような場で把握したとしていますか。",
+  "expected_keywords": [
+   "子育て・児童福祉",
+   "インバウンド・観光",
+   "スタートアップ",
+   "課題発掘対話"
+  ],
+  "expected_source": "gov_dgk_2023.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "226",
+  "question": "データ利活用制度の在り方に関する基本方針（2025年6月）が、データスペースの整備等の先行個別分野として挙げている分野をすべて答えてください。",
+  "expected_keywords": [
+   "医療分野",
+   "金融分野",
+   "教育分野",
+   "モビリティ分野",
+   "産業分野"
+  ],
+  "expected_source": "gov_dgk_2025data.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "227",
+  "question": "国・地方デジタル共通基盤の整備・運用に関する基本方針は、国と地方が連携して進めるDXを「タテの改革」と「ヨコの改革」に分けていますが、それぞれ何を指しますか。",
+  "expected_keywords": [
+   "タテの改革",
+   "ヨコの改革",
+   "DPI",
+   "共通SaaS"
+  ],
+  "expected_source": "gov_dgk_2024kiban.pdf",
+  "expected_sources": [
+   "gov_dgk_2024kiban.pdf",
+   "gov_dgk_2024.pdf"
+  ],
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "228",
+  "question": "デジタルライフライン全国総合整備計画のアーリーハーベストプロジェクトとして挙げられている取組は何ですか。",
+  "expected_keywords": [
+   "ドローン航路",
+   "自動運転サービス支援道",
+   "インフラ管理DX"
+  ],
+  "expected_source": "gov_dgk_2024lifeline.pdf",
+  "expected_sources": [
+   "gov_dgk_2024lifeline.pdf",
+   "gov_dgk_2025.pdf",
+   "gov_dgk_2026.pdf"
+  ],
+  "expected_org": "gov",
+  "qtype": "coverage"
+ },
+ {
+  "id": "229",
+  "question": "2026年7月に閣議決定された人工知能基本計画は、ガバメントAIの利用規模をどう記述し、それを何を体現するものとして展開するとしていますか。",
+  "expected_keywords": [
+   "源内",
+   "18万人",
+   "AI主権"
+  ],
+  "expected_source": "gov_aiplan_20260714.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "230",
+  "question": "2025年12月に閣議決定された最初の人工知能基本計画は、政府自身のAI利活用についてどのような姿勢と目標を示していますか。",
+  "expected_keywords": [
+   "隗より始めよ",
+   "普段使い",
+   "地方支分部局"
+  ],
+  "expected_source": "gov_aiplan_20251223.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "231",
+  "question": "人工知能基本計画（2026年7月改定）の副題と、社会全体でのAX推進の起点に据えている技術は何ですか。",
+  "expected_keywords": [
+   "日本AX",
+   "エージェント型AI",
+   "世界で最もAIを開発・活用しやすい国"
+  ],
+  "expected_source": "gov_aiplan_20260714.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
  }
 ]
