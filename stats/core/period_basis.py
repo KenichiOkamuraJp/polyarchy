@@ -31,6 +31,14 @@ _HOJIN_BS = {
     "short_term_borrowings", "fixed_liabilities", "long_term_borrowings", "bonds", "net_assets", "capital_stock", "shareholders_equity",
 }
 
+# 国の財務書類の貸借対照表の項目（seed_registry.ZAIMU_ROWS のシート 0）
+_ZAIMU_BS = {
+    "cash_deposits", "securities", "loans", "pension_investment_deposits", "tangible_fixed_assets", "state_property_ex_public", "land",
+    "public_property", "public_property_land", "public_property_facilities", "investments", "assets_total", "financing_bills",
+    "government_bonds", "iaa_bonds", "borrowings", "postal_savings", "insurance_reserves", "public_pension_deposits",
+    "retirement_allowances", "liabilities_total", "net_assets",
+}
+
 # dataset → 期の種類（全 measure 共通）
 _BY_DATASET = {
     # 期末残高（表題・原表で暦年末／年度末と明記）
@@ -70,6 +78,11 @@ def _by_measure(dataset: str, measure: str, freq: str) -> Optional[str]:
         return None if measure == "population" else "flow"  # 年央推計
     if dataset == "sdbs":
         return None if measure == "enterprises" else "flow"
+    if dataset == "zaimu_shorui":
+        # 国の財務書類（第 12 弾 第 3 便）：貸借対照表＝年度末（3 月 31 日）・増減計算書の期末＝年度末・期首（前年度末）は期の表記と時点がずれる＝宣言しない
+        if measure == "nw_opening":
+            return None
+        return "end" if measure in _ZAIMU_BS or measure == "nw_closing" else "flow"
     if dataset in ("us", "eu"):
         return None if measure == "unemployment_rate" else "flow"
     return None
@@ -80,7 +93,7 @@ UNDECLARED_DATASETS = {
     "roudou": "労働力調査は月末 1 週間の就業状態＝『月（期中）』とも『月末』とも言い切れない",
     "fm": "IMF Fiscal Monitor の債務残高の時点（暦年末／会計年度末）は国で違い得る",
 }
-_MEASURE_RULE_DATASETS = ("hojin", "fof", "sna2020", "maikin", "rates", "weo", "wdi", "sdbs", "us", "eu")
+_MEASURE_RULE_DATASETS = ("hojin", "fof", "sna2020", "maikin", "rates", "weo", "wdi", "sdbs", "us", "eu", "zaimu_shorui")
 
 
 def basis_of(dataset: str, measure: str, freq: str) -> Optional[str]:

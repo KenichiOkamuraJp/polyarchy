@@ -151,6 +151,28 @@ def main() -> int:
     chk(_pb_label("sna_sector_bs", "net_worth", "a") == "暦年末" and _pb_label("fof", "stock.assets_total", "fy") == "年度末"
         and _pb_label("fof", "flow.assets_total", "fy") == "年度（期中）" and _pb_label("roudou", "unemployment_rate", "m") is None,
         "第12弾 期の定義：代表例（SNA の BS＝暦年末・資金循環ストック＝年度末・フロー＝期中・労調＝未宣言）")
+    # 第 12 弾 第 3 便（2026-10-02）：国の財務書類＝貸借の恒等式・増減計算書の式・期首＝前期末（百万円の丸めで ±2）
+    if _vs.has_data("mof.zaimu_shorui.net_assets.national.fy"):
+        def _z(m, k, fy):
+            return _v(f"mof.zaimu_shorui.{m}.{k}.fy", f"FY{fy}")
+        bad = []
+        for k, yrs in (("national", range(2017, 2024)), ("consolidated", range(2019, 2025))):
+            for y in yrs:
+                a_, l_, n_ = _z("assets_total", k, y), _z("liabilities_total", k, y), _z("net_assets", k, y)
+                if None in (a_, l_, n_) or abs(a_ - l_ - n_) > 2:
+                    bad.append(f"BS/{k}/{y}")
+                    continue
+                parts = [_z(m, k, y) or 0 for m in ("nw_opening", "nw_operating_costs", "nw_financing", "nw_revaluation", "nw_fx_translation",
+                                                     "nw_pension_deposit_change", "nw_consolidation_scope", "nw_other")]
+                if abs(sum(parts) - (_z("nw_closing", k, y) or 1e18)) > 2 or _z("nw_closing", k, y) != n_:
+                    bad.append(f"NW/{k}/{y}")
+                if _z("operating_costs_total", k, y) != -(_z("nw_operating_costs", k, y) or 0):
+                    bad.append(f"PL/{k}/{y}")
+                if y > yrs[0] and _z("nw_opening", k, y) != _z("nw_closing", k, y - 1):
+                    bad.append(f"期首/{k}/{y}")
+        chk(not bad, f"第12弾 国の財務書類：資産＝負債＋資産・負債差額／増減計算書の式・期末＝BS／業務費用＝増減計算書のⅡ／期首＝前期末（±2）{bad[:4]}")
+        chk(_z("net_assets", "national", 2024) is None and _z("net_assets", "consolidated", 2024) is not None,
+            "第12弾 国の財務書類：FY2024 の一般会計・特別会計（暗号化された Excel）は未収録のまま＝連結で埋めていない")
     # 第 12 弾 第 1 便（2026-10-02）：公的企業の BS・一般政府の部門別（付表 3・付表 6）
     if _vs.has_data("cao.sna_sector_bs.net_worth.nfc_public.a"):
         bad = [f"{slug}/{y}" for slug in ("nfc_public", "fin_public") for y in ("2024", "2010", "1994")

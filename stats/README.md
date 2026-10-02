@@ -34,6 +34,7 @@ python -m stats.ingest.intl --all                    # 国際比較（IMF DataMa
 python -m stats.ingest.mof --all                     # 財務省 国債金利 CSV
 python -m stats.ingest.boj_flat --all                # 日銀 フラットファイル（国際収支・対外資産負債・資金循環）
 python -m stats.ingest.mof_zaisei --all              # 財務省 財政統計 Excel
+python -m stats.ingest.mof_zaimu --all               # 財務省 国の財務書類 Excel（合算・連結）
 python -m stats.ingest.pdf_shunto --all              # 経団連 春季妥結 PDF（現在は status=guide＝既定では対象なし）
 python -m stats.ingest.soumu_hakusho --all           # 総務省 地方財政計画（白書 資料編 CSV）
 python -m stats.ops.refresh --help                   # 月次データ更新の 1 コマンド化（ほかの取込モジュールは下の構成を参照）
@@ -74,6 +75,7 @@ stats/
 │   ├── boj_file.py      行＝期間・列＝項目の公表 xlsx（日銀 gap.xlsx・社人研 将来推計）
 │   ├── boj_flat.py      日銀 時系列統計 フラットファイル zip（国際収支・対外資産負債・資金循環）
 │   ├── mof.py           財務省 国債金利 CSV（和暦日付）      mof_zaisei.py  財務省 財政統計 Excel（3 表型・和暦シート名）
+│   ├── mof_zaimu.py     財務省 国の財務書類 Excel（年版ごと・本年度列／翌年版の前年度列）
 │   ├── soumu_hakusho.py 総務省 地方財政白書 資料編 CSV（地方財政計画・版を重ねる）
 │   ├── intl.py          IMF DataMapper／OECD SDMX／世界銀行 API（ISO3・IMF は版年以降 kind=projection）
 │   ├── boj_mtshtml.py   日銀 主要時系列統計データ表（HTML）      cao_gap.py  内閣府 GDP ギャップ・潜在成長率

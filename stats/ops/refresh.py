@@ -44,6 +44,7 @@ TYPE_TO_MODULE = {
     "maikin_csv": "maikin", "estat_catalog_xlsx": "shokugyo", "cao_mitoshi_pdf": "cao_mitoshi",
     "mof_csv": "mof",
     "mof_zaisei": "mof_zaisei",
+    "mof_zaimu_xlsx": "mof_zaimu",
     "imf_dm": "intl", "oecd_sdmx": "intl", "wb_api": "intl",
     "soumu_hakusho": "soumu_hakusho",
     "pdf_table": "pdf_shunto",   # 系列指定不可＝ --all で回す（現収録は guide のみ＝実質 no-op）

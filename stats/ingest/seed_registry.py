@@ -1240,20 +1240,95 @@ def sna_gg_series() -> list[Series]:
     return out
 
 
+# ---------------------------------------------------------------- 第 12 弾 第 3 便（2026-10-02）：財務省「国の財務書類」（Excel 版）
+# 年版＝その会計年度を本年度とするファイル（stats/ingest/mof_zaimu.py）。FY2024 の一般会計・特別会計は暗号化されたファイル＝読まない（翌年版の前年度列で埋まる）。
+ZAIMU_EDITIONS = {"national": (2018, 2019, 2020, 2021, 2022, 2023, 2024), "consolidated": (2020, 2021, 2022, 2023, 2024)}
+ZAIMU_KIND = {"national": "国の財務書類（一般会計・特別会計）", "consolidated": "連結財務書類（国＋独立行政法人等）"}
+# (measure, 表示名, シート 0..3, 行ラベル（national, consolidated）＝None はその書類に無い)
+ZAIMU_ROWS = [
+    ("cash_deposits", "現金・預金", 0, ("現金・預金", "現金・預金")),
+    ("securities", "有価証券", 0, ("有価証券", "有価証券")),
+    ("loans", "貸付金", 0, ("貸付金", "貸付金")),
+    ("pension_investment_deposits", "運用寄託金", 0, ("運用寄託金", None)),
+    ("tangible_fixed_assets", "有形固定資産", 0, ("有形固定資産", "有形固定資産")),
+    ("state_property_ex_public", "国有財産（公共用財産を除く）", 0, ("国有財産（公共用財産を除く）", "国有財産等（公共用財産を除く）")),
+    ("land", "土地（国有財産）", 0, ("土地", "土地")),
+    ("public_property", "公共用財産", 0, ("公共用財産", "公共用財産")),
+    ("public_property_land", "公共用財産用地", 0, ("公共用財産用地", "公共用財産用地")),
+    ("public_property_facilities", "公共用財産施設", 0, ("公共用財産施設", "公共用財産施設")),
+    ("investments", "出資金", 0, ("出資金", "出資金")),
+    ("assets_total", "資産合計", 0, ("資産合計", "資産合計")),
+    ("financing_bills", "政府短期証券", 0, ("政府短期証券", "政府短期証券")),
+    ("government_bonds", "公債", 0, ("公債", "公債")),
+    ("iaa_bonds", "独立行政法人等債券", 0, (None, "独立行政法人等債券")),
+    ("borrowings", "借入金", 0, ("借入金", "借入金")),
+    ("postal_savings", "郵便貯金", 0, (None, "郵便貯金")),
+    ("insurance_reserves", "責任準備金", 0, ("責任準備金", "責任準備金")),
+    ("public_pension_deposits", "公的年金預り金", 0, ("公的年金預り金", "公的年金預り金")),
+    ("retirement_allowances", "退職給付引当金", 0, ("退職給付引当金", "退職給付引当金")),
+    ("liabilities_total", "負債合計", 0, ("負債合計", "負債合計")),
+    ("net_assets", "資産・負債差額", 0, ("資産・負債差額", "資産・負債差額")),
+    ("personnel_costs", "人件費（業務費用）", 1, ("人件費", "人件費")),
+    ("basic_pension_benefits", "基礎年金給付費", 1, ("基礎年金給付費", "基礎年金給付費")),
+    ("employees_pension_benefits", "厚生年金給付費", 1, ("厚生年金給付費", "厚生年金給付費")),
+    ("subsidies", "補助金等", 1, ("補助金等", "補助金等")),
+    ("local_allocation_tax", "地方交付税交付金等", 1, ("地方交付税交付金等", "地方交付税交付金等")),
+    ("depreciation", "減価償却費", 1, ("減価償却費", "減価償却費")),
+    ("interest_expense", "支払利息", 1, ("支払利息", "支払利息")),
+    ("operating_costs_total", "本年度業務費用合計", 1, ("本年度業務費用合計", "本年度業務費用合計")),
+    ("nw_opening", "前年度末資産・負債差額（増減計算書の期首）", 2, ("前年度末資産・負債差額", "前年度末資産・負債差額")),
+    ("nw_operating_costs", "本年度業務費用合計（増減計算書・負の値）", 2, ("本年度業務費用合計", "本年度業務費用合計")),
+    ("nw_financing", "財源", 2, ("財源", "財源")),
+    ("nw_tax_financing", "租税等財源", 2, ("租税等財源", "租税等財源")),
+    ("nw_revaluation", "資産評価差額", 2, ("資産評価差額", "資産評価差額")),
+    ("nw_fx_translation", "為替換算差額", 2, ("為替換算差額", "為替換算差額")),
+    ("nw_pension_deposit_change", "公的年金預り金の変動に伴う増減", 2, ("公的年金預り金の変動に伴う増減", "公的年金預り金の変動に伴う増減")),
+    ("nw_consolidation_scope", "連結範囲の変動に伴う増減", 2, (None, "連結範囲の変動に伴う増減")),
+    ("nw_other", "その他資産・負債差額の増減", 2, ("その他資産･負債差額の増減", "その他資産･負債差額の増減")),
+    ("nw_closing", "本年度末資産・負債差額（増減計算書の期末）", 2, ("本年度末資産・負債差額", "本年度末資産・負債差額")),
+    ("tax_receipts", "租税等収入（区分別収支）", 3, ("租税等収入", "租税等収入")),
+    ("operating_balance", "業務収支", 3, ("業務収支", "業務収支")),
+    ("financial_balance", "財務収支", 3, ("財務収支", "財務収支")),
+    ("bond_issue_receipts", "公債の発行による収入", 3, ("公債の発行による収入", "公債の発行による収入")),
+    ("bond_redemption_payments", "公債の償還による支出", 3, ("公債の償還による支出", "公債の償還による支出")),
+    ("interest_payments", "利息の支払額（預託金利息を除く）", 3, ("利息の支払額（預託金利息を除く）", "利息の支払額（預託金利息を除く）")),
+]
+ZAIMU_SHEET = ("貸借対照表（年度末＝3 月 31 日）", "業務費用計算書（年度中）", "資産・負債差額増減計算書（年度中）", "区分別収支計算書（年度中）")
+ZAIMU_NOTE = ("財務省「国の財務書類」Excel 版。単位は百万円。各年度の値はその年度を本年度とする年版の本会計年度列（年版が無い・読めない年度だけ翌年版の前会計年度列＝accessor.col）。"
+              "★ FY2024 の一般会計・特別会計の Excel 版は暗号化されたファイル（2026-10-02 確認）＝読めないので FY2024 は未収録（FY2025 版の前年度列で埋まる）。"
+              "連結は FY2019（FY2020 版の前年度列）から・一般会計・特別会計は FY2017（FY2018 版の前年度列）から＝それより前は財務省サイトに無い（国立国会図書館のアーカイブのみ）。"
+              "★ 後年版の前会計年度列で組み替えられた値がある（2026-10-02 時点で 7 件。最大は連結の責任準備金 FY2023＝FY2023 版 30,006,946 → FY2024 版の前年度列 35,461,845 百万円）"
+              "＝stats は原本の公表（その年度の年版）を返す。恒等式（資産合計＝負債合計＋資産・負債差額 等）は百万円の丸めで ±2 ずれることがある。"
+              "SNA の一般政府との違い（範囲・年金・資産の範囲・評価・期）は list_datasets の sna_gg_bs の analysis_notes.vs_public_accounts。")
+
+
+def zaimu_shorui_series() -> list[Series]:
+    """財務省「国の財務書類」（一般会計・特別会計＝national／連結＝consolidated）の 4 表の主要行（年度・百万円）。"""
+    out: list[Series] = []
+    for meas, ttl, sheet, labels in ZAIMU_ROWS:
+        for kind, label in zip(("national", "consolidated"), labels):
+            if label is None:
+                continue
+            kname = ZAIMU_KIND[kind]
+            out.append(_s(series_id=f"mof.zaimu_shorui.{meas}.{kind}.fy",
+                          title=f"国の財務書類 {ttl}（{kname}・{ZAIMU_SHEET[sheet]}・百万円）",
+                          org="mof", org_name="財務省", source_url="https://www.mof.go.jp/policy/budget/report/public_finance_fact_sheet/index.html",
+                          sector="財政", unit="百万円", granularity="年度", freq="fy", dataset="zaimu_shorui", measure=meas, dims=kind,
+                          stat_name="国の財務書類", table_id=f"zaimu_shorui:{('gassan', 'renketsu')[kind == 'consolidated']}:{sheet}",
+                          table_title=f"{kname} {ZAIMU_SHEET[sheet].split('（')[0]}", policy_tags=(TAG_FISCAL,),
+                          first_period=f"FY{ZAIMU_EDITIONS[kind][0] - 1}", status="registered",
+                          accessor={"type": "mof_zaimu_xlsx", "kind": kind, "sheet": sheet, "row_label": label, "editions": list(ZAIMU_EDITIONS[kind]),
+                                    **({"keep_numeral": True} if meas in ("operating_balance", "financial_balance") else {})},
+                          citation_template=f"財務省「{kname}」{ZAIMU_SHEET[sheet].split('（')[0]}（Excel 版・" + "{item}／{period}）取得 {retrieved_at}",
+                          notes=ZAIMU_NOTE))
+    return out
+
+
 def fiscal_planned_series() -> list[Series]:
     """第 12 弾 第 3〜6 便の対象（2026-10-02 登録）＝未収録だが取得元は特定済み。find_statistics で『未収録・取得元はここ』を返すための planned。
     単位・表・コードは取込時に原表で確定する（ここでは決めない）。"""
     note = "未収録（第 12 弾 第 {n} 便の計画＝stats/docs/データ拡充計画.md §4g）。取得元は source_url。lookup は found=false。単位・表は取込時に原表で確定する。{x}"
     return [
-        planned("mof.zaimu_shorui.net_assets.national.fy", "国の財務書類（一般会計・特別会計）資産・負債差額（年度末）", "mof", "財務省", "財政", "（取込時に確定）",
-                "fy", "年度", "zaimu_shorui", "net_assets", (TAG_FISCAL,), {"type": "mof_zaimu_shorui"}, "国の財務書類",
-                "https://www.mof.go.jp/policy/budget/report/public_finance_fact_sheet/index.html", dims="national",
-                notes=note.format(n=3, x="貸借対照表・業務費用計算書・資産・負債差額増減計算書・区分別収支計算書。"
-                                         "SNA 一般政府との違いの軸は cao.sna_gg_bs の analysis_notes.vs_public_accounts。")),
-        planned("mof.zaimu_shorui.net_assets.consolidated.fy", "国の財務書類（連結＝独立行政法人等を含む）資産・負債差額（年度末）", "mof", "財務省", "財政", "（取込時に確定）",
-                "fy", "年度", "zaimu_shorui", "net_assets", (TAG_FISCAL,), {"type": "mof_zaimu_shorui"}, "国の財務書類（連結財務書類）",
-                "https://www.mof.go.jp/policy/budget/report/public_finance_fact_sheet/index.html", dims="consolidated",
-                notes=note.format(n=3, x="連結財務書類は Excel 版が公表されている（2026-10-02 確認）。")),
         planned("soumu.tokitsu.net_assets.pref.fy", "統一的な基準による財務書類（都道府県・一般会計等）純資産（年度末）", "soumu", "総務省", "財政", "（取込時に確定）",
                 "fy", "年度", "tokitsu", "net_assets", (TAG_FISCAL, TAG_REGION), {"type": "soumu_tokitsu"}, "統一的な基準による財務書類",
                 "https://www.soumu.go.jp/iken/kokaikei/R05_chihou_zaimusyorui.html", dims="pref", region_level="pref",
@@ -2711,6 +2786,7 @@ def build() -> list[Series]:
     S += sna_sector_series()     # 第 8 弾 第 1 便（制度部門別勘定の残り・制度部門別 BS）＋第 12 弾 第 1 便（公的企業の BS・一般政府の税と補助金）
     S += sna_gg_series()         # 第 12 弾 第 1 便（2026-10-02）＝一般政府の部門別（付表 3 BS・付表 6 勘定）
     S += fiscal_planned_series() # 第 12 弾 第 3〜6 便の対象を planned で先に登録（未収録の明示・取得元 URL）
+    S += zaimu_shorui_series()   # 第 12 弾 第 3 便（2026-10-02）＝財務省「国の財務書類」Excel 版（planned→registered）
     S += boj_fof_sector_series() # 第 8 弾 第 2 便（資金循環 部門別・年度）
     S += sna_fixed_capital_stock_series() + roudou_emp_type_series() + shaho_series()  # 第 8 弾 第 2 便（F-4／F-6／F-7）
     return S
