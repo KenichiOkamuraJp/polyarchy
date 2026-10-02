@@ -113,7 +113,7 @@ def service_memory() -> list[tuple[str, str, str, str]]:
                 peak = _gb(int((CGROUP_ROOT / cg.lstrip("/") / "memory.peak").read_text().strip()))
         except Exception:  # noqa: BLE001
             pass
-        out.append((u, cur, peak, kv.get("ActiveEnterTimestamp", "") or "—"))
+        out.append((u, cur, peak, _jst(kv.get("ActiveEnterTimestamp", "")) or "—"))
     return out
 
 
@@ -127,6 +127,22 @@ def box_memory() -> str:
         return "—"
 
 
+def _jst(s: str) -> str:
+    """時刻を JST の ISO にそろえる（2026-10-02＝1 枚の中で JST・systemd の「Thu … UTC」・ISO の UTC が混ざっていた）。
+    offset なしの ISO は書いた箱のローカル時刻（箱は UTC）。読めない文字列はそのまま。"""
+    if not s or s == "—":
+        return s
+    try:
+        if s.endswith(" UTC"):  # systemctl show の ActiveEnterTimestamp（例＝Thu 2026-10-01 01:35:40 UTC）
+            t = datetime.strptime(s.split(" ", 1)[1], "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=ZoneInfo("UTC"))
+        else:
+            t = datetime.fromisoformat(s)
+            t = t if t.tzinfo else t.astimezone()
+        return t.astimezone(ZoneInfo("Asia/Tokyo")).isoformat(timespec="seconds")
+    except ValueError:
+        return s
+
+
 def fuelsync_status() -> dict:
     """捕捉ログの S3 同期の結果（サービス → {result, last_ok}・last_run）。fuelsync.sh が書く前の箱では空。"""
     def rd(name: str) -> str:
@@ -136,8 +152,8 @@ def fuelsync_status() -> dict:
             return ""
     if not FUELSYNC_DIR.is_dir():
         return {}
-    return {"last_run": rd("last_run"),
-            "services": {s: {"result": rd(f"{s}.result") or "—", "last_ok": rd(f"{s}.last_ok") or "—"} for s in FUELSYNC_SERVICES}}
+    return {"last_run": _jst(rd("last_run")),
+            "services": {s: {"result": rd(f"{s}.result") or "—", "last_ok": _jst(rd(f"{s}.last_ok")) or "—"} for s in FUELSYNC_SERVICES}}
 
 
 def code_version() -> str:
@@ -197,7 +213,7 @@ def update_check_summary() -> dict:
     try:
         d = json.loads(UPDATE_CHECK_PATH.read_text(encoding="utf-8"))
         orgs = d.get("orgs", {})
-        return {"checked_at": d.get("checked_at", ""),
+        return {"checked_at": _jst(d.get("checked_at", "")),
                 "new_total": sum(o.get("new", 0) for o in orgs.values()),
                 "by_org": {k: o.get("new", 0) for k, o in orgs.items() if o.get("new")},
                 "errors": [k for k, o in orgs.items() if o.get("error")]}
@@ -323,7 +339,7 @@ def render(generated_at: str, env_name: str) -> str:
             parts.append(f"<tr><td>{e(org)}</td><td>{v.get('last_ingested', '—')}</td><td>{v.get('latest_doc_date', '—')}</td></tr>")
         parts.append("</table>")
     if fresh_stats:
-        parts.append(f"<p>stats freshness：{fresh_stats['datasets']} dataset・最終確認 {e(fresh_stats.get('last_checked') or '—')}／"
+        parts.append(f"<p>stats freshness：{fresh_stats['datasets']} dataset・最終確認 {e(_jst(fresh_stats.get('last_checked') or '') or '—')}／"
                      f"QE edition：{e(qe_edition())}</p>")
     uc = update_check_summary()
     if uc:

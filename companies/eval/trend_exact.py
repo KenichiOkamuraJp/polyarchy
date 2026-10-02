@@ -252,6 +252,10 @@ def check_query(q: dict, st) -> str | None:
         x = next((x for x in r.get("excluded_companies") or [] if x.get("company", {}).get("edinet_code") == code), None)
         if not x or x.get("reason") != "share_count_changed" or not (x.get("comparable") or {}).get("issued_shares"):
             return f"{code}: excluded_companies に share_count_changed と比べられる事実が無い"
+    for w in e.get("comparable_note_includes", []):  # 返り値に無い経緯を地の文に足させない案内（2026-10-02 staging）
+        cs = [x.get("comparable") or {} for x in r.get("excluded_companies") or []]
+        if not cs or not all(w in (c.get("note") or "") for c in cs):
+            return f"comparable の note に「{w}」が無い"
     for reason, words in e.get("excluded_note_includes", {}).items():
         notes = " ".join(d.get(reason, {}).get("note", "") for d in (r.get("excluded") or {}).values())
         if not all(w in notes for w in words):

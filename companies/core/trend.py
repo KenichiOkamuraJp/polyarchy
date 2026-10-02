@@ -57,7 +57,10 @@ NOTE = ("values は派生値（集約）。各年の値は、その年の入力�
         "doc_id が出所。後年の書類で同じ期の値が組み替えられた年は、系列の行の restated に他の書類の値が並ぶ（除外はしない＝段差は "
         "restated_years で確かめる）。★売上系は収益認識基準の適用（2022 年 3 月期前後）で不連続になる会社がある（遡及適用した会社は "
         "restated に出る・しなかった会社は出ない）＝その年をまたぐ集約は系列の行を見る。海外売上比率の各年は、その年の地域別の表が載る最新の書類"
-        "（翌年の書類の前期の欄・IFRS は表の前期の列）の本邦と合計の 2 セルから。比較できない会社は excluded に理由と件数。")
+        "（翌年の書類の前期の欄・IFRS は表の前期の列）の本邦と合計の 2 セルから。比較できない会社は excluded に理由と件数。"
+        "★答えには、期間（period_from／period_to・指定なしのときは series の最初と最後の年）・集約（definitions の aggregate）・"
+        "並びの物差し（order_by）を書く＝同じ問でも期間・集約で matched と並びが変わる（読む人が引き直せるように）。"
+        "並びを順位として示すときは返り値の順のまま。会社を外す・入れ替えるときは、外した会社と理由を書く。")
 _SPLIT_MIN, _SPLIT_SPREAD = Decimal("0.05"), Decimal("1.02")
 _SHARES_JUMP = Decimal("1.45")  # 分割・併合は 1.5 倍〜（2・10・100 倍）・増資と自己株式の取得はほぼ 1.4 倍まで（全社の実測・2026-10-01）
 # 株式数の目安＝(全体の額の項目, 1 株当たりの項目)。自己資本は日本基準に項目が無い＝自己資本比率 × 総資産（純資産額は非支配株主持分を含み揺れる）
@@ -362,7 +365,9 @@ def _comparable(c: _Company, e: Excluded, aggregate, period_from, period_to, as_
     else:
         out = {"aggregate": agg, "reason": bl.get("reason")}
     return {"bottom_line": out, "issued_shares": [x for x in (_issued(c, first), _issued(c, last)) if x],
-            "note": "当期純利益は派生値（同じ集約）・発行済株式総数は各年の期末の開示値（分割・併合で組み替えない）"}
+            "note": ("当期純利益は派生値（同じ集約）・発行済株式総数は各年の期末の開示値（分割・併合で組み替えない）。"
+                     "分割・併合の経緯（日付・比率・親会社・非公開化）は返さない＝答えに書くなら有報の本文などの出典を付ける"
+                     "（出典つきの値の段落に、出典の無い文を混ぜない）")}
 
 
 def trend_company(code: str, *, metric: str | None = None, expr: str | None = None, aggregate: str | None = None,

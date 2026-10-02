@@ -284,7 +284,8 @@ def test_usage_report_aggregate():
 
 def test_ops_dashboard_memory_and_fuelsync():
     """ダッシュボード①のメモリ（サービスごとの現在と起動からの最大・箱全体）と捕捉ログの S3 同期（2026-10-01）。
-    箱の Ubuntu 22.04 の systemd 249 には MemoryPeak が無い＝最大は cgroup v2 の memory.peak を読む。"""
+    箱の Ubuntu 22.04 の systemd 249 には MemoryPeak が無い＝最大は cgroup v2 の memory.peak を読む。
+    時刻は 1 枚の中で JST にそろえる（2026-10-02＝起動の「Thu … UTC」と同期の ISO の UTC が冒頭の JST と混ざっていた）。"""
     import tempfile
     from pathlib import Path
     from types import SimpleNamespace
@@ -316,11 +317,12 @@ def test_ops_dashboard_memory_and_fuelsync():
         od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR = d / "meminfo", d / "cg", d / "fs"
         od.subprocess.run, od.shutil.which, od.companies_enabled = fake_run, (lambda _: "/bin/systemctl"), (lambda: True)
         assert od.box_memory().startswith("3.81 GB ／ 15.26 GB（25%）"), od.box_memory()
-        mem = {u: (cur, peak) for u, cur, peak, _ in od.service_memory()}
-        assert mem == {"polyarchy-companies": ("0.29 GB", "0.78 GB"), "qdrant": ("—", "—")}, mem   # 止まっているユニットは載せない
+        mem = {u: (cur, peak, since) for u, cur, peak, since in od.service_memory()}
+        assert mem == {"polyarchy-companies": ("0.29 GB", "0.78 GB", "2026-10-01T10:35:40+09:00"), "qdrant": ("—", "—", "—")}, mem   # 止まっているユニットは載せない
         fs = od.fuelsync_status()
-        assert fs["services"]["companies"] == {"result": "failed", "last_ok": "2026-10-01T12:28:00+00:00"}
-        assert fs["services"]["recommendations"]["result"] == "—" and fs["last_run"].startswith("2026-10-01T13:28")
+        assert fs["services"]["companies"] == {"result": "failed", "last_ok": "2026-10-01T21:28:00+09:00"}
+        assert fs["services"]["recommendations"]["result"] == "—" and fs["last_run"] == "2026-10-01T22:28:00+09:00"
+        assert od._jst("2026-10-01T22:28:00+09:00") == "2026-10-01T22:28:00+09:00" and od._jst("") == "" and od._jst("—") == "—"
     finally:
         od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR, od.subprocess.run, od.shutil.which, od.companies_enabled = saved
 
