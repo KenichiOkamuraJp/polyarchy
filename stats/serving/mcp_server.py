@@ -28,6 +28,7 @@ from polyarchy_common.logsetup import configure_quiet_logging, get_logger, guard
 from polyarchy_common.mcp_http import serve_streamable_http
 
 from stats.core.paths import QUERY_LOG_PATH
+from stats.core.period_basis import label_of as _period_basis
 from stats.core.periods import FREQ_EXAMPLE, hint_for, matches_freq, parse
 from stats.core.registry import SECTORS, Registry, default_registry
 from stats.core.values import ValueStore
@@ -348,7 +349,9 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                 "note": "出典は系列単位。原典セル位置のアクセサが要るときは単一 period で lookup する。",
             }
             return {"found": True, "series_id": series_id, "title": s.title, "period": period, "region": region,
-                    "count": len(rows), "values": rows, "unit": s.unit, "layer": "公開（固定）", "source": src,
+                    "count": len(rows), "values": rows, "unit": s.unit,
+                    **({"period_basis": pb} if (pb := _period_basis(s.dataset, s.measure, s.freq)) else {}),
+                    "layer": "公開（固定）", "source": src,
                     **({"quality": q} if (q := _quality(s, [r["period"] for r in rows])) else {}),
                     "note": "収録がある期のみ（欠測期は補間せず含まれない）。値は公表どおりの文字列。",
                     **({"note_projection": "kind=projection の値は推計・予測値（観測値ではない）"} if any_proj else {})}
@@ -383,6 +386,7 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
         kind = v.kind or s.kind
         return {"found": True, "series_id": series_id, "title": s.title, "period": period, "region": region,
                 "value": v.value, "unit": s.unit, "kind": kind, "status": v.status, "vintage": v.vintage,
+                **({"period_basis": pb} if (pb := _period_basis(s.dataset, s.measure, s.freq)) else {}),
                 "layer": "公開（固定）", "source": src,
                 **({"quality": q} if (q := _quality(s)) else {}),
                 **({"projection_by": s.projection_by or s.org_name, "edition": s.edition or v.vintage, "scenario": s.scenario,
@@ -532,6 +536,26 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                    "sample_caution": sample_caution,
                    **({"sample_note": "sample_caution の系列は標本が薄い（volatile＝散らばりが上位集計の 2 倍以上／small_cell＝母集団<100 社）＝単年の値で語らず数年平均か上位集計で見る"} if sample_caution else {}),
                    **({"usable_from_max": max(usable)} if usable else {})}
+        # 第 12 弾 第 2 便（2026-10-02）：期の定義（暦年末・年度末・10 月 1 日現在・期中）の混在を警告。未宣言の系列は判定に使わず名前を出す
+        basis_groups: dict[str, list[str]] = {}
+        undeclared: list[str] = []
+        for sid in meta:
+            ms = registry.get(sid)
+            lab = _period_basis(ms.dataset, ms.measure, ms.freq) if ms else None
+            if lab:
+                basis_groups.setdefault(lab, []).append(sid)
+            else:
+                undeclared.append(sid)
+        if basis_groups:
+            summary["period_basis"] = {k: len(v) for k, v in basis_groups.items()}
+        if len(basis_groups) > 1:
+            summary["period_basis_by_series"] = basis_groups
+            summary["period_basis_warning"] = ("同じ期の表記でも値の時点が違う系列が混ざっている（" + "／".join(basis_groups) + "）。"
+                                               "期末残高と期中の値、暦年末と特定日の値は同じ年の値として並べない＝表や図では期の定義を注記する"
+                                               "（stats は時点を換算しない）。")
+        if undeclared:
+            summary["period_basis_undeclared"] = undeclared
+            summary["period_basis_undeclared_note"] = "期の定義を宣言していない系列（原典で時点を確かめていない）＝period_basis の判定に含めていない。時点は原典で確認する"
         if caution:
             by_measure: dict[str, int] = {}
             for sid in caution:

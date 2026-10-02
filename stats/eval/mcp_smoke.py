@@ -112,6 +112,31 @@ async def main() -> int:
             r = _payload(await session.call_tool("lookup_panel", {**big, "verbose": False}))
             print(f"[3g] lookup_panel verbose=false: series 省略={'series' not in r} units={list((r.get('units') or {}).keys())}")
             ok &= "series" not in r and bool(r.get("units")) and bool(r.get("values")) and bool(r.get("sources"))
+            # 第 12 弾 第 2 便（2026-10-02）：期の定義（暦年末・年度末・10 月 1 日現在・期中）が混ざったパネルは警告。揃っていれば警告なし。
+            # 宣言の無い系列は period_basis_undeclared に名前を出す（判定に使わない＝推測で揃っているとは言わない）
+            r = _payload(await session.call_tool("lookup_panel", {"period": "2020..2024", "series_ids": [
+                "cao.sna_sector_bs.net_worth.gg.a", "cao.sna2020.gdp_nominal.a", "soumu.jinko.pop_total.a.pref"]}))
+            qs = r.get("quality_summary") or {}
+            print(f"[3l] 期の定義の混在（暦年）: warning={bool(qs.get('period_basis_warning'))} basis={qs.get('period_basis')}")
+            ok &= bool(qs.get("period_basis_warning")) and set(qs.get("period_basis") or {}) == {"暦年末", "暦年（期中）", "各年10月1日現在"}
+            r = _payload(await session.call_tool("lookup_panel", {"period": "FY2020..FY2024", "series_ids": [
+                "boj.fof.stock.assets_total.gg.fy", "boj.fof.flow.assets_total.gg.fy", "mof.hojin.total_assets.allexfin-allsize.fy"]}))
+            qs = r.get("quality_summary") or {}
+            print(f"[3m] 期の定義の混在（年度）: warning={bool(qs.get('period_basis_warning'))} basis={qs.get('period_basis')}")
+            ok &= bool(qs.get("period_basis_warning")) and len(qs.get("period_basis") or {}) == 3
+            r = _payload(await session.call_tool("lookup_panel", {"period": "2020..2024", "series_ids": [
+                "cao.sna_gg_bs.financial_assets.cg.a", "cao.sna_gg_bs.liabilities.cg.a", "cao.sna_sector_bs.net_worth.gg.a"]}))
+            qs = r.get("quality_summary") or {}
+            print(f"[3n] 期の定義が揃ったパネル: warning={bool(qs.get('period_basis_warning'))} basis={qs.get('period_basis')}")
+            ok &= not qs.get("period_basis_warning") and qs.get("period_basis") == {"暦年末": 3}
+            r = _payload(await session.call_tool("lookup_panel", {"period": "2024-01..2024-03", "series_ids": [
+                "soumu.cpi2025.cpi_all.m", "soumu.roudou.unemployment_rate.total.m"]}))
+            qs = r.get("quality_summary") or {}
+            print(f"[3o] 宣言なしの系列: warning={bool(qs.get('period_basis_warning'))} undeclared={qs.get('period_basis_undeclared')}")
+            ok &= not qs.get("period_basis_warning") and qs.get("period_basis_undeclared") == ["soumu.roudou.unemployment_rate.total.m"]
+            r = _payload(await session.call_tool("lookup_statistic", {"series_id": "cao.sna_gg_bs.net_worth.total.a", "period": "2024"}))
+            print(f"[3p] lookup_statistic の period_basis: {r.get('period_basis')}")
+            ok &= r.get("period_basis") == "暦年末"
             r = _payload(await session.call_tool("find_statistics", {"query": "固定資本減耗 雇用者報酬 営業余剰", "dataset": "sna2020"}))
             print(f"[3h] find_statistics 複数語 0 件診断: total={r.get('total')} matched_tokens={r.get('matched_tokens')}")
             ok &= r.get("total") == 0 and (r.get("matched_tokens") or {}).get("固定資本減耗", 0) > 0 and "語を減らして" in (r.get("hint") or "")

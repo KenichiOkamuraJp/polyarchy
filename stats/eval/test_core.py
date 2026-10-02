@@ -141,6 +141,16 @@ def main() -> int:
                if abs((_v(f"cao.sna_sector_bs.assets_total.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.nonfinancial_assets.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.financial_assets.{slug}.a", y) or 0)) > 0.6
                or abs((_v(f"cao.sna_sector_bs.assets_total.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.liabilities.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.net_worth.{slug}.a", y) or 0)) > 0.6]
         chk(not bad, f"F-3 BS の恒等式（非金融＋金融＝期末資産＝負債＋正味資産）が 5 部門×2 年で成立{bad[:4]}")
+    # 第 12 弾 第 2 便（2026-10-02）：期の定義の宣言（stats.core.period_basis）。新しい dataset は宣言するか理由つきで未宣言に載せる
+    from stats.core.period_basis import basis_of as _pb_basis, is_covered as _pb_covered, label_of as _pb_label
+    regd = [s2 for s2 in reg.series.values() if s2.status == "registered"]
+    miss = sorted({s2.dataset for s2 in regd if not _pb_covered(s2.dataset)})
+    chk(not miss, f"第12弾 期の定義：登録済みの全 dataset が宣言済み・measure 規則・理由つき未宣言のいずれか{miss}")
+    bad = sorted({f"{s2.dataset}/{s2.freq}" for s2 in regd if _pb_basis(s2.dataset, s2.measure, s2.freq) and not _pb_label(s2.dataset, s2.measure, s2.freq)})
+    chk(not bad, f"第12弾 期の定義：宣言が周期と組み合う（表示名が引ける）{bad}")
+    chk(_pb_label("sna_sector_bs", "net_worth", "a") == "暦年末" and _pb_label("fof", "stock.assets_total", "fy") == "年度末"
+        and _pb_label("fof", "flow.assets_total", "fy") == "年度（期中）" and _pb_label("roudou", "unemployment_rate", "m") is None,
+        "第12弾 期の定義：代表例（SNA の BS＝暦年末・資金循環ストック＝年度末・フロー＝期中・労調＝未宣言）")
     # 第 12 弾 第 1 便（2026-10-02）：公的企業の BS・一般政府の部門別（付表 3・付表 6）
     if _vs.has_data("cao.sna_sector_bs.net_worth.nfc_public.a"):
         bad = [f"{slug}/{y}" for slug in ("nfc_public", "fin_public") for y in ("2024", "2010", "1994")
