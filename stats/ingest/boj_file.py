@@ -5,6 +5,7 @@
 - accessor.type は boj_file（日銀）／ipss_xlsx（社人研）。取込ロジックは共通。
 - 値は ESRI と同じ規則＝**セルの表示書式の桁で四捨五入した文字列**（gap.xlsx は '0.00_' ＝小数2桁。日銀サイトの表示に一致）。
 - accessor: {"type": "boj_file", "url": "...gap.xlsx", "sheet": "data1", "col_header": "需給ギャップ", "header_row": 2, "first_data_row": 6}
+  （stop_at_blank＝データの後の最初の空行で読み終える＝下に注記が続く表）
 - 原本は stats/data/cache/boj/<取得日>/。
 
 実行（リポジトリ root）：  python -m stats.ingest.boj_file --all
@@ -60,6 +61,8 @@ def ingest_series(s: Series, *, dry_run: bool = False, day: Optional[str] = None
     for r in range(int(acc.get("first_data_row", 6)), ws.max_row + 1):
         lab = ws.cell(r, pcol).value
         if lab is None or str(lab).strip() == "":
+            if acc.get("stop_at_blank") and recs:
+                break  # データの後の空行で終わり（下に注記が続く表＝社人研 社会保障費用統計 第14表）
             continue
         if isinstance(lab, float) and lab.is_integer():
             lab = int(lab)

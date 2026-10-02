@@ -51,13 +51,13 @@ _TOKITSU_STOCK = {
 # dataset → 期の種類（全 measure 共通）
 _BY_DATASET = {
     # 期末残高（表題・原表で暦年末／年度末と明記）
-    "sna_sector_bs": "end", "sna_gg_bs": "end", "sna_fcs": "end", "iip": "end",
+    "sna_sector_bs": "end", "sna_gg_bs": "end", "sna_fcs": "end", "iip": "end", "fof_jgb": "end",
     # 各年 10 月 1 日現在（人口推計・将来推計人口の表題）
     "jinko": "oct1", "pop2023": "oct1",
     # 期中（国民経済計算のフロー・財政・物価・賃金・国際収支 等）
     "sna_sector": "flow", "sna_gg": "flow", "sna_activity": "flow", "qe2020": "flow", "sna1990": "flow", "sna2000": "flow",
     "cao_gap": "flow", "gap": "flow", "mitoshi": "flow", "mitoshi_mid": "flow",
-    "zaisei": "flow", "chihozaisei": "flow", "chihokeikaku": "flow", "shaho": "flow", "hakusho_sme": "flow",
+    "zaisei": "flow", "chihozaisei": "flow", "chihokeikaku": "flow", "shaho": "flow", "shaho_fin": "flow", "hakusho_sme": "flow",
     "cpi2020": "flow", "cpi2025": "flow", "cgpi": "flow", "fx": "flow", "bop": "flow", "jgb": "flow",
     "shokugyo": "flow", "roudou_emp": "flow",
     "pdb": "flow", "stan": "flow", "earnings": "flow",

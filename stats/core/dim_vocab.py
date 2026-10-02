@@ -116,6 +116,15 @@ PREF_NAMES = ("北海道", "青森県", "岩手県", "宮城県", "秋田県", "
               "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県")
 PREF_CODE = {name: f"{i:02d}" for i, name in enumerate(PREF_NAMES, start=1)}
 
+# 国債・財投債／国庫短期証券の保有者（fof_jgb の dims・第 12 弾 第 5 便）＝(slug, 資金循環の部門コード, 表示名)。seed_registry もこれを使う
+FOF_JGB_HOLDERS = [("total", "700", "合計"), ("central_bank", "110", "中央銀行（日本銀行）"), ("deposit_taking", "120", "預金取扱機関"),
+                   ("banks", "121", "銀行等"), ("investment_trusts", "160", "証券投資信託"), ("insurance", "131", "保険"),
+                   ("pension_funds", "140", "年金基金"), ("public_financial", "180", "公的金融機関"), ("fiscal_loan_fund", "181", "財政融資資金"),
+                   ("dealers_brokers", "190", "ディーラー・ブローカー"), ("nonfinancial_corporations", "410", "非金融法人企業"),
+                   ("general_government", "420", "一般政府"), ("social_security_funds", "423", "社会保障基金"), ("public_pension", "424", "うち公的年金"),
+                   ("households", "430", "家計"), ("overseas", "500", "海外")]
+_FOF_JGB_LABEL = {s: n for s, _c, n in FOF_JGB_HOLDERS} | {"central_government": "中央政府"}
+
 # 一般政府の部門（sna_gg／sna_gg_bs の dims・第 12 弾 第 1 便）
 GG_SUBSECTOR = [("cg", "中央政府"), ("lg", "地方政府"), ("ssf", "社会保障基金"), ("total", "一般政府 合計（3 部門の単純和）")]
 _GG_LABEL = dict(GG_SUBSECTOR)
@@ -212,6 +221,8 @@ def dim_label(position: str, slug: str, dataset: str = "") -> str:
         return _SECTOR_LABEL.get(slug, slug)
     if dataset in ("sna_gg", "sna_gg_bs"):
         return _GG_LABEL.get(slug, slug)
+    if dataset == "fof_jgb":
+        return _FOF_JGB_LABEL.get(slug, slug)
     if dataset == "maikin":
         return (_MAIKIN_EMP if position == "industry" else _MAIKIN_SIZE).get(slug, slug)
     return _hojin(position, slug)

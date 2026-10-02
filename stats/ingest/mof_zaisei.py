@@ -2,10 +2,11 @@
 財務省「財政統計」（https://www.mof.go.jp/policy/budget/reference/statistics/data.htm）の定型 Excel からの取込。
 設計は docs/データソース選定.md §1（財務省・予算＝財政統計 Excel の定型年のみ・表番号を固定）。
 
-3つの表型：
-- year_blocks  第1表（明治初年度以降 一般会計歳入歳出予算決算・円）：元号（列A）→年（列A '22年度'／'元年度'／'23'）→ 「計」行（列B）に 歳入予算/決算・歳出予算/決算
+4つの表型：
+- year_blocks  第1表（明治初年度以降 一般会計歳入歳出予算決算・収録する昭和22年度以降のシートは千円〔明治〜昭和21年度は円＝未収録〕）：元号（列A）→年（列A '22年度'／'元年度'／'23'）→ 「計」行（列B）に 歳入予算/決算・歳出予算/決算
 - year_rows    第3・4表（歳入主要科目別 予算／決算・百万円）：列A 元号（先頭行のみ）・列B 年・値は列記号で指定（セルは文字列）
 - year_sheets  第19表(2)・第20表（主要経費別・千円）：シート名＝年度（'Ｓ60' 'Ｈ元' 'R6' '昭和42' '令和6'）・行＝経費。section の見出し行に値があればそれ、無ければ次の「計」行
+- year_cols    第16表（一般会計及び特別会計決算純計・百万円）：行＝事項・列＝年度（元号を右へ引き継ぐ）。括弧付きの列（決算見込額・当初予算）は読まない
 値は公表どおりの文字列（文字列セルはそのまま・数値セルは整数文字列。単位換算しない）。原本は stats/data/cache/mof/<取得日>/。
 
 実行（リポジトリ root）：  python -m stats.ingest.mof_zaisei --all
@@ -157,7 +158,53 @@ def ingest_year_sheets(s: Series, wb, cp: Path, day: str) -> list[ValueRecord]:
     return recs
 
 
-LAYOUTS = {"year_blocks": ingest_year_blocks, "year_rows": ingest_year_rows, "year_sheets": ingest_year_sheets}
+_ERA_HEAD = re.compile(r"^(昭和|平成|令和)?(\d{1,2}|元)(年度)?$")
+
+
+def ingest_year_cols(s: Series, wb, cp: Path, day: str) -> list[ValueRecord]:
+    """第16表型（第 12 弾 第 5 便）：行＝事項（A〜D 列のどこかにラベル・歳入／歳出で同じラベルが出る＝occurrence）、列＝年度（見出し行に
+    「昭和62年度」「63」「平成元年度」「2」…＝元号を右へ引き継ぐ）。**括弧付きの見出し（決算見込額・当初予算）は読まない**＝決算の列だけ。"""
+    a = s.accessor
+    ws = wb[a.get("sheet") or wb.sheetnames[0]]
+    hrow = int(a["header_row"])
+    want, occ = _norm(a["row_label"]), int(a.get("occurrence", 0) or 0)
+    hits = [r for r in range(hrow + 1, ws.max_row + 1) if any(_norm(ws.cell(r, c).value) == want for c in range(1, 5))]
+    if occ:
+        if len(hits) < occ:
+            raise MofZaiseiError(f"{s.series_id}: ラベル {a['row_label']!r} の {occ} 番目が無い（{len(hits)} 行）")
+        row = hits[occ - 1]
+    elif len(hits) == 1:
+        row = hits[0]
+    else:
+        raise MofZaiseiError(f"{s.series_id}: ラベル {a['row_label']!r} が {len(hits)} 行（occurrence を指定）")
+    era_base: Optional[int] = None
+    recs: list[ValueRecord] = []
+    skipped: list[str] = []
+    for c in range(1, ws.max_column + 1):
+        head = _norm(ws.cell(hrow, c).value)
+        if not head or head in ("事項",):
+            continue
+        m = _ERA_HEAD.match(head)
+        if not m:
+            skipped.append(head)  # 「7(決算見込額)」「8(当初予算)」等＝決算ではない列
+            continue
+        if m.group(1):
+            era_base = ERA[m.group(1)]
+        if era_base is None:
+            raise MofZaiseiError(f"{s.series_id}: 列 {ws.cell(hrow, c).column_letter} の年 {head!r} の元号が決まらない")
+        fy = f"FY{era_base + (1 if m.group(2) == '元' else int(m.group(2)))}"
+        v = cell_str(ws.cell(row, c).value)
+        if v is None:
+            continue
+        recs.append(ValueRecord(series_id=s.series_id, period=fy, region="JP", value=v, status="", vintage=day, retrieved_at=day,
+                                accessor={"type": "mof_zaisei", "file": a["file"], "sheet": ws.title, "row_label": a["row_label"],
+                                          **({"occurrence": occ} if occ else {}), "cell": ws.cell(row, c).coordinate, "cache": cache_rel(cp)}))
+    if skipped:
+        log.info("%s: 決算でない列を読まない %s", s.series_id, skipped)
+    return recs
+
+
+LAYOUTS = {"year_blocks": ingest_year_blocks, "year_rows": ingest_year_rows, "year_sheets": ingest_year_sheets, "year_cols": ingest_year_cols}
 
 
 def ingest_series(s: Series, *, dry_run: bool = False, day: Optional[str] = None) -> int:

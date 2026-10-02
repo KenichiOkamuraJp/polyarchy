@@ -1749,6 +1749,36 @@ FOF_SERIES = {
 }
 
 
+# 第 12 弾 第 5 便（2026-10-02）：国債の保有者別（資金循環の細目「国債・財投債」＝コード末尾 311・「国庫短期証券」＝310・年度末ストック）。
+# 財務省「国債等の保有者別内訳」は PDF のみ＝元データの資金循環から引く。系列名で 2026-10-02 に確認（FOF_FFYS<部門><A|L><細目>）。
+from stats.core.dim_vocab import FOF_JGB_HOLDERS  # noqa: E402  語彙は core（発見層の表示名と共有）
+FOF_TBILL_HOLDERS = ("total", "central_bank", "deposit_taking", "overseas")
+FOF_JGB_NOTE = ("日本銀行「資金循環統計」の細目＝**年度末ストック**・億円。jgb＝「国債・財投債」（国庫短期証券を含まない）／tbill＝「国庫短期証券」。"
+                "保有者（資産側）は資金循環の部門（中央銀行＝日本銀行・預金取扱機関・保険・年金基金・一般政府 等）。部門には内訳の関係がある"
+                "（例 銀行等⊂預金取扱機関・財政融資資金⊂公的金融機関・社会保障基金⊂一般政府・うち公的年金⊂社会保障基金）＝**合計に足し上げない**。"
+                "財務省「国債等の保有者別内訳」（四半期・PDF）は国庫短期証券を含む『国債等』で区分も違う＝値は一致しない。四半期の値は未収録（資金循環の四半期ファイルにある）。")
+
+
+def boj_fof_jgb_series() -> list[Series]:
+    out: list[Series] = []
+    def one(sid, ttl, meas, dims, code):
+        return _s(series_id=sid, title=f"資金循環統計 {ttl}（年度末・億円）", org="boj", org_name="日本銀行", source_url="https://www.stat-search.boj.or.jp/",
+                  sector="財政", unit="億円", granularity="年度", freq="fy", dataset="fof_jgb", measure=meas, dims=dims,
+                  stat_name="資金循環統計（２００８ＳＮＡベース）", table_id=FOF_FILE, table_title="資金循環（年度・系列名称入り）",
+                  policy_tags=(TAG_FISCAL, TAG_FIN), first_period="FY1979", status="registered",
+                  accessor={"type": "boj_flat", "zip": FOF_ZIP, "file": FOF_FILE, "layout": "wide", "code": code, "period_kind": "fy_yyyy", "first_col": 3},
+                  citation_template="日本銀行「資金循環統計（２００８ＳＮＡベース）」（" + f"{FOF_FILE}・{code}・" + "{item}／{period}）取得 {retrieved_at}",
+                  notes=FOF_JGB_NOTE)
+    for slug, sec, name in FOF_JGB_HOLDERS:
+        out.append(one(f"boj.fof_jgb.jgb_holdings.{slug}.fy", f"国債・財投債の保有（{name}・資産）", "jgb_holdings", slug, f"FOF_FFYS{sec}A311"))
+    for slug in FOF_TBILL_HOLDERS:
+        sec, name = next((s2, n) for s1, s2, n in FOF_JGB_HOLDERS if s1 == slug)
+        out.append(one(f"boj.fof_jgb.tbill_holdings.{slug}.fy", f"国庫短期証券の保有（{name}・資産）", "tbill_holdings", slug, f"FOF_FFYS{sec}A310"))
+    out.append(one("boj.fof_jgb.jgb_outstanding.total.fy", "国債・財投債の発行残高（合計・負債）", "jgb_outstanding", "total", "FOF_FFYS700L311"))
+    out.append(one("boj.fof_jgb.jgb_outstanding.central_government.fy", "国債・財投債の発行残高（中央政府・負債）", "jgb_outstanding", "central_government", "FOF_FFYS421L311"))
+    return out
+
+
 def boj_fof_sector_series() -> list[Series]:
     out: list[Series] = []
     for (sec, kind), rows in FOF_SERIES.items():
@@ -1836,6 +1866,31 @@ SHAHO_SECTORS = [("total", "11", "合計"), ("medical", "12", "医療"), ("pensi
                  ("welfare_other", "15", "福祉その他"), ("long_term_care", "16", "福祉その他_介護対策（再掲）")]
 SHAHO_NOTE = ("社会保障費用統計（ILO 基準）時系列表 社会保障給付費の部門別推移。年度・億円。"
               "介護対策は「福祉その他」の**再掲**＝合計に足し込まない。給付費であって社会支出（OECD 基準）とは範囲が違う。")
+
+
+# 第 12 弾 第 5 便（2026-10-02）：社会保障費用統計 第14表 社会保障財源（ILO基準）の項目別推移（億円・FY1951〜・1951/1954/1957 の後は毎年度）。
+# 公表元（社人研）の Excel を直接読む（e-Stat の同表は開発用フォルダに appId が無く経路を確かめていない）。(measure, 見出し, 見出し行, 表示名)
+SHAHO_FIN = [("total", "合計", 7, "社会保障財源 合計"), ("contributions", "社会保険料", 7, "社会保険料"),
+             ("contributions_insured", "被保険者拠出", 8, "社会保険料 被保険者拠出"), ("contributions_employer", "事業主拠出", 8, "社会保険料 事業主拠出"),
+             ("tax", "公費負担", 7, "公費負担"), ("tax_state", "国庫負担", 8, "公費負担 国庫負担"),
+             ("tax_other_public", "他の公費負担", 8, "公費負担 他の公費負担（地方公共団体等）"),
+             ("capital_income", "資産収入", 7, "資産収入"), ("other", "その他", 7, "その他（積立金からの受入等）")]
+
+
+def shaho_financing_series() -> list[Series]:
+    url = "https://www.ipss.go.jp/ss-cost/j/fsss-R05/3/R05-14.xlsx"
+    return [_s(series_id=f"ipss.shaho_fin.{meas}.total.fy", title=f"社会保障費用統計 第14表 {ttl}（ILO基準・年度・億円）",
+               org="ipss", org_name="国立社会保障・人口問題研究所", source_url="https://www.ipss.go.jp/ss-cost/j/fsss-R05/fsss_R05.html",
+               sector="財政", unit="億円", granularity="年度", freq="fy", dataset="shaho_fin", measure=meas, dims="total",
+               stat_name="社会保障費用統計", table_id="R05-14", table_title="第14表 社会保障財源（ILO基準）の項目別推移",
+               policy_tags=(TAG_SOC, TAG_FISCAL), period_converter="esri_year_fy", first_period="FY1951", edition="令和5（2023）年度",
+               accessor={"type": "ipss_xlsx", "url": url, "sheet": "R05-14", "col_header": hdr, "col_occurrence": 1, "header_row": hrow,
+                         "period_col": 2, "first_data_row": 10, "stop_at_blank": True},
+               citation_template="国立社会保障・人口問題研究所「社会保障費用統計」第14表 社会保障財源（ILO基準）の項目別推移（{item}／{period}）取得 {retrieved_at}",
+               notes="実績（決算ベース）。ILO 第18次社会保障費用調査の分類（他制度からの移転を除く）。公費負担＝国庫負担＋他の公費負担（地方公共団体の負担等）。"
+                     "資産収入は公的年金等の運用実績で大きく変動する。その他は積立金からの受入等を含む（原表の注）。1951・1954・1957 年度の後は 1960 年度から毎年度。"
+                     "予算ベースの財源内訳（厚生労働省資料）は未収録。年版（edition）が上がると URL の年版も変わる＝seed で更新。",
+               status="registered") for meas, hdr, hrow, ttl in SHAHO_FIN]
 
 
 def shaho_series() -> list[Series]:
@@ -2564,9 +2619,12 @@ def zaisei_series() -> list[Series]:
     S1 = ["1.-3昭和22～63年度", "1.-4平成", "1.-5令和"]
     for meas, col, ttl in [("revenue_budget", "C", "歳入 予算額"), ("revenue_settled", "D", "歳入 決算額"), ("expenditure_budget", "E", "歳出 予算額"), ("expenditure_settled", "F", "歳出 決算額")]:
         d = "budget" if meas.endswith("budget") else "settled"
-        out.append(z(f"mof.zaisei.{meas.split('_')[0]}_total.{d}.fy", f"財政統計 第1表 一般会計 {ttl}（年度・円）", "円", f"{meas.split('_')[0]}_total", d,
+        # ★ 2026-10-02 訂正：単位は千円（収録する昭和22〜63年度・平成・令和のシートは「（単位：千円）」。円なのは明治〜昭和21年度のシートだけ＝未収録）。
+        #   2026-08-18 の登録から「円」と表示していた（値は原表どおり＝表示の誤り）。第16表 純計の一般会計（百万円）との突き合わせで検出＝test_core で固定
+        out.append(z(f"mof.zaisei.{meas.split('_')[0]}_total.{d}.fy", f"財政統計 第1表 一般会計 {ttl}（年度・千円）", "千円", f"{meas.split('_')[0]}_total", d,
                      {"layout": "year_blocks", "file": "01.xlsx", "sheets": S1, "value_col": col}, "01.xlsx", "第1表 明治初年度以降一般会計歳入歳出予算決算", "FY1947",
-                     "各年度の「計」行（当初＋補正の合計）。単位は円（換算しない）。予算額＝補正後予算、決算額＝決算。"))
+                     "各年度の「計」行（当初＋補正の合計）。単位は千円（換算しない・原表の昭和22年度以降のシートの単位）。予算額＝補正後予算、決算額＝決算。"
+                     "★ 2026-10-02 まで単位を『円』と誤って表示していた（値は不変）。"))
     for kind, f, ttl_k in (("budget", "03.xlsx", "予算"), ("settled", "04.xlsx", "決算")):
         for meas, col, ttl in [("tax_stamp_revenue", "G", "租税及印紙収入（計）"), ("bond_issuance", "N", "公債金"), ("revenue_total_major", "P", "歳入合計")]:
             out.append(z(f"mof.zaisei.{meas}.{kind}.fy", f"財政統計 第{'3' if kind == 'budget' else '4'}表 一般会計歳入主要科目別 {ttl}（{ttl_k}・年度・百万円）", "百万円", meas, kind,
@@ -2585,6 +2643,23 @@ def zaisei_series() -> list[Series]:
                      {"layout": "year_sheets", "file": "20.xlsx", "section": sec, "value_header": "決算額"}, "20.xlsx",
                      "第20表 昭和42年度以降主要経費別分類による一般会計歳出予算現額及び決算額", "FY1967",
                      "単位は千円（換算しない）。主要経費の分類は年度により変わる（原典の区分どおり）。", tags))
+    # 第 12 弾 第 5 便（2026-10-02）：第16表 一般会計及び特別会計決算純計（百万円・FY1987〜）。歳入・歳出で同じラベルが出る＝occurrence（1＝歳入・2＝歳出）
+    JUNKEI = [("general_account", "一般会計歳入総額", "一般会計歳出総額", "一般会計 総額"),
+              ("special_accounts", "特別会計歳入総額", "特別会計歳出総額", "特別会計 総額"),
+              ("gross_total", "合計", "合計", "一般会計＋特別会計 合計（重複を含む）"),
+              ("duplication", "うち重複額", "うち重複額", "うち重複額（会計間の繰入等）"),
+              ("net_of_duplication", "差引額", "差引額", "差引額（合計−重複額）"),
+              ("net_total", "再差引純計額", "再差引純計額", "再差引純計額（純計）")]
+    for meas, lab_r, lab_e, ttl in JUNKEI:
+        for side, lab, occ, sname in (("revenue", lab_r, 1, "歳入"), ("expenditure", lab_e, 2, "歳出")):
+            acc = {"layout": "year_cols", "file": "16.xlsx", "header_row": 5, "row_label": lab}
+            if lab_r == lab_e:
+                acc["occurrence"] = occ
+            out.append(z(f"mof.zaisei.junkei_{meas}.{side}.fy", f"財政統計 第16表 一般会計及び特別会計決算純計 {sname} {ttl}（決算・年度・百万円）", "百万円",
+                         f"junkei_{meas}", side, acc, "16.xlsx", "第16表 昭和62年度以降一般会計及び特別会計決算純計", "FY1987",
+                         "単位は百万円（換算しない）。**決算の列だけ**（表の右端の決算見込額・当初予算の列は収録しない）。重複額＝一般会計・特別会計間の繰入、特別会計相互間・勘定間の繰入、"
+                         "財政融資資金の運用による利子の受払等（原表の注）。再差引純計額＝差引額から国債整理基金特別会計における借換償還額等を控除したもの。"
+                         "計数は四捨五入＝合計と一致しないことがある（原表の注）。", tags=(TAG_FISCAL, TAG_MACRO)))
     return out
 
 
@@ -2872,7 +2947,9 @@ def build() -> list[Series]:
     S += zaimu_shorui_series()   # 第 12 弾 第 3 便（2026-10-02）＝財務省「国の財務書類」Excel 版（planned→registered）
     S += tokitsu_series()        # 第 12 弾 第 4 便（2026-10-02）＝総務省「統一的な基準による財務書類」都道府県（planned→registered）
     S += boj_fof_sector_series() # 第 8 弾 第 2 便（資金循環 部門別・年度）
+    S += boj_fof_jgb_series()    # 第 12 弾 第 5 便（2026-10-02）＝国債・財投債／国庫短期証券の保有者別（資金循環の細目）
     S += sna_fixed_capital_stock_series() + roudou_emp_type_series() + shaho_series()  # 第 8 弾 第 2 便（F-4／F-6／F-7）
+    S += shaho_financing_series()  # 第 12 弾 第 5 便（2026-10-02）＝社会保障財源（ILO基準）第14表
     return S
 
 

@@ -155,6 +155,33 @@ def main() -> int:
     chk(_pb_label("sna_sector_bs", "net_worth", "a") == "暦年末" and _pb_label("fof", "stock.assets_total", "fy") == "年度末"
         and _pb_label("fof", "flow.assets_total", "fy") == "年度（期中）" and _pb_label("roudou", "unemployment_rate", "m") is None,
         "第12弾 期の定義：代表例（SNA の BS＝暦年末・資金循環ストック＝年度末・フロー＝期中・労調＝未宣言）")
+    # 第 12 弾 第 5 便（2026-10-02）：純計（財政統計 第16表）・社会保障財源（第14表）・国債の保有者別（資金循環の細目）＋財政統計の単位の整合
+    if _vs.has_data("mof.zaisei.junkei_net_total.revenue.fy"):
+        bad = []
+        for side in ("revenue", "expenditure"):
+            for y in ("FY1987", "FY2008", "FY2024"):
+                g = {m: _v(f"mof.zaisei.junkei_{m}.{side}.fy", y) for m in ("general_account", "special_accounts", "gross_total", "duplication", "net_of_duplication")}
+                if None in g.values() or abs(g["gross_total"] - g["general_account"] - g["special_accounts"]) > 1 or abs(g["net_of_duplication"] - g["gross_total"] + g["duplication"]) > 1:
+                    bad.append(f"{side}/{y}")
+        chk(not bad, f"第12弾 純計（第16表）：合計＝一般会計＋特別会計・差引額＝合計−重複額（±1）{bad}")
+        # 単位の整合（2026-10-02 に第1表の単位表示『円』の誤りをこの突き合わせで検出＝正しくは千円）
+        bad = [y for y in ("FY1990", "FY2010", "FY2023")
+               if _v("mof.zaisei.expenditure_total.settled.fy", y) != _v("mof.zaisei.expenditure_total_major.settled.fy", y)
+               or abs(_v("mof.zaisei.expenditure_total.settled.fy", y) / 1000 - _v("mof.zaisei.junkei_general_account.expenditure.fy", y)) > 1
+               or abs(_v("mof.zaisei.revenue_total.settled.fy", y) / 1000 - _v("mof.zaisei.revenue_total_major.settled.fy", y)) > 1]
+        units = {reg.series[sid].unit for sid in ("mof.zaisei.expenditure_total.settled.fy", "mof.zaisei.expenditure_total_major.settled.fy")}
+        chk(not bad and units == {"千円"}, f"第12弾 財政統計の単位：第1表（千円）＝第20表（千円）・第1表÷1000＝第16表／第4表（百万円・±1）{bad}{units}")
+    if _vs.has_data("ipss.shaho_fin.total.total.fy"):
+        def _sf(m, y):
+            return _v(f"ipss.shaho_fin.{m}.total.fy", y)
+        bad = [y for y in ("FY1951", "FY1990", "FY2023")
+               if abs(_sf("total", y) - _sf("contributions", y) - _sf("tax", y) - _sf("capital_income", y) - _sf("other", y)) > 2
+               or abs(_sf("contributions", y) - _sf("contributions_insured", y) - _sf("contributions_employer", y)) > 1
+               or abs(_sf("tax", y) - _sf("tax_state", y) - _sf("tax_other_public", y)) > 1]
+        chk(not bad, f"第12弾 社会保障財源：合計＝保険料＋公費＋資産収入＋その他・保険料＝被保険者＋事業主・公費＝国庫＋他の公費（億円の丸め）{bad}")
+    if _vs.has_data("boj.fof_jgb.jgb_holdings.total.fy"):
+        bad = [y for y in ("FY1979", "FY2000", "FY2024") if _v("boj.fof_jgb.jgb_holdings.total.fy", y) != _v("boj.fof_jgb.jgb_outstanding.total.fy", y)]
+        chk(not bad, f"第12弾 国債・財投債：保有（資産）の合計＝発行残高（負債）の合計（資金循環の恒等式）{bad}")
     # 第 12 弾 第 4 便（2026-10-02）：統一的な基準による財務書類（都道府県）。原表の中で常に成り立つ関係だけを固定する
     # （資産合計＝負債合計＋純資産合計は原表自体が外れる団体・年度がある＝FY2024 福井県 全体 等＝固定しない・注記に事実）
     if _vs.has_data("soumu.tokitsu.net_assets.general.fy.pref"):
