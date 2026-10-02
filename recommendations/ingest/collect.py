@@ -153,6 +153,7 @@ def fetch_and_record(entry: dict, org: str, out_dir: Path, today: str,
     html_text = entry.get("html_text")
     dlog = f" [{date}]" if entry.get("log_date") else ""
     status = "ok"
+    reused = False  # skip_existing で既存ファイルを使った＝今回は取得していない
 
     if entry.get("resolve_error"):
         status = "error"
@@ -162,6 +163,7 @@ def fetch_and_record(entry: dict, org: str, out_dir: Path, today: str,
         dest = out_dir / file_name
         if skip_existing and dest.exists():
             print(f"  = skip既存 {file_name}")
+            reused = True
         else:
             try:
                 dest.write_bytes(_get(pdf_url).content)
@@ -179,6 +181,7 @@ def fetch_and_record(entry: dict, org: str, out_dir: Path, today: str,
         if skip_existing and dest.exists():
             print(f"  = skip既存 {file_name}")
             status = "html_text"
+            reused = True
         else:
             try:
                 if callable(html_text):
@@ -204,7 +207,10 @@ def fetch_and_record(entry: dict, org: str, out_dir: Path, today: str,
         source_url = pdf_url or page_url
     # doc_type は最終タイトルで推定（連合は HTML の h1 でタイトルが置き換わることがある）
     doc_type = entry.get("doc_type") or _doc_type_hint(title)
-    return catalog_row(file_name, org, title, date, doc_type, field_tags, source_url, status, today)
+    row = catalog_row(file_name, org, title, date, doc_type, field_tags, source_url, status, today)
+    if reused:
+        row["_reused"] = True  # write_catalog が既存行の取得時の記録を残す印（CSV には書かない）
+    return row
 
 
 def _out_dir(org: str) -> Path:
@@ -1081,18 +1087,26 @@ ADAPTERS = {"keidanren": collect_keidanren, "keidanren_legacy": collect_keidanre
 def write_catalog(rows: list[dict]) -> None:
     """カタログに追記（file_name で重複排除、既存を新規で上書き）。
     ★後工程列（policy_tags/doc_nature）は新規行が空なら既存値を温存する（2026-09-03 修正＝
-    --skip-existing の再収集で既存行のタグが消え全再判定になる事故の再発防止）。"""
+    --skip-existing の再収集で既存行のタグが消え全再判定になる事故の再発防止）。
+    ★既存ファイルを使った行（今回は取得していない）は、既存行の source_url・retrieved_at を残す
+    （2026-10-02 修正＝出典は取得時点の事実・retrieved_at は取得日〔coverage の last_ingested の意味論〕。
+    一覧ページのリンク先が変わると source_url が決定ページへ、再走査のたびに retrieved_at が当日へ書き換わっていた）。"""
     existing = {}
     if CATALOG.exists():
         with CATALOG.open(encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 existing[r["file_name"]] = r
     for r in rows:
+        reused = r.pop("_reused", False)
         old = existing.get(r["file_name"])
         if old:
             for col in ("policy_tags", "doc_nature"):
                 if not (r.get(col) or "").strip() and (old.get(col) or "").strip():
                     r[col] = old[col]
+            if reused:
+                for col in ("source_url", "retrieved_at"):
+                    if (old.get(col) or "").strip():
+                        r[col] = old[col]
         existing[r["file_name"]] = r
     CATALOG.parent.mkdir(parents=True, exist_ok=True)
     with CATALOG.open("w", encoding="utf-8", newline="") as f:
