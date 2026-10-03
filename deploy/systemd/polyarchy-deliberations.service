@@ -1,0 +1,35 @@
+# Polyarchy 審議会議事録DB（deliberations）の MCP サーバ——recommendations／stats／companies とは別プロセス・別ホスト名。
+#   python -m deliberations.serving.mcp_server --http --host 127.0.0.1 --port 8768
+# 層＝公開固定・fail-closed（発言者・提出者は推定しない）。埋め込み（ruri）とリランカーを読む＝メモリはモデル 1 組分
+# （手元の Mac の実測で最大 RSS 約 1.3GB・2026-10-04）。ランタイム秘密なし。127.0.0.1 バインドで直露出しない。
+# ★M6 の下準備（2026-10-04）＝まだ bootstrap から設置しない（設置の配線は ENABLE_DELIBERATIONS_APP の opt-in として M6 で足す・
+#   docs/審議会議事録DB_開発計画.md §8.3）。入口は cloudflared ingress の deliberations.<domain> → :8768 の予定。
+[Unit]
+Description=Polyarchy deliberations MCP server (Streamable HTTP :8768, layer=public fixed, fail-closed)
+After=network-online.target qdrant.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polyarchy
+Group=polyarchy
+WorkingDirectory=/opt/polyarchy/polyarchy
+EnvironmentFile=-/etc/polyarchy/deploy.env
+# 秘密パス（MCP_HTTP_PATH）＋認証（MCP_AUTH_*＝案 B）。bootstrap が SSM deliberations_http_path / auth_aud_deliberations から生成する予定。
+EnvironmentFile=-/etc/polyarchy/deliberations.env
+Environment=PYTHONPATH=/opt/polyarchy/polyarchy
+Environment=HF_HOME=/opt/polyarchy/models
+# 箱の Qdrant（:6333）の別コレクション。env 名は DELIB_ 付き＝deploy.env の COLLECTION_NAME（政策主張DB）を拾わない。
+Environment=DELIB_QDRANT_URL=http://127.0.0.1:6333
+Environment=DELIB_COLLECTION=deliberations_v1
+Environment=DELIB_QUERY_LOG=/opt/polyarchy/polyarchy/deliberations/data/query_log/queries.jsonl
+Environment=TOKENIZERS_PARALLELISM=false
+ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m deliberations.serving.mcp_server --http --host 127.0.0.1 --port 8768
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polyarchy-deliberations
+
+[Install]
+WantedBy=multi-user.target

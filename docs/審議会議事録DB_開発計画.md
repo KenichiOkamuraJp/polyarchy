@@ -286,6 +286,34 @@ AI・デジタル改革推進会議（後継）は、2026-10-02 時点で掲載�
 
 ---
 
+### 8.3 M6 の下準備と配線の一覧（2026-10-04）
+
+**下準備（済・箱に影響しない）**
+- 手元の実測（Mac・MPS）：審議会DB の検索プロセスの最大 RSS 約 1.3GB（6,121 点・起動から 1 問まで 13 秒）。比較の政策主張DB は約 1.8GB（18.9 万点・18 秒）。大半はモデル（ruri＋リランカー）＝**箱にはモデル 1 組分がもう 1 プロセス載る**。箱（CPU）の値は M6 の実測で取り直す。
+- systemd のユニット `deploy/systemd/polyarchy-deliberations.service`（:8768・`DELIB_` の env・HF_HOME は既存の事前DL と同じ）。bootstrap はユニットを名前で 1 つずつ設置する＝ファイルを置くだけでは設置されない。
+- 箱へ運ぶ束 `python -m deliberations.ops.bundle export|restore`：コレクション 1 つを Qdrant のスナップショットで書き出し、語彙・目録・解析結果と sha256 つきでまとめる（第 1 便 209MB）。手元で別名に復元し、同じ問の検索結果が順位とスコアまで一致することを確認。手元と箱の Qdrant は同じ v1.19.0（束は版が違えば復元を中止）。
+
+**置き場の判断（M6 の最初・箱の実測の後）**
+| 案 | 内容 | 判断の材料 |
+|---|---|---|
+| A | 既存の箱に同居（同じ Qdrant の別コレクション・別プロセス） | 箱の空きメモリが審議会DB のプロセス（CPU で測る）＋余裕を超えるか。Qdrant の増分は小さい（6,121 点） |
+| B | 箱を一段大きくして同居 | A が足りないとき。費用の増分 |
+| C | 当面は箱に置かず手元の stdio だけ | 利用者が限られる間。公開ページは出さない |
+
+**配線の一覧（A・B のとき。companies の前例＝`ENABLE_COMPANIES_APP` と同じ opt-in の型で `ENABLE_DELIBERATIONS_APP`・既定 false）**
+| 場所 | 足すこと |
+|---|---|
+| `deploy/bootstrap/bootstrap.sh` | フラグ・SSM（`deliberations_http_path`・`auth_aud_deliberations`）から `deliberations.env`・query_log の作成・ユニットの設置／撤去・cloudflared の ingress（`TUNNEL_HOST_DELIBERATIONS`）・束の復元（コレクションが無いか版が変わったとき） |
+| `deploy/bootstrap/apply_data_update.sh` | 退避・切り替え・箱上 smoke（`deliberations.eval.mcp_smoke`）・失敗時の切り戻しに審議会DB を足す（★このスクリプトの変更は次の次の配布から効く） |
+| `deploy/scripts/upload_to_s3.sh`・`release.sh` | 束を S3 `data/deliberations/` へ（政策主張DB の qdrant ミラーとは別の prefix）。ゲート 4 本（アンカー・帰属・層・スモーク）をフラグのときだけ足す |
+| `deploy/scripts/rollback.sh`・`cloudflare-guard.sh` | 公開ホスト `deliberations.<domain>` の確認と、秘密パス・レート制限のルール |
+| `deploy/bootstrap/fuelsync.sh`・`deploy/systemd/polyarchy-logprune.service`・`deploy/terraform/storage.tf`・`iam.tf` | 捕捉ログの S3 同期（書き込みだけの権限）と 30 日の削除（箱の timer と S3 ライフサイクルの両方） |
+| `deploy/bootstrap/health_metric.sh`・`ops_dashboard.sh`・`usage_report_weekly.sh`・`rsyslog-polyarchy.conf`・`cloudwatch-agent.json`・`deploy/terraform/observability.tf` | 生き死にの指標（:8768）・ダッシュボード・週次利用レポート・ログの振り分けと CloudWatch Logs（30 日）・アラーム |
+| `deploy/terraform/variables.tf`・`compute.tf`・`user_data.sh.tftpl`・`deploy/scripts/lib.sh`・`deploy/env/*.env.example` | フラグとホスト名の変数 |
+| `deploy/scripts/lock_deps.sh`・ロック | 依存は増えない＝ロックの再生成は不要（箱の既定の extras は `recommendations,stats`＝`lock-recommendations-stats.txt` に配信に要るもの〔qdrant-client・sentence-transformers・llama-index の HF 埋め込み・rank-bm25・fugashi・requests〕がすべて入っていることを確認 2026-10-04。PyMuPDF は取込だけ） |
+| `deploy/pages/` | `deliberations/docs/deliberations.html` を移し、入口とプライバシーポリシーに審議会DB を足す（箱で有効にしてから） |
+| `deploy/README.md`・`RUNBOOK_OPS.md`・`PROD_MIGRATION.md` | 有効化の手順（companies の §5 と同じ型）・障害対応の表 |
+
 ## 9. 作る順序
 
 | 段 | 内容 | 完了の条件 |

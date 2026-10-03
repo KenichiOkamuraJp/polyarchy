@@ -32,6 +32,7 @@ python -m deliberations.ingest.qdrant_ingest       # Qdrant へ（専用の qdra
 python -m deliberations.eval.retrieval             # 検索のアンカー（基準はルート README「品質の担保」）
 python -m deliberations.eval.layer_gate            # 層・索引の fail-closed
 python -m deliberations.eval.mcp_smoke
+python -m deliberations.ops.bundle export          # 箱へ運ぶ束（Qdrant のスナップショット＋語彙・目録・解析結果）＝M6 の下準備
 ```
 
 ## 地雷（実際に踏んだもの）
