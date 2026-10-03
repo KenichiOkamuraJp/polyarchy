@@ -49,7 +49,7 @@ polyarchy/
 │   ├── eval/             評価セット運用・回帰ゲート・スモークテスト
 │   └── data/             PDF・catalog・eval・捕捉ログ（大物は S3 管理・git 外）
 ├── stats/                統計参照DB — 主張↔事実の突き合わせ。ベクトルではなく発見層（目録・系列検索）＋厳密参照層（値の完全一致）。core/ingest/serving/eval/ops/docs
-├── deliberations/        審議会議事録DB（開発中＝M0 の評価問まで確定。原文は data/raw/＝git 外）
+├── deliberations/        審議会議事録DB（開発中＝M3 の収集・解析・帰属まで。原文と中間物は data/＝git 外）
 ├── deploy/               AWS 構成（Terraform / bootstrap / systemd / Cloudflare / 運用手順）— 全サービス共通
 ├── ops/usage/            週次利用レポートの集計の出力先（weekly.jsonl＝数字のみ。実利用の数字なので git 外。生成は `python -m polyarchy_common.usage_report`）
 ├── docs/                 全体文書（残タスク・運用設計・評価設計・導入団体向け文書・長期計画＝下記「ドキュメント」）
