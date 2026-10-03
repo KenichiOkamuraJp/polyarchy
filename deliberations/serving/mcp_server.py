@@ -56,6 +56,19 @@ def svc():
     return _svc
 
 
+def capture(tool: str, args: dict, n: int) -> None:
+    """捕捉ログ（評価の燃料・30 日で削除）：ツール名・引数・件数・時刻（＋認証済みなら user_hash）。会話本文は取らない。"""
+    import os as _os
+    from pathlib import Path
+
+    from deliberations.core.paths import QUERY_LOG
+    from polyarchy_common.capture import append_record
+    path = Path(_os.getenv("DELIB_QUERY_LOG", str(QUERY_LOG)))
+    if _os.getenv("DELIB_QUERY_LOG", "") != "off":
+        append_record(path, {"tool": tool, **{k: v for k, v in args.items() if v not in (None, [], "")},
+                             "hits": n}, logger_name="polyarchy.deliberations.capture")
+
+
 def _tuple(x) -> tuple:
     if not x:
         return ()
@@ -78,10 +91,12 @@ def search_deliberations(query: str, orgs: list[str] | None = None, since: int |
     k = max(1, min(int(top_k or config.TOP_K), config.TOP_K_MAX))
     flt = DelibFilter(orgs=_tuple(orgs), date_from=since, date_to=until, doc_kinds=_tuple(doc_kinds), roles=_tuple(roles))
     hits = svc().search(query, flt, top_k=k)
+    capture("search_deliberations", {"query": query, "orgs": orgs, "since": since, "until": until,
+                                     "doc_kinds": doc_kinds, "roles": roles, "top_k": k}, len(hits))
     out = {"query": query, "results": [h.to_dict() for h in hits]}
     if not hits:
-        out["coverage_note"] = ("該当なし。収録＝デジタル行財政改革会議(本会議・第1〜14回)・人工知能戦略本部(第1〜5回)・"
-                                "人工知能戦略専門調査会(第1〜6回)・AI戦略会議(第1〜14回)の公開資料と記録。決定文書は政策主張DB。")
+        from deliberations.core.search import coverage_note
+        out["coverage_note"] = coverage_note()
     return out
 
 
@@ -90,6 +105,7 @@ def search_deliberations(query: str, orgs: list[str] | None = None, since: int |
 def list_meeting(org: str, session_no: int) -> dict:
     from deliberations.core.search import list_meeting as _list
     r = _list(org, int(session_no))
+    capture("list_meeting", {"org": org, "session_no": session_no}, len(r["items"]) if r else 0)
     if r is None:
         return {"found": False, "org": org, "session_no": session_no,
                 "reason": "その会議体・回次は収録していない（会議体のコードは dgk/ai_hq/ai_senmon/ai_senryaku）"}

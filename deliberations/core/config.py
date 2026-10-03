@@ -26,6 +26,8 @@ POOL_K = int(os.getenv("DELIB_POOL_K", "30"))
 TOP_K = 5
 TOP_K_MAX = 20
 FILTER_WIDEN = 5
+# 第三者の著作物（構成員・外部の提出資料）は 1 応答で同じ文書から 2 件まで（軽微な利用の担保・再配布条件.md）
+PER_THIRD_DOC = 2
 QDRANT_EXACT = os.getenv("DELIB_QDRANT_EXACT", "1").lower() not in ("0", "false", "no", "")
 
 # 取り込みから外す短い単位（司会の取り次ぎ「ありがとうございました。」など）。0＝外さない。

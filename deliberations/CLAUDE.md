@@ -16,6 +16,12 @@
 - **推定しない**：発言者・提出者は記録と資料に書かれた文字列からだけ。匿名の要約の発言は不明。提出者の記載の無い資料は会議資料の慣行により事務局（presenter_basis＝既定で区別）。
 - 層は公開固定（ツールに layer 引数を作らない）。ツールは 2 本（search_deliberations・list_meeting）。
 
+## 文書
+
+- [docs/再配布条件.md](docs/再配布条件.md)（設計）＝取得元の規約・`license` の判定・返す形の契約値
+- [docs/収録範囲.md](docs/収録範囲.md)（正典）＝何が入っていて何が入っていないか（数は `core/search.coverage()`）
+- `docs/deliberations.html`＝公開ページの原稿（**箱で有効にしてから `deploy/pages/` へ移して入口からリンク**。先に `deploy/pages/` に置くと運用側の配置で公開される）
+
 ## 実行（リポジトリ root を cwd に）
 
 ```bash

@@ -3,6 +3,7 @@
 
     python -m deliberations.ingest.qdrant_ingest            # コレクションを作り直して全件（第 1 便は数分）
     DELIB_COLLECTION=deliberations_tmp python -m ...         # 別名のコレクションへ
+    python -m deliberations.ingest.qdrant_ingest --payload-only  # メタデータだけ上書き（本文・単位が同じとき。埋め込みはやり直さない）
 
 検索の本文（payload の text＝BM25・リランカーが読む）は、会議体・回次・提出者／発言者の見出しを先頭に付けた文：
 「デジタル行財政改革会議 第10回（2025-04-22）中室構成員：…」。問は「第何回の誰が」を含むことが多く、本文だけ
@@ -45,6 +46,15 @@ def payload(u: dict) -> dict:
     return p
 
 
+def _scroll(qc: QdrantClient):
+    off = None
+    while True:
+        pts, off = qc.scroll(config.COLLECTION, limit=2000, offset=off, with_payload=["text"], with_vectors=False)
+        yield from pts
+        if off is None:
+            break
+
+
 def main() -> int:
     configure_quiet_logging()
     units = [json.loads(l) for l in UNITS.open(encoding="utf-8")]
@@ -55,6 +65,21 @@ def main() -> int:
         log.error("共通コアの違反 %d 件: %s", len(errs), errs[:3])
         return 1
     qc = QdrantClient(url=config.QDRANT_URL, timeout=300)
+    if "--payload-only" in sys.argv:
+        have = {str(p.id): p.payload.get("text") for p in _scroll(qc)}
+        if set(have) != {u["id"] for u in keep}:
+            log.error("索引の点と単位の集合が違う（単位が変わった）＝--payload-only ではなく作り直す")
+            return 1
+        changed = [u for u in keep if have[u["id"]] != payload(u)["text"]]
+        if changed:
+            log.error("検索の本文が %d 件変わっている＝埋め込みのやり直しが要る（--payload-only は使えない）", len(changed))
+            return 1
+        for i in range(0, len(keep), 256):
+            for u in keep[i:i + 256]:
+                qc.overwrite_payload(config.COLLECTION, payload=payload(u), points=[u["id"]], wait=False)
+        qc.update_collection(config.COLLECTION)  # 書き込みを確定
+        log.info("メタデータを上書き: %d 点", len(keep))
+        return 0
     ensure_collection(qc, config.COLLECTION, recreate=True, dense_dim=config.DENSE_DIM,
                       keyword_fields=config.KEYWORD_FIELDS, integer_fields=config.INTEGER_FIELDS)
     embed = HF_EMBEDDING_MODELS[config.EMBEDDING]()

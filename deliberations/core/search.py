@@ -85,6 +85,7 @@ class Hit:
             "role": m["role"], "who": m["who"],
             "source_url": m["source_url"] + (f"#page={m['page']}" if m.get("page") and m["unit"] == "page" else ""),
             "text": (m["body"][:text_chars] + ("…" if len(m["body"]) > text_chars else "")) if text_chars else "",
+            "license": m.get("license", ""),
             "score": round(self.score, 4),
         }
         if m["unit"] == "utterance":
@@ -110,6 +111,8 @@ def notes_for(m: dict) -> list[str]:
         ns.append("資料に提出者の記載が無い（会議資料の慣行により事務局として扱う）。")
     if m.get("text_quality") == "sparse":
         ns.append("このページは文字がほとんど取れない（図・画像中心）＝内容は原文で確認。")
+    if m.get("license") == "第三者の著作物":
+        ns.append("提出者が権利を持つ資料＝所在の案内のための抜粋（引用するときは出典を示し、全文は原文で）。")
     return ns
 
 
@@ -135,8 +138,9 @@ class DeliberationsSearch:
         return len(self.meta)
 
     def search(self, query: str, flt: DelibFilter | None = None, top_k: int = config.TOP_K,
-               per_doc: int = 0) -> list[Hit]:
-        """per_doc>0 なら同じ文書から返す件数の上限（0＝上限なし）。"""
+               per_doc: int = 0, per_third_doc: int = config.PER_THIRD_DOC) -> list[Hit]:
+        """per_doc>0 なら同じ文書から返す件数の上限（0＝上限なし）。per_third_doc＝第三者の著作物（構成員・外部の
+        提出資料）の同じ文書から返す上限＝所在検索に伴う軽微な利用の担保（deliberations/docs/再配布条件.md）。"""
         flt = flt or DelibFilter()
         qemb = self.embed.get_query_embedding(query)
         ids = self.searcher.fused_ids(qemb, query, flt.qdrant(), flt.matches, needs_post=False)[: config.POOL_K]
@@ -151,6 +155,8 @@ class DeliberationsSearch:
                 continue
             k = m["path"]
             if per_doc and per.get(k, 0) >= per_doc:
+                continue
+            if per_third_doc and m.get("license") == "第三者の著作物" and per.get(k, 0) >= per_third_doc:
                 continue
             per[k] = per.get(k, 0) + 1
             out.append(Hit(float(s), m, notes=notes_for(m)))
@@ -190,3 +196,41 @@ def list_meeting(org: str, session_no: int) -> dict | None:
         items.append(it)
     return {"org": org, "session_no": session_no, "date": page.get("date"), "title": page.get("title"),
             "mochimawari": page.get("mochimawari", False), "page_url": page["source_url"], "items": items}
+
+
+def coverage() -> dict:
+    """収録範囲（目録と解析結果から数える）＝会議体ごとの回・期間・資料と記録の数・非公開・文字の少ないページ。"""
+    from deliberations.ingest.sources import BY_ORG
+    rows = list(map(json.loads, MANIFEST.open(encoding="utf-8")))
+    docs = list(map(json.loads, DOCUMENTS.open(encoding="utf-8")))
+    out = {}
+    for org, src in BY_ORG.items():
+        rs = [r for r in rows if r["org"] == org]
+        if not rs:
+            continue
+        ds = [d for d in docs if d["org"] == org]
+        sess = sorted({r["session_no"] for r in rs})
+        dates = sorted(r["date"] for r in rs if r.get("date"))
+        out[org] = {
+            "name": src.name, "ministry": src.ministry, "batch": src.batch,
+            "sessions": [sess[0], sess[-1]], "session_count": len(sess),
+            "mochimawari": sorted({r["session_no"] for r in rs if r.get("mochimawari")}),
+            "period": [dates[0], dates[-1]] if dates else [],
+            "materials": sum(1 for d in ds if d.get("doc_kind") == "資料"),
+            "references": sum(1 for d in ds if d.get("doc_kind") == "参考資料"),
+            "records": {t: sum(1 for d in ds if d.get("record_type") == t)
+                        for t in ("逐語", "名前つき要約", "匿名要約", "発言の記録なし")},
+            "nonpublic": sum(1 for r in rs if not r.get("public", True)),
+            "third_party_docs": sum(1 for d in ds if d.get("license") == "第三者の著作物"),
+            "sparse_pages": sum(d.get("sparse_pages", 0) for d in ds),
+            "pages": sum(d.get("pages", 0) for d in ds),
+        }
+    return out
+
+
+def coverage_note() -> str:
+    parts = [f"{c['name']}（第{c['sessions'][0]}〜{c['sessions'][1]}回・{c['period'][0]}〜{c['period'][1]}）"
+             for c in coverage().values() if c["period"]]
+    return ("該当なし。収録＝" + "・".join(parts) + "の公開の配布資料と記録。会議の決定文書は政策主張DB"
+            "（search_policy_docs）。上の会議体以外の審議会・会議（規制改革推進会議の WG など）は未収録。")
+

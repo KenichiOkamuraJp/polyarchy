@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>deliberations（審議会議事録DB） — Polyarchy</title>
+<style>:root{--fg:#1e1e1e;--bg:#fff;--muted:#666;--line:#ddd;--accent:#1f4e79}
+@media(prefers-color-scheme:dark){:root{--fg:#e8e8e8;--bg:#151515;--muted:#aaa;--line:#333;--accent:#8fb8e8}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.7}
+main{max-width:820px;margin:0 auto;padding:2rem 1.2rem}
+h1{font-size:1.6rem;border-bottom:1px solid var(--line);padding-bottom:.4rem}
+h2{font-size:1.2rem;margin-top:2rem}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
+code{background:rgba(127,127,127,.15);padding:.1rem .3rem;border-radius:3px}
+pre{background:rgba(127,127,127,.12);padding:.8rem;overflow-x:auto}
+footer{max-width:820px;margin:2rem auto;padding:1rem 1.2rem;color:var(--muted);border-top:1px solid var(--line);font-size:.9rem}
+nav a{margin-right:1rem}
+a{color:var(--accent)}
+.note{border-left:4px solid var(--accent);padding:.4rem .8rem;background:rgba(127,127,127,.08)}
+</style></head><body>
+<main>
+<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/companies">companies（企業情報DB）</a><a href="/deliberations">deliberations（審議会議事録DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
+
+<h1>deliberations — 審議会議事録DB（Polyarchy）</h1>
+<p>更新日：2026-10-04</p>
+<p>政府の会議体の<strong>過程文書</strong>＝回ごとの配布資料・議事録・議事要旨を、<strong>誰が出した資料か・誰の発言か</strong>を添えて Claude から検索するためのリモート MCP サーバです。
+会議で<strong>決まった内容</strong>（取りまとめ・基本計画など）は <a href="/recommendations">recommendations（政策主張DB）</a>に、<strong>決まるまでの資料と議論</strong>はこちらに入っています。該当がなければ結果は空で返ります。</p>
+<p class="note">民間議員・有識者・外部の団体の資料や発言は、その人・団体の見解であって、会議や政府の決定ではありません。返り値の区分（role）と注記（notes）で必ず区別して返します。発言者・提出者は記録と資料に書かれたとおりで、書かれていなければ「不明」と返します（推定しません）。</p>
+
+<h2>接続</h2>
+<ol>
+<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy deliberations</code>、URL は利用者ごとに個別にご案内します（当面は招待制。利用にはログインが必要です）。</li>
+<li>会話の中で「審議会議事録DB で」と書くと確実に呼ばれます。</li>
+</ol>
+
+<h2>ツール（すべて読み取り専用）</h2>
+<table>
+<tr><th>ツール</th><th>何をするか</th><th>主な引数</th></tr>
+<tr><td><code>search_deliberations</code></td><td>配布資料と議事録・議事要旨の検索（関連度順の抜粋＋帰属）</td><td><code>query</code>・<code>orgs</code>（会議体）・<code>since</code>/<code>until</code>（YYYYMMDD）・<code>doc_kinds</code>（資料／参考資料／議事録／議事要旨）・<code>roles</code>（区分）・<code>top_k</code>（既定 5・上限 20）</td></tr>
+<tr><td><code>list_meeting</code></td><td>1 つの回の資料と記録の一覧（検索ではなく一覧）。資料番号・提出者と区分・原文 URL・非公開で名前だけ載っている資料を含む</td><td><code>org</code>・<code>session_no</code></td></tr>
+</table>
+
+<h2>使ってみる（プロンプト例）</h2>
+<ol>
+<li>「審議会議事録DB で、第14回デジタル行財政改革会議に担当大臣が出した資料は、会議の改組について何と書いているか」</li>
+<li>「審議会議事録DB で、人工知能戦略専門調査会の委員が AI と著作権についてどんな懸念を述べたか。委員の名前も」</li>
+<li>「政策主張DB で人工知能基本計画の該当部分を探し、審議会議事録DB でその論点が会議でどう議論されたかを、回と資料ごとに並べて」</li>
+</ol>
+
+<h2>結果の見方</h2>
+<table>
+<tr><th>項目</th><th>意味</th></tr>
+<tr><td><code>meeting</code>・<code>session_no</code>・<code>date</code>・<code>material_no</code></td><td>会議体・回次・開催日・資料番号</td></tr>
+<tr><td><code>role</code>・<code>who</code></td><td>提出者または発言者の区分と名前（記録・資料に書かれたとおり）。区分＝<strong>政務</strong>（総理・大臣・官房長官・副大臣・政務官）／<strong>事務局</strong>／<strong>府省・会議体</strong>／<strong>構成員（政府外）</strong>（民間議員・有識者・座長・構成員である自治体の長）／<strong>外部（ヒアリング）</strong>（構成員でない出席者・団体）／<strong>不明</strong></td></tr>
+<tr><td><code>mode</code>（発言）</td><td>verbatim＝議事録の発言／named＝名前つきの要約／anonymous＝匿名の要約（誰の発言か特定できない）／written＝欠席者が書面で提出した発言要旨／narration＝議事要旨の地の文</td></tr>
+<tr><td><code>presenter_basis</code>（資料）</td><td>提出者を何から読んだか（資料名／表紙／本文／既定）。<strong>既定</strong>＝資料に提出者の記載が無く、会議資料の慣行により事務局として扱ったもの</td></tr>
+<tr><td><code>license</code></td><td><code>PDL1.0</code>＝政府の資料と記録（公共データ利用規約・出典を示せば商用可）／<code>第三者の著作物</code>＝構成員・外部の提出資料（所在の案内のための抜粋。全文は原典の条件に従う）</td></tr>
+<tr><td><code>notes</code></td><td>見解であって決定ではない・匿名・書面・既定の事務局・文字の取れないページ などの注記</td></tr>
+</table>
+
+<h2>収録範囲（2026-10-04）</h2>
+<table>
+<tr><th>会議体</th><th>回</th><th>期間</th></tr>
+<tr><td>デジタル行財政改革会議（本会議）</td><td>第 1〜14 回</td><td>2023-10〜2026-07</td></tr>
+<tr><td>人工知能戦略本部</td><td>第 1〜5 回</td><td>2025-09〜2026-07</td></tr>
+<tr><td>人工知能戦略専門調査会</td><td>第 1〜6 回</td><td>2025-09〜2026-06</td></tr>
+<tr><td>AI 戦略会議</td><td>第 1〜14 回</td><td>2023-05〜2025-06</td></tr>
+</table>
+<p>計 298 文書（資料・参考資料 262・議事録／議事要旨 36）。これ以外の審議会・会議（規制改革推進会議の WG など）は未収録です。非公開の資料は名前だけが一覧に出ます。図・画像の中の文字は読んでいません。</p>
+
+<h2 id="sources">取得元と利用条件</h2>
+<p>内閣官房・内閣府の公式サイトに掲載された会議資料と記録です。両サイトとも、権利表記の記載がない限り公共データ利用規約（第 1.0 版）が適用されます。構成員・外部の団体が提出した資料はその提出者が権利を持つものとして扱い、所在の案内のための抜粋（1 件 800 字まで・同じ資料から 1 回の結果に 2 件まで）と原文 URL だけを返します。引用するときは出典（会議体・回次・資料名・URL）を示してください。値や記述は原典で確認してください（本サービスは内容を保証しません）。</p>
+
+<h2>収集する情報</h2>
+<p>ツール名・引数（検索語・絞り込み条件・会議体と回次）・該当件数・時刻・利用者のメールアドレスのハッシュ値を 30 日間記録し、収録の拡充と品質改善に使います。会話本文は取得しません。</p>
+
+<h2>制限</h2>
+<ul>
+<li>発言者・提出者は記録と資料に書かれた文字列から機械で付けています。資料の提出者の表示が画像の中にあると、提出者は「不明」になります。</li>
+<li>検索は関連度の順です。ある論点が「最初に出た回」を知りたいときは、期間で絞るか、ヒットした回の前後を <code>list_meeting</code> で確かめてください。</li>
+<li>レート制限があります（通常の対話利用では到達しません）。</li>
+</ul>
+
+<h2>サポート</h2>
+<p>kenichi.okamura.jp@gmail.com — 接続できない・記述が原典と違う・帰属（発言者・提出者）の誤り・収録の希望・脆弱性の報告。</p>
+</main>
+<footer>
+運営者：岡村 健一（個人運営）／サポート・脆弱性報告の連絡先：kenichi.okamura.jp@gmail.com<br>
+Polyarchy は Anthropic 社の製品ではありません。Claude は Anthropic PBC の商標です。
+</footer></body></html>

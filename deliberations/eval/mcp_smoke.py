@@ -4,7 +4,10 @@ MCP サーバのスモーク：ツールが 2 本・読み取り専用の注記�
     python -m deliberations.eval.mcp_smoke
 """
 import asyncio
+import os
 import sys
+
+os.environ.setdefault("DELIB_QUERY_LOG", "off")  # スモークの問を捕捉ログに混ぜない
 
 from deliberations.serving import mcp_server as srv
 

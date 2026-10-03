@@ -9,3 +9,4 @@ MANIFEST = RAW_DIR / "manifest.jsonl"  # 目録（1 行 1 件：議事次第ペ�
 UNITS = CACHE_DIR / "units.jsonl"      # 検索の単位（スライド 1 ページ・1 発言 など）＝M4 で埋め込む
 DOCUMENTS = CACHE_DIR / "documents.jsonl"  # 文書ごとの解析結果（提出者・記録の型・抽出の質）
 EVAL_DIR = PKG_DIR / "eval"
+QUERY_LOG = DATA_DIR / "query_log" / "queries.jsonl"  # 捕捉ログ（30 日で削除＝箱の timer・S3 ライフサイクル）

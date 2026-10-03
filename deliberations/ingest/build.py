@@ -25,6 +25,16 @@ NS = uuid.UUID("6f1d3c2a-0d1e-5b7a-9a52-2b7f0c4e8d10")  # 審議会議事録DB �
 KIND_OF_MODE = {"verbatim": "議事録", "written": "議事録", "named": "議事要旨", "anonymous": "議事要旨", "narration": "議事要旨"}
 
 
+LICENSE_PDL = "PDL1.0"            # 公共データ利用規約 第 1.0 版（内閣官房・内閣府のサイトの規約）
+LICENSE_THIRD = "第三者の著作物"  # 構成員・外部の提出資料＝PDL1.0 §1.2 の対象外として扱う（deliberations/docs/再配布条件.md）
+THIRD_PARTY = ("構成員（政府外）", "外部（ヒアリング）")
+
+
+def license_of(presenter_type: str) -> str:
+    """資料の提出者区分 → 利用条件。記録（議事録・議事要旨）は政府が作成・公開する文書＝PDL1.0。"""
+    return LICENSE_THIRD if presenter_type in THIRD_PARTY else LICENSE_PDL
+
+
 def unit_id(path: str, kind: str, n: int) -> str:
     return str(uuid.uuid5(NS, f"{path}#{kind}#{n}"))
 
@@ -68,6 +78,7 @@ def build_material(row: dict) -> tuple[dict, list[dict]]:
     doc = {**base_meta(row), "doc_kind": row["doc_kind"], "presenter_type": pr.presenter_type, "presenter": pr.presenter,
            "presenter_basis": pr.basis, "presenter_rule": pr.rule, "page_presenters": pr.page_presenters,
            "origin_body": pr.origin_body, "origin_basis": pr.origin_basis, "pages": len(pages),
+           "license": license_of(pr.presenter_type),
            "sparse_pages": sum(p.quality == "sparse" for p in pages)}
     units = []
     for pg in pages:
@@ -78,6 +89,7 @@ def build_material(row: dict) -> tuple[dict, list[dict]]:
             units.append({**base_meta(row), "id": uid, "unit": "page", "page": pg.no, "part": k if len(parts) > 1 else 0,
                           "doc_kind": row["doc_kind"], "presenter_type": pr.presenter_type,
                           "presenter": pres or pr.presenter, "presenter_basis": pr.basis,
+                          "license": license_of(pr.presenter_type),
                           "speaker": "", "speaker_role": "", "mode": "", "text": part,
                           "text_quality": pg.quality, "chars": len(re.sub(r"\s", "", part))})
     return doc, units
@@ -90,13 +102,15 @@ def build_record(row: dict) -> tuple[dict, list[dict]]:
     us = [x for u in records.merge_named(us) for x in records.split_long(u)]
     rtype = records.record_type(us)
     doc = {**base_meta(row), "doc_kind": "議事録" if rtype == "逐語" else "議事要旨", "record_type": rtype,
+           "license": LICENSE_PDL,
            "units": len(us), "modes": dict(Counter(u.mode for u in us))}
     units = []
     for n, u in enumerate(us, 1):
         role = speaker_role(u.speaker, src, head_text)
         units.append({**base_meta(row), "id": unit_id(row["path"], "utt", n), "unit": "utterance", "page": u.start_page,
                       "end_page": u.end_page, "doc_kind": doc["doc_kind"], "presenter_type": "", "presenter": "",
-                      "presenter_basis": "", "speaker": u.speaker, "speaker_role": role, "mode": u.mode,
+                      "presenter_basis": "", "license": LICENSE_PDL,
+                      "speaker": u.speaker, "speaker_role": role, "mode": u.mode,
                       "text": u.text, "text_quality": "ok", "chars": len(re.sub(r"\s", "", u.text))})
     return doc, units
 

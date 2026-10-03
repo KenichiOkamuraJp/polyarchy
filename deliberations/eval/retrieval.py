@@ -63,13 +63,15 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top-k", type=int, default=5)
     ap.add_argument("--dump-topk", default=None)
+    ap.add_argument("--per-doc", type=int, default=None, help="同じ文書から返す上限（省略＝サービスの既定）")
     args = ap.parse_args()
     qs = json.load(open(EVAL_DIR / "anchor_questions.json", encoding="utf-8"))["questions"]
     svc = DeliberationsSearch()
     by = defaultdict(lambda: {"hit": [], "rr": []})
     misses, dump = [], {}
     for q in qs:
-        hits = svc.search(q["question"], top_k=args.top_k)
+        hits = svc.search(q["question"], top_k=args.top_k,
+                          **({} if args.per_doc is None else {"per_doc": args.per_doc}))
         metas = [h.meta for h in hits]
         rank = next((i for i, m in enumerate(metas, 1) if is_hit(q, m)), None)
         t = q["type"][0]
