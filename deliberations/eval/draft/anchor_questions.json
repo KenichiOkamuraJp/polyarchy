@@ -2,21 +2,22 @@
  "meta": {
   "状態": "下書き（M0）・人手の確定前",
   "作成": "2026-10-03",
-  "問の数": 40,
+  "問の数": 35,
   "型の内訳": {
    "A_政務・回次の特定": 10,
    "B_名前つき要約・逐語（発言者の特定）": 11,
    "C_匿名の要約（発言者は不明で返るべき）": 9,
-   "D_決定文書との往復（初出の回と資料）": 10
+   "D_決定文書との往復（初出の回と資料）": 5
   },
   "会議体の内訳": {
-   "dgk": 14,
+   "dgk": 11,
    "ai_hq": 5,
-   "ai_senryaku": 13,
-   "ai_senmon": 8
+   "ai_senryaku": 12,
+   "ai_senmon": 7
   },
   "正解の照合": "evidence.quote は PyMuPDF get_text() の抽出文字列そのまま（行単位）。page は 1 始まり。",
-  "path の基点": "deliberations/data/raw/"
+  "path の基点": "deliberations/data/raw/",
+  "確認": "第 1 回＝2026-10-03（本人・Excel）：✓32・保留 8。保留のうち 5 問（D04・D06〜D09）は外し（dropped）、3 問（A09・C05・C06）は書き直した。"
  },
  "questions": [
   {
@@ -45,7 +46,15 @@
    ],
    "speaker_mark_in_text": null,
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "A02",
@@ -61,7 +70,16 @@
     "material_name": "議事要旨・議事録",
     "doc_kind": "議事録",
     "speaker": "松本デジタル行財政改革担当大臣",
-    "speaker_role": "政務"
+    "speaker_role": "政務",
+    "answer_span": {
+     "path": "dgk/14/kaigi14_gijiroku.pdf",
+     "start_page": 2,
+     "end_page": 3,
+     "first_line": "○松本デジタル行財政改革担当大臣 皆さん、おはようございます。ただいまから、第14",
+     "last_line": "まずは、林総務大臣、お願いいたします。",
+     "lines": 45
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -78,7 +96,15 @@
     "line": "○松本デジタル行財政改革担当大臣 皆さん、おはようございます。ただいまから、第14"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "A03",
@@ -94,7 +120,16 @@
     "material_name": "議事要旨・議事録",
     "doc_kind": "議事録",
     "speaker": "木原内閣官房長官",
-    "speaker_role": "政務"
+    "speaker_role": "政務",
+    "answer_span": {
+     "path": "dgk/14/kaigi14_gijiroku.pdf",
+     "start_page": 11,
+     "end_page": 12,
+     "first_line": "○木原内閣官房長官 本日はお疲れさまでございました。昨年12月に高市総理からの指示",
+     "last_line": "以上です。",
+     "lines": 32
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -111,7 +146,15 @@
     "line": "○木原内閣官房長官 本日はお疲れさまでございました。昨年12月に高市総理からの指示"
    },
    "note": "締めくくりの発言者は総理ではなく内閣官房長官（議長）。直前の○行は p11。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "A04",
@@ -127,7 +170,16 @@
     "material_name": "議事要旨・議事録",
     "doc_kind": "議事録",
     "speaker": "金子国土交通大臣",
-    "speaker_role": "政務"
+    "speaker_role": "政務",
+    "answer_span": {
+     "path": "dgk/14/kaigi14_gijiroku.pdf",
+     "start_page": 4,
+     "end_page": 4,
+     "first_line": "○金子国土交通大臣 国土交通省としては、交通・インフラDXの取組として、自動運転の",
+     "last_line": "保を大前提に全省一丸となり、スピード感を持って着実に進めてまいります。",
+     "lines": 11
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -143,7 +195,15 @@
     "line": "○金子国土交通大臣 国土交通省としては、交通・インフラDXの取組として、自動運転の"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "A05",
@@ -159,7 +219,16 @@
     "material_name": "議事要旨・議事録",
     "doc_kind": "議事録",
     "speaker": "西村経済産業大臣",
-    "speaker_role": "政務"
+    "speaker_role": "政務",
+    "answer_span": {
+     "path": "dgk/01/kaigi1_gijiroku.pdf",
+     "start_page": 13,
+     "end_page": 14,
+     "first_line": "○西村経済産業大臣 デジタル行財政改革のポイントは、デジタル基盤などの規格を全国",
+     "last_line": "以上です。",
+     "lines": 23
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -182,7 +251,15 @@
     "line": "○西村経済産業大臣 デジタル行財政改革のポイントは、デジタル基盤などの規格を全国"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "A06",
@@ -210,7 +287,15 @@
    ],
    "speaker_mark_in_text": null,
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "A07",
@@ -226,7 +311,16 @@
     "material_name": "議事概要（PDF形式：316KB）",
     "doc_kind": "議事要旨",
     "speaker": "赤澤経済産業大臣",
-    "speaker_role": "政務"
+    "speaker_role": "政務",
+    "answer_span": {
+     "path": "ai_hq/05/gijigaiyo.pdf",
+     "start_page": 3,
+     "end_page": 4,
+     "first_line": "・赤澤経済産業大臣から、「「ビッグデータ×ＡＩ」の時代の今、各分野でＡＩトランス",
+     "last_line": "いります。」といった発言があった。",
+     "lines": 17
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -242,7 +336,15 @@
     "line": "・赤澤経済産業大臣から、「「ビッグデータ×ＡＩ」の時代の今、各分野でＡＩトランス"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "A08",
@@ -258,7 +360,16 @@
     "material_name": "議事概要（PDF形式：312KB）",
     "doc_kind": "議事要旨",
     "speaker": "小泉防衛大臣",
-    "speaker_role": "政務"
+    "speaker_role": "政務",
+    "answer_span": {
+     "path": "ai_hq/03/gijigaiyo.pdf",
+     "start_page": 4,
+     "end_page": 4,
+     "first_line": "・小泉防衛大臣から、「科学技術の急速な発展が安全保障の在り方を根本的に変化させて",
+     "last_line": "イノベーションの推進に貢献してまいります。」といった発言があった。",
+     "lines": 9
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -274,12 +385,21 @@
     "line": "・小泉防衛大臣から、「科学技術の急速な発展が安全保障の在り方を根本的に変化させて"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "このチャンクを含め、よりうしろの文章を混ぜた方がいいと思います。",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "正解を引用の 1 行から発言の全体（answer_span）に広げた（確認のコメント）"
   },
   {
    "id": "A09",
    "type": "A_政務・回次の特定",
-   "question": "AI戦略会議 第14回の冒頭挨拶で、科学技術政策担当大臣はAI法の成立をどう報告したか。",
+   "question": "AI戦略会議 第14回で、科学技術政策担当大臣はAI法案の国会審議の主な論点として何を挙げたか。",
    "expected": {
     "path": "ai_senryaku/14/gijiyoushi.pdf",
     "page": 2,
@@ -290,14 +410,24 @@
     "material_name": "議事要旨（PDF形式：322KB）",
     "doc_kind": "議事要旨",
     "speaker": "城内科学技術政策担当大臣",
-    "speaker_role": "政務"
+    "speaker_role": "政務",
+    "answer_span": {
+     "path": "ai_senryaku/14/gijiyoushi.pdf",
+     "start_page": 2,
+     "end_page": 2,
+     "first_line": "【城内科学技術政策担当大臣】",
+     "last_line": "本日も忌憚のないご議論をよろしくお願いいたします。",
+     "lines": 18
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
      "path": "ai_senryaku/14/gijiyoushi.pdf",
      "page": 2,
      "quote": [
-      "先週５月28日（水）に法律が成立いたしました。松尾座長はじめ、これまで制度検討や法"
+      "ＡＩ法案の国会審議では、人間中心の考え方、ＡＩイノベーション政策のあり方、国や",
+      "地方におけるＡＩの活用策、人材育成、ディープフェイクや偏見・差別等のリスクへの対"
      ]
     }
    ],
@@ -306,7 +436,16 @@
     "line": "【城内科学技術政策担当大臣】"
    },
    "note": "記録の型は匿名の要約だが、政府側の挨拶は【氏名＋職名】の見出しで名前つき＝同じ文書の中で区分が混在する例。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "保留",
+     "comment": "挨拶に近いので、問いとして適切かはかなり微妙。境界領域にただしく答えられている、という点は否定しない。",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "挨拶の報告ではなく、同じ発言の中の実質（国会審議の論点）を問う形に書き直した（確認で保留＝挨拶に近い）"
   },
   {
    "id": "A10",
@@ -334,7 +473,15 @@
    ],
    "speaker_mark_in_text": null,
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "B01",
@@ -350,7 +497,16 @@
     "material_name": "議事概要（PDF形式：363KB）",
     "doc_kind": "議事要旨",
     "speaker": "伊藤委員",
-    "speaker_role": "構成員（政府外）"
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "ai_senmon/01/gijiyoushi.pdf",
+     "start_page": 4,
+     "end_page": 4,
+     "first_line": "・ 経済安全保障という観点からも、１つのモデルにオーバーリライアンスすることなく、",
+     "last_line": "存させ、使い分けるというのは大きな意味を持っている。",
+     "lines": 3
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -367,7 +523,15 @@
     "line": "【伊藤委員】"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "B02",
@@ -383,7 +547,16 @@
     "material_name": "議事概要（PDF形式：363KB）",
     "doc_kind": "議事要旨",
     "speaker": "森委員",
-    "speaker_role": "構成員（政府外）"
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "ai_senmon/01/gijiyoushi.pdf",
+     "start_page": 5,
+     "end_page": 5,
+     "first_line": "・ ＡＩ関連の民間投資額において、中国は日本の約1０倍、米国は約１００倍と大きな差が",
+     "last_line": "かした反転攻勢が重要である。",
+     "lines": 3
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -399,7 +572,15 @@
     "line": "【森委員】"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "B03",
@@ -415,7 +596,16 @@
     "material_name": "議事概要（PDF形式：357KB）",
     "doc_kind": "議事要旨",
     "speaker": "佐渡島委員",
-    "speaker_role": "構成員（政府外）"
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "ai_senmon/02/gijiyoushi.pdf",
+     "start_page": 7,
+     "end_page": 8,
+     "first_line": "・ ＡＩと著作権侵害の関係について懸念がある。特にコンテンツ分野では、著作権侵害と見",
+     "last_line": "起にとどまっている。",
+     "lines": 3
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -431,7 +621,15 @@
     "line": "【佐渡島委員】"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "B04",
@@ -447,7 +645,16 @@
     "material_name": "議事概要（PDF形式：302KB）",
     "doc_kind": "議事要旨",
     "speaker": "川原委員",
-    "speaker_role": "構成員（政府外）"
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "ai_senmon/03/gijiyoushi.pdf",
+     "start_page": 4,
+     "end_page": 4,
+     "first_line": "・ 政府におけるＡＩ政策の司令塔機能の強化が必要である。単なる司令塔ではなく、モニタ",
+     "last_line": "きと考えている。",
+     "lines": 3
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -463,7 +670,15 @@
     "line": "【川原委員】"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "B05",
@@ -479,7 +694,16 @@
     "material_name": "議事概要（PDF形式：310KB）",
     "doc_kind": "議事要旨",
     "speaker": "岡田（淳）委員",
-    "speaker_role": "構成員（政府外）"
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "ai_senmon/04/gijiyoushi.pdf",
+     "start_page": 4,
+     "end_page": 4,
+     "first_line": "・",
+     "last_line": "で、日本のＡＩ主権と国家競争力を支える基盤を構築すべきである。",
+     "lines": 6
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -495,7 +719,15 @@
     "line": "【岡田（淳）委員】"
    },
    "note": "見出しは p3、引用は p4（見出しがページをまたぐ）。同じ会議体に岡田（陽）委員がいる＝表記の（淳）（陽）を落とすと取り違える。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "B06",
@@ -511,7 +743,16 @@
     "material_name": "議事概要（PDF形式：320KB）",
     "doc_kind": "議事要旨",
     "speaker": "生貝委員",
-    "speaker_role": "構成員（政府外）"
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "ai_senmon/06/gijiyoushi.pdf",
+     "start_page": 3,
+     "end_page": 3,
+     "first_line": "・ 「開かれたＡＩ主権」を中心に据えた構成になっているが、世界的に「ソブリンＡＩ」",
+     "last_line": "という言葉が広く使われ始めている状況にあるため、その状況を反映できるとよい。",
+     "lines": 2
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -527,7 +768,15 @@
     "line": "【生貝委員】"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "B07",
@@ -543,7 +792,16 @@
     "material_name": "議事概要（PDF形式：316KB）",
     "doc_kind": "議事要旨",
     "speaker": "林総務大臣",
-    "speaker_role": "政務"
+    "speaker_role": "政務",
+    "answer_span": {
+     "path": "ai_hq/05/gijigaiyo.pdf",
+     "start_page": 1,
+     "end_page": 1,
+     "first_line": "・林総務大臣から、「我が国の生産性の向上や労働力不足の解消に向けて、ＡＩの社会実",
+     "last_line": "現に貢献してまいります。」といった発言があった。",
+     "lines": 13
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -559,7 +817,16 @@
     "line": "・林総務大臣から、「我が国の生産性の向上や労働力不足の解消に向けて、ＡＩの社会実"
    },
    "note": "同じ文書の p4 で松本デジタル大臣も Project YATA-Shield に触れている＝発言者の取り違えの検査になる。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "場所は間違えていませんが、次のチャンクも含める必要があると思います",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "正解を引用の 1 行から発言の全体（answer_span）に広げた（確認のコメント）"
   },
   {
    "id": "B08",
@@ -575,7 +842,16 @@
     "material_name": "議事概要（PDF形式：304KB）",
     "doc_kind": "議事要旨",
     "speaker": "平デジタル大臣",
-    "speaker_role": "政務"
+    "speaker_role": "政務",
+    "answer_span": {
+     "path": "ai_hq/01/gijigaiyo.pdf",
+     "start_page": 3,
+     "end_page": 4,
+     "first_line": "・平デジタル大臣から、「デジタル庁では、政府におけるＡＩの適切な調達・利活用のガ",
+     "last_line": "言があった。",
+     "lines": 14
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -591,7 +867,15 @@
     "line": "・平デジタル大臣から、「デジタル庁では、政府におけるＡＩの適切な調達・利活用のガ"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "B09",
@@ -607,7 +891,16 @@
     "material_name": "議事要旨・議事録",
     "doc_kind": "議事録",
     "speaker": "佐藤構成員",
-    "speaker_role": "構成員（政府外）"
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "dgk/14/kaigi14_gijiroku.pdf",
+     "start_page": 7,
+     "end_page": 8,
+     "first_line": "○佐藤構成員 山形市長の佐藤です。よろしくお願いいたします。",
+     "last_line": "以上でございます。",
+     "lines": 30
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -623,7 +916,16 @@
     "line": "○佐藤構成員 山形市長の佐藤です。よろしくお願いいたします。"
    },
    "note": "佐藤構成員は山形市長＝開催要領の構成員の欄＝構成員（政府外）。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "自治体の負担が増えたというチャンクは直後。文脈は間違っていない。",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "正解を引用の 1 行から発言の全体（answer_span）に広げた（確認のコメント）"
   },
   {
    "id": "B10",
@@ -639,7 +941,16 @@
     "material_name": "議事要旨・議事録",
     "doc_kind": "議事録",
     "speaker": "東原構成員",
-    "speaker_role": "構成員（政府外）"
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "dgk/10/kaigi10_gijiroku.pdf",
+     "start_page": 15,
+     "end_page": 15,
+     "first_line": "○東原構成員 ありがとうございます。",
+     "last_line": "私からは以上です。",
+     "lines": 28
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -656,7 +967,15 @@
     "line": "○東原構成員 ありがとうございます。"
    },
    "note": "構成員が所属団体（経団連）の提言を紹介する発言＝提出者区分は構成員のまま（団体の立場ではない）。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "B11",
@@ -672,7 +991,16 @@
     "material_name": "議事要旨・議事録",
     "doc_kind": "議事録",
     "speaker": "マイナウォレット株式会社橘代表取締役",
-    "speaker_role": "外部（ヒアリング）"
+    "speaker_role": "外部（ヒアリング）",
+    "answer_span": {
+     "path": "dgk/10/kaigi10_gijiroku.pdf",
+     "start_page": 2,
+     "end_page": 4,
+     "first_line": "○マイナウォレット株式会社橘代表取締役 本日は貴重な機会をいただき、ありがとうご",
+     "last_line": "引き続き、皆様の力強い御支援をお願いいたします。ありがとうございました。",
+     "lines": 56
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -695,7 +1023,15 @@
     "line": "○マイナウォレット株式会社橘代表取締役 本日は貴重な機会をいただき、ありがとうご"
    },
    "note": "",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "C01",
@@ -711,7 +1047,16 @@
     "material_name": "議事要旨（PDF形式：299KB）",
     "doc_kind": "議事要旨",
     "speaker": "不明",
-    "speaker_role": "不明"
+    "speaker_role": "不明",
+    "answer_span": {
+     "path": "ai_senryaku/01/giji.pdf",
+     "start_page": 2,
+     "end_page": 2,
+     "first_line": "・開発というのはある程度の競争的な要素があるとは思うが、責任あるAIの開発や倫理面、",
+     "last_line": "いくところをいかにバランスよく進めていくのかということに関して議論していきたい。",
+     "lines": 3
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -727,7 +1072,15 @@
     "line": "〇 松尾座長より、本日はAIをめぐる様々な論点について整理し、それを今後の議論のスコ"
    },
    "note": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き＝発言者は特定できない。名簿・資料から推定しない。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "C02",
@@ -743,7 +1096,16 @@
     "material_name": "議事要旨（PDF形式：267KB）",
     "doc_kind": "議事要旨",
     "speaker": "不明",
-    "speaker_role": "不明"
+    "speaker_role": "不明",
+    "answer_span": {
+     "path": "ai_senryaku/04/gijiyoushi4kai.pdf",
+     "start_page": 5,
+     "end_page": 5,
+     "first_line": "・リスクへの対応というところで、先ほどの広島AIプロセスの話の関連するところだが、こ",
+     "last_line": "いる相互運用性とはどういうことなのかなど含めて研究をしていく必要がある。",
+     "lines": 5
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -759,7 +1121,15 @@
     "line": "〇 次に、内閣府よりAI 開発力の強化に向けたAI 関連の主要な施策について説明があり、そ"
    },
    "note": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き＝発言者は特定できない。名簿・資料から推定しない。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "C03",
@@ -775,7 +1145,16 @@
     "material_name": "議事要旨（PDF形式：259KB）",
     "doc_kind": "議事要旨",
     "speaker": "不明",
-    "speaker_role": "不明"
+    "speaker_role": "不明",
+    "answer_span": {
+     "path": "ai_senryaku/05/gijiyoushi5kai.pdf",
+     "start_page": 6,
+     "end_page": 6,
+     "first_line": "・資料1-1に関して、広島AIプロセスの概要というところだが、まず年内に開発者を含む全て",
+     "last_line": "るというところで、非常にすばらしい内容になっているのではないかと考えている。",
+     "lines": 4
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -792,7 +1171,16 @@
     "line": "〇 次に、総務省より広島AIプロセスの閣僚級会合の結果報告が、内閣府より事業者向けの"
    },
    "note": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き＝発言者は特定できない。名簿・資料から推定しない。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "根拠としてはうしろのチャンクも含めて",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "正解を引用の 1 行から発言の全体（answer_span）に広げた（確認のコメント）"
   },
   {
    "id": "C04",
@@ -808,7 +1196,16 @@
     "material_name": "議事要旨（PDF形式：258KB）",
     "doc_kind": "議事要旨",
     "speaker": "不明",
-    "speaker_role": "不明"
+    "speaker_role": "不明",
+    "answer_span": {
+     "path": "ai_senryaku/06/gijiyoushi6kai.pdf",
+     "start_page": 6,
+     "end_page": 6,
+     "first_line": "・資料１－３のAI 事業者ガイドライン等の履行確保について、「開発者等の行動規範の履行",
+     "last_line": "頂きたい。",
+     "lines": 18
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -824,12 +1221,20 @@
     "line": "〇 次に、総務省及び外務省より広島AIプロセスの報告が、内閣府よりAI事業者ガイドライ"
    },
    "note": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き＝発言者は特定できない。名簿・資料から推定しない。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "C05",
    "type": "C_匿名の要約（発言者は不明で返るべき）",
-   "question": "AI戦略会議 第7回で、AI事業者ガイドライン案について多様なステークホルダーの意見の反映を評価したのは誰か。",
+   "question": "AI戦略会議 第7回で、AI事業者ガイドライン案などの取りまとめが短期間で年内にここまで到達したことを評価したのは誰か。",
    "expected": {
     "path": "ai_senryaku/07/gijiyoushi7kai.pdf",
     "page": 6,
@@ -840,14 +1245,24 @@
     "material_name": "議事要旨（PDF形式：240KB）",
     "doc_kind": "議事要旨",
     "speaker": "不明",
-    "speaker_role": "不明"
+    "speaker_role": "不明",
+    "answer_span": {
+     "path": "ai_senryaku/07/gijiyoushi7kai.pdf",
+     "start_page": 6,
+     "end_page": 6,
+     "first_line": "・国際的な取りまとめと国内ガイドラインの双方について、様々なステークホルダーから多様",
+     "last_line": "ていただき年内でここまで到達できたことは本当に素晴らしいと考えている。",
+     "lines": 3
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
      "path": "ai_senryaku/07/gijiyoushi7kai.pdf",
      "page": 6,
      "quote": [
-      "・国際的な取りまとめと国内ガイドラインの双方について、様々なステークホルダーから多様"
+      "な意見を酌み取って反映することは容易でなかったと思うが、短時間でここまでの成果を出し",
+      "ていただき年内でここまで到達できたことは本当に素晴らしいと考えている。"
      ]
     }
    ],
@@ -856,12 +1271,21 @@
     "line": "〇次に、松本総務大臣より広島AIプロセスの報告が、松本総務大臣及び齋藤経済産業大臣よ"
    },
    "note": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き＝発言者は特定できない。名簿・資料から推定しない。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "保留",
+     "comment": "後ろのチャンクも含めてよむと、短期間でここまで到達したことを評価しているので問いがずれていないか。（多様なステークホルダーの関与自体を賞賛していない）話者については正確",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "問の読み違いを直した＝評価しているのは短期間での到達（多様な意見の反映そのものではない）（確認で保留）"
   },
   {
    "id": "C06",
    "type": "C_匿名の要約（発言者は不明で返るべき）",
-   "question": "AI戦略会議 第9回で、クリエイティブ領域ではまだAIが出てきていないと述べたのは誰か。",
+   "question": "AI戦略会議 第9回で、クリエイターが生成AIを使うようになるのは当分先だと述べたのは誰か。",
    "expected": {
     "path": "ai_senryaku/09/gijiyoushi9kai.pdf",
     "page": 6,
@@ -872,14 +1296,24 @@
     "material_name": "議事要旨（PDF形式：267KB）",
     "doc_kind": "議事要旨",
     "speaker": "不明",
-    "speaker_role": "不明"
+    "speaker_role": "不明",
+    "answer_span": {
+     "path": "ai_senryaku/09/gijiyoushi9kai.pdf",
+     "start_page": 6,
+     "end_page": 6,
+     "first_line": "・クリエイティブ領域に関しては、まだなかなかAIが出てきていない。素人の人が使う分に",
+     "last_line": "はよいが、クリエイターの人が生成AIを使うには当分先かなと思う。",
+     "lines": 2
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
      "path": "ai_senryaku/09/gijiyoushi9kai.pdf",
      "page": 6,
      "quote": [
-      "・クリエイティブ領域に関しては、まだなかなかAIが出てきていない。素人の人が使う分に"
+      "・クリエイティブ領域に関しては、まだなかなかAIが出てきていない。素人の人が使う分に",
+      "はよいが、クリエイターの人が生成AIを使うには当分先かなと思う。"
      ]
     }
    ],
@@ -888,7 +1322,16 @@
     "line": "〇内閣府より「AI戦略の課題と対応」の説明が、田中構成員より「進化する日本でのAIの利"
    },
    "note": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き＝発言者は特定できない。名簿・資料から推定しない。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "保留",
+     "comment": "プロが使えないといっているだけで、クリエイティブ領域のAIがない、とはいっていない。話者については正確",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "問の読み違いを直した＝述べているのはプロ（クリエイター）が使うのは先ということ（AI が無いとは言っていない）（確認で保留）"
   },
   {
    "id": "C07",
@@ -904,7 +1347,16 @@
     "material_name": "議事要旨（PDF形式：330KB）",
     "doc_kind": "議事要旨",
     "speaker": "不明",
-    "speaker_role": "不明"
+    "speaker_role": "不明",
+    "answer_span": {
+     "path": "ai_senryaku/11/gijiyoushi.pdf",
+     "start_page": 6,
+     "end_page": 6,
+     "first_line": "・ 生成AI以前のAIのリスクの焦点は、製品の安全性と個人情報のプロファイリングの問題で",
+     "last_line": "ドロー両面からの官民の共同規制、③国際的な整合性が重要。",
+     "lines": 5
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -920,7 +1372,15 @@
     "line": "○ 続いて、松尾座長より、AI制度の現状と制度課題について研究会の構成員の皆様を中心に"
    },
    "note": "「各構成員から…主な意見は以下のとおり」の下の「・」箇条書き＝発言者は特定できない。名簿・資料から推定しない。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "C08",
@@ -936,7 +1396,16 @@
     "material_name": "議事要旨（PDF形式：314KB）",
     "doc_kind": "議事要旨",
     "speaker": "不明",
-    "speaker_role": "不明"
+    "speaker_role": "不明",
+    "answer_span": {
+     "path": "ai_senryaku/12/gijiyoushi.pdf",
+     "start_page": 6,
+     "end_page": 6,
+     "first_line": "・一つ目として、AI技術を悪用した詐欺行為が増えている。ディープフェイク技術を用い",
+     "last_line": "っている。",
+     "lines": 6
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -952,7 +1421,15 @@
     "line": "【構成員】"
    },
    "note": "【構成員】の見出し（氏名なし）＝匿名。第12回は AI制度研究会との合同。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "C09",
@@ -968,7 +1445,16 @@
     "material_name": "議事要旨（PDF形式：322KB）",
     "doc_kind": "議事要旨",
     "speaker": "不明",
-    "speaker_role": "不明"
+    "speaker_role": "不明",
+    "answer_span": {
+     "path": "ai_senryaku/14/gijiyoushi.pdf",
+     "start_page": 7,
+     "end_page": 8,
+     "first_line": "・ 日本のエンタメ、ＩＰ産業は大きな輸出産業になろうとしていると思います。しかし、産",
+     "last_line": "います。この構造的な苦境を打破する鍵こそＡＩ技術の導入です。",
+     "lines": 3
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
    },
    "evidence": [
     {
@@ -984,12 +1470,20 @@
     "line": "【構成員】"
    },
    "note": "fail-closed の検査問：発言の中身と構成員名簿から特定の構成員を連想できても、記録は【構成員】としか書いていない＝不明で返るのが正解。推定で名前を出したら誤り。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ]
   },
   {
    "id": "D01",
    "type": "D_決定文書との往復（初出の回と資料）",
-   "question": "「AI・デジタル改革推進会議」への改組は、会議でいつ・どの資料で最初に出てきたか。",
+   "question": "「AI・デジタル改革推進会議」への改組は、収録している会議の中でいつ・どの資料で最初に出てきたか。",
    "expected": {
     "first_date": "2026-07-07",
     "org": "dgk",
@@ -1027,7 +1521,8 @@
       "material_no": "資料９",
       "material_name": "上野山構成員資料（PDF／216KB）"
      }
-    ]
+    ],
+    "answer_unit": "回と文書（発言者は正解にしない）・初出は収録している会議（第 1 便）の中での初出"
    },
    "evidence": [
     {
@@ -1041,12 +1536,21 @@
    "match_pattern": "AI・デジタル改革推進会議",
    "sessions_with_term_in_corpus": 2,
    "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "本当に最初かわかりませんが",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "問の文言を「収録している会議の中で」に（初出は収録範囲の中での初出＝確認のコメント）"
   },
   {
    "id": "D02",
    "type": "D_決定文書との往復（初出の回と資料）",
-   "question": "取りまとめ2026の「会計DX」は、会議でいつ・どの資料で最初に出てきたか（提出者は資料名から読めるか）。",
+   "question": "取りまとめ2026の「会計DX」は、収録している会議の中でいつ・どの資料で最初に出てきたか（提出者は資料名から読めるか）。",
    "expected": {
     "first_date": "2025-12-24",
     "org": "dgk",
@@ -1060,7 +1564,8 @@
       "material_no": "資料２",
       "material_name": "デジタル行財政改革の今後の取組方針について（PDF／7,377KB）"
      }
-    ]
+    ],
+    "answer_unit": "回と文書（発言者は正解にしない）・初出は収録している会議（第 1 便）の中での初出"
    },
    "evidence": [
     {
@@ -1074,12 +1579,21 @@
    "match_pattern": "会計DX",
    "sessions_with_term_in_corpus": 3,
    "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。決定文書（取りまとめ2026）は政策主張DB 側。ここは審議会DB 側の回と資料だけで測る。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "本当に最初かわかりませんが",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "問の文言を「収録している会議の中で」に（初出は収録範囲の中での初出＝確認のコメント）"
   },
   {
    "id": "D03",
    "type": "D_決定文書との往復（初出の回と資料）",
-   "question": "AI事業者ガイドラインは、AI戦略会議でいつ・どの資料で最初に示されたか。",
+   "question": "AI事業者ガイドラインは、AI戦略収録している会議の中でいつ・どの資料で最初に示されたか。",
    "expected": {
     "first_date": "2023-09-08",
     "org": "ai_senryaku",
@@ -1101,7 +1615,8 @@
       "material_no": "",
       "material_name": "議事要旨（PDF形式：259KB）"
      }
-    ]
+    ],
+    "answer_unit": "回と文書（発言者は正解にしない）・初出は収録している会議（第 1 便）の中での初出"
    },
    "evidence": [
     {
@@ -1115,8 +1630,128 @@
    "match_pattern": "AI事業者ガイドライン",
    "sessions_with_term_in_corpus": 16,
    "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "本当に最初かわかりませんが",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "問の文言を「収録している会議の中で」に（初出は収録範囲の中での初出＝確認のコメント）"
   },
+  {
+   "id": "D05",
+   "type": "D_決定文書との往復（初出の回と資料）",
+   "question": "「バーティカルAI」は、収録している会議の中でいつ、どの回の記録・資料で最初に出てきたか。",
+   "expected": {
+    "first_date": "2026-04-09",
+    "org": "ai_senmon",
+    "session_no": 4,
+    "acceptable_paths": [
+     {
+      "path": "ai_senmon/04/gijiyoushi.pdf",
+      "org": "ai_senmon",
+      "session_no": 4,
+      "date": "2026-04-09",
+      "material_no": "",
+      "material_name": "議事概要（PDF形式：310KB）"
+     },
+     {
+      "path": "ai_senmon/04/shiryo1.pdf",
+      "org": "ai_senmon",
+      "session_no": 4,
+      "date": "2026-04-09",
+      "material_no": "資料1",
+      "material_name": "人工知能基本計画の改定に向けて【2026年４月16日 差し替え】（PDF形式：1212KB）"
+     }
+    ],
+    "answer_unit": "回と文書（発言者は正解にしない）・初出は収録している会議（第 1 便）の中での初出",
+    "acceptable_speakers": [
+     "岡田（陽）委員",
+     "原山委員",
+     "村上委員",
+     "伊藤委員",
+     "小野田人工知能戦略担当大臣"
+    ]
+   },
+   "evidence": [
+    {
+     "path": "ai_senmon/04/gijiyoushi.pdf",
+     "page": 4,
+     "quote": [
+      "現場の高品質データを活かしたバーティカルＡＩ・フィジカルＡＩの社会実装を推進し、"
+     ]
+    }
+   ],
+   "match_pattern": "バーティカルAI",
+   "sessions_with_term_in_corpus": 5,
+   "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。 同じ回で 5 人が触れている（acceptable_speakers）＝正解は回と文書。",
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "本当に最初かわかりませんが",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "問の文言を「収録している会議の中で」に（初出は収録範囲の中での初出＝確認のコメント）"
+  },
+  {
+   "id": "D10",
+   "type": "D_決定文書との往復（初出の回と資料）",
+   "question": "人工知能基本計画の骨子（たたき台）は、いつ・どの会議体の資料で最初に示されたか。",
+   "expected": {
+    "first_date": "2025-09-12",
+    "org": "ai_hq",
+    "session_no": 1,
+    "acceptable_paths": [
+     {
+      "path": "ai_hq/01/shiryo2_1.pdf",
+      "org": "ai_hq",
+      "session_no": 1,
+      "date": "2025-09-12",
+      "material_no": "資料2-1",
+      "material_name": "⼈⼯知能基本計画の⾻⼦（たたき台）の概要について（PDF形式：493KB）"
+     },
+     {
+      "path": "ai_hq/01/shiryo2_2.pdf",
+      "org": "ai_hq",
+      "session_no": 1,
+      "date": "2025-09-12",
+      "material_no": "資料2-2",
+      "material_name": "⼈⼯知能基本計画の⾻⼦（たたき台）について（PDF形式：408KB）"
+     }
+    ],
+    "answer_unit": "回と文書（発言者は正解にしない）・初出は収録している会議（第 1 便）の中での初出"
+   },
+   "evidence": [
+    {
+     "path": "ai_hq/01/shiryo2_1.pdf",
+     "page": 1,
+     "quote": [
+      "ＡＩ基本計画⾻⼦（たたき台）︓全体構成"
+     ]
+    }
+   ],
+   "match_pattern": "骨子.たたき台.",
+   "sessions_with_term_in_corpus": 3,
+   "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。人工知能戦略本部 第1回（2025-09-12）と専門調査会 第1回（2025-09-19）に同名の資料がある＝会議体の取り違えの検査。",
+   "要確認": null,
+   "review": [
+    {
+     "result": "✓",
+     "comment": "",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "change_round2": "問の文言を「収録している会議の中で」に（初出は収録範囲の中での初出＝確認のコメント）"
+  }
+ ],
+ "dropped": [
   {
    "id": "D04",
    "type": "D_決定文書との往復（初出の回と資料）",
@@ -1156,56 +1791,16 @@
    "match_pattern": "AI制度研究会",
    "sessions_with_term_in_corpus": 5,
    "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。",
-   "要確認": null
-  },
-  {
-   "id": "D05",
-   "type": "D_決定文書との往復（初出の回と資料）",
-   "question": "「バーティカルAI」は、第1便の会議でいつ、どの回の記録・資料で最初に出てきたか。",
-   "expected": {
-    "first_date": "2026-04-09",
-    "org": "ai_senmon",
-    "session_no": 4,
-    "acceptable_paths": [
-     {
-      "path": "ai_senmon/04/gijiyoushi.pdf",
-      "org": "ai_senmon",
-      "session_no": 4,
-      "date": "2026-04-09",
-      "material_no": "",
-      "material_name": "議事概要（PDF形式：310KB）"
-     },
-     {
-      "path": "ai_senmon/04/shiryo1.pdf",
-      "org": "ai_senmon",
-      "session_no": 4,
-      "date": "2026-04-09",
-      "material_no": "資料1",
-      "material_name": "人工知能基本計画の改定に向けて【2026年４月16日 差し替え】（PDF形式：1212KB）"
-     }
-    ],
-    "answer_unit": "回と文書（発言者は正解にしない）",
-    "acceptable_speakers": [
-     "岡田（陽）委員",
-     "原山委員",
-     "村上委員",
-     "伊藤委員",
-     "小野田人工知能戦略担当大臣"
-    ]
-   },
-   "evidence": [
+   "要確認": null,
+   "review": [
     {
-     "path": "ai_senmon/04/gijiyoushi.pdf",
-     "page": 4,
-     "quote": [
-      "現場の高品質データを活かしたバーティカルＡＩ・フィジカルＡＩの社会実装を推進し、"
-     ]
+     "result": "保留",
+     "comment": "これ正式決定文書だから他にあるんじゃないかなあ。検討段階の資料としては。",
+     "date": "2026-10-03",
+     "round": 1
     }
    ],
-   "match_pattern": "バーティカルAI",
-   "sessions_with_term_in_corpus": 5,
-   "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。 同じ回で 5 人が触れている（acceptable_speakers）＝正解は回と文書。",
-   "要確認": null
+   "dropped_reason": "設置の正式な決定文書が答えになっていた＝検討段階の議論は第 1 便の外にある可能性が高い（第 1 回の確認で保留）"
   },
   {
    "id": "D06",
@@ -1246,7 +1841,16 @@
    "match_pattern": "デジタルライフライン全国総合整備計画",
    "sessions_with_term_in_corpus": 10,
    "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。初出の回の資料は番号なし（経済産業大臣提出資料）＝material_no が空の資料を正しく返せるかの検査を兼ねる。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "保留",
+     "comment": "何の説明もなくつかっているので、多分他の会議体などでは定義されたり、設置されている模様。あくまでデジタル行財政改革会議では、ということでしょうが、問いとして少々無意味。",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "dropped_reason": "会議では説明なしに使われている語＝定義・設置は他の会議体＝「この会議体での初出」は問として意味が薄い（第 1 回の確認で保留）"
   },
   {
    "id": "D07",
@@ -1287,7 +1891,16 @@
    "match_pattern": "国・地方デジタル共通基盤",
    "sessions_with_term_in_corpus": 10,
    "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "保留",
+     "comment": "上の問いと同じ。",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "dropped_reason": "D06 と同じ理由（説明なしに使われている語＝定義・設置は他の会議体）"
   },
   {
    "id": "D08",
@@ -1320,7 +1933,16 @@
    "match_pattern": "ソブリンAI",
    "sessions_with_term_in_corpus": 3,
    "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。",
-   "要確認": null
+   "要確認": null,
+   "review": [
+    {
+     "result": "保留",
+     "comment": "上の問いと同じ。",
+     "date": "2026-10-03",
+     "round": 1
+    }
+   ],
+   "dropped_reason": "D06 と同じ理由（説明なしに使われている語＝定義・設置は他の会議体）"
   },
   {
    "id": "D09",
@@ -1369,48 +1991,16 @@
    "match_pattern": "データ利活用制度",
    "sessions_with_term_in_corpus": 7,
    "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。",
-   "要確認": null
-  },
-  {
-   "id": "D10",
-   "type": "D_決定文書との往復（初出の回と資料）",
-   "question": "人工知能基本計画の骨子（たたき台）は、いつ・どの会議体の資料で最初に示されたか。",
-   "expected": {
-    "first_date": "2025-09-12",
-    "org": "ai_hq",
-    "session_no": 1,
-    "acceptable_paths": [
-     {
-      "path": "ai_hq/01/shiryo2_1.pdf",
-      "org": "ai_hq",
-      "session_no": 1,
-      "date": "2025-09-12",
-      "material_no": "資料2-1",
-      "material_name": "⼈⼯知能基本計画の⾻⼦（たたき台）の概要について（PDF形式：493KB）"
-     },
-     {
-      "path": "ai_hq/01/shiryo2_2.pdf",
-      "org": "ai_hq",
-      "session_no": 1,
-      "date": "2025-09-12",
-      "material_no": "資料2-2",
-      "material_name": "⼈⼯知能基本計画の⾻⼦（たたき台）について（PDF形式：408KB）"
-     }
-    ]
-   },
-   "evidence": [
+   "要確認": null,
+   "review": [
     {
-     "path": "ai_hq/01/shiryo2_1.pdf",
-     "page": 1,
-     "quote": [
-      "ＡＩ基本計画⾻⼦（たたき台）︓全体構成"
-     ]
+     "result": "保留",
+     "comment": "上の問いと同じ。",
+     "date": "2026-10-03",
+     "round": 1
     }
    ],
-   "match_pattern": "骨子.たたき台.",
-   "sessions_with_term_in_corpus": 3,
-   "note": "初出は第 1 便の収録範囲の中での初出（他の会議体・決定文書は見ていない）。照合は NFKC・空白除去の後の正規表現。人工知能戦略本部 第1回（2025-09-12）と専門調査会 第1回（2025-09-19）に同名の資料がある＝会議体の取り違えの検査。",
-   "要確認": null
+   "dropped_reason": "D06 と同じ理由（説明なしに使われている語＝定義・設置は他の会議体）"
   }
  ]
 }
