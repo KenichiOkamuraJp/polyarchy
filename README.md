@@ -49,7 +49,7 @@ polyarchy/
 │   ├── eval/             評価セット運用・回帰ゲート・スモークテスト
 │   └── data/             PDF・catalog・eval・捕捉ログ（大物は S3 管理・git 外）
 ├── stats/                統計参照DB — 主張↔事実の突き合わせ。ベクトルではなく発見層（目録・系列検索）＋厳密参照層（値の完全一致）。core/ingest/serving/eval/ops/docs
-├── deliberations/        審議会議事録DB（開発中＝M3 の収集・解析・帰属まで。原文と中間物は data/＝git 外）
+├── deliberations/        審議会議事録DB（開発中＝M4 の取り込みと MCP サーバまで・箱には未配置。原文・中間物・索引は data/＝git 外）
 ├── deploy/               AWS 構成（Terraform / bootstrap / systemd / Cloudflare / 運用手順）— 全サービス共通
 ├── ops/usage/            週次利用レポートの集計の出力先（weekly.jsonl＝数字のみ。実利用の数字なので git 外。生成は `python -m polyarchy_common.usage_report`）
 ├── docs/                 全体文書（残タスク・運用設計・評価設計・導入団体向け文書・長期計画＝下記「ドキュメント」）
@@ -120,6 +120,19 @@ Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃＝v5 データは S3 `d
 | `python -m recommendations.eval.eval --filter-eval` | フィルタ 27/27 ＋ 層ゲート PASS |
 | `python -m recommendations.eval.multistage_eval` | 網羅 100% / 集約棄却 12/12 |
 | `python -m recommendations.eval.mcp_smoke` | MCP 疎通・層公開固定・stdout クリーン |
+
+### deliberations（審議会議事録DB・2026-10-03〜・開発中＝`release.sh` には未配線）
+
+手元の専用 Qdrant（`qdrant-delib`・:6340）と取り込み済みのコレクションが前提（[deliberations/CLAUDE.md](deliberations/CLAUDE.md)）。
+
+| ゲート | 基準 |
+|---|---|
+| `python -m deliberations.eval.retrieval` | hit@5 91.4% / MRR 0.836（アンカー問 35〔M0 で本人が確定〕・ミス 3＝初めて出た回の型〔検索は関連度順のため後の回が上に来る＝初出の特定は利用側の期間の絞り込みと list_meeting〕） |
+| `python -m deliberations.eval.attribution_gate` | 帰属の取り違え 0（M0 の帰属ラベル＝資料 40・発言 42）・全単位の fail-closed |
+| `python -m deliberations.eval.layer_gate` | 公開以外 0・機密の自己試験で遮断・layer の無い検索を拒む・匿名の単位に発言者なし |
+| `python -m deliberations.eval.mcp_smoke` | ツール 2 本・読み取り専用・layer 引数なし・返り値の帰属と注記 |
+
+> 2026-10-03 新設（第 1 便＝298 文書・6,121 単位）。アンカーは回帰を見つけるためのもの（固定の問に合わせた検索側の調整をしない）。
 
 ### companies（2026-09-20〜。`release.sh` は env の `ENABLE_COMPANIES_APP=true` のとき 4 本を足して 13 本＝2026-09-22 配線）
 

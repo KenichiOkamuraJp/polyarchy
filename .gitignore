@@ -48,9 +48,8 @@ work_history/
 stats/data/raw/
 stats/data/cache/
 stats/data/values/
-# 審議会議事録DB の原文（PDF・HTML）と抽出の中間物＝S3 が原本
-deliberations/data/raw/
-deliberations/data/cache/
+# 審議会議事録DB の原文（PDF・HTML）・抽出の中間物・索引（Qdrant・BM25 の語彙）＝S3 が原本
+deliberations/data/
 # 確認シートの Excel＝記入用の作業ファイル（正本は同じフォルダの JSON・make_xlsx.py で作り直せる）
 deliberations/eval/*.xlsx
 models/

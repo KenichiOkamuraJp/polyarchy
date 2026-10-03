@@ -19,6 +19,8 @@ from deliberations.ingest.attribution import clean_name, material_presenter, spe
 from deliberations.ingest.extract import slide_pages
 from deliberations.ingest.sources import BY_ORG
 
+PAGE_MAX = 800    # これを超えるページ（文章主体の資料）は段落・文の切れ目で分ける（開発計画 §4.2＝文章の資料は意味段落）
+PART_CHARS = 600
 NS = uuid.UUID("6f1d3c2a-0d1e-5b7a-9a52-2b7f0c4e8d10")  # 審議会議事録DB の単位 ID の名前空間（変えない）
 KIND_OF_MODE = {"verbatim": "議事録", "written": "議事録", "named": "議事要旨", "anonymous": "議事要旨", "narration": "議事要旨"}
 
@@ -40,6 +42,25 @@ def base_meta(row: dict) -> dict:
             "source_url": row["source_url"], "path": row["path"], "layer": "公開", "lang": "ja"}
 
 
+def split_page(text: str) -> list[str]:
+    """長いページを行（段落）の切れ目で PART_CHARS 程度に分ける。1 行が長ければ文（。）で分ける。"""
+    pieces = []
+    for ln in text.split("\n"):
+        if len(ln) <= PART_CHARS:
+            pieces.append(ln)
+        else:
+            pieces += [x for x in re.split(r"(?<=。)", ln) if x]
+    parts, buf = [], ""
+    for x in pieces:
+        if buf and len(buf) + len(x) > PART_CHARS:
+            parts.append(buf)
+            buf = ""
+        buf += (("\n" if buf else "") + x)
+    if buf:
+        parts.append(buf)
+    return parts
+
+
 def build_material(row: dict) -> tuple[dict, list[dict]]:
     src = BY_ORG[row["org"]]
     pr = material_presenter(row, src)
@@ -51,11 +72,14 @@ def build_material(row: dict) -> tuple[dict, list[dict]]:
     units = []
     for pg in pages:
         pres = pr.page_presenters.get(str(pg.no)) if pr.page_presenters else None
-        units.append({**base_meta(row), "id": unit_id(row["path"], "page", pg.no), "unit": "page", "page": pg.no,
-                      "doc_kind": row["doc_kind"], "presenter_type": pr.presenter_type,
-                      "presenter": pres or pr.presenter, "presenter_basis": pr.basis,
-                      "speaker": "", "speaker_role": "", "mode": "", "text": pg.text,
-                      "text_quality": pg.quality, "chars": pg.chars})
+        parts = split_page(pg.text) if pg.chars > PAGE_MAX else [pg.text]
+        for k, part in enumerate(parts, 1):
+            uid = unit_id(row["path"], "page", pg.no) if len(parts) == 1 else unit_id(row["path"], "page", f"{pg.no}-{k}")
+            units.append({**base_meta(row), "id": uid, "unit": "page", "page": pg.no, "part": k if len(parts) > 1 else 0,
+                          "doc_kind": row["doc_kind"], "presenter_type": pr.presenter_type,
+                          "presenter": pres or pr.presenter, "presenter_basis": pr.basis,
+                          "speaker": "", "speaker_role": "", "mode": "", "text": part,
+                          "text_quality": pg.quality, "chars": len(re.sub(r"\s", "", part))})
     return doc, units
 
 
