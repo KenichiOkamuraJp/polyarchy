@@ -52,7 +52,7 @@ stats/data/values/
 deliberations/data/raw/
 deliberations/data/cache/
 # 確認シートの Excel＝記入用の作業ファイル（正本は同じフォルダの JSON・make_xlsx.py で作り直せる）
-deliberations/eval/draft/*.xlsx
+deliberations/eval/*.xlsx
 models/
 *.tar.gz
 *.zip

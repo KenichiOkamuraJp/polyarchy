@@ -1,6 +1,6 @@
 """M0 の確認シート（確認シート.md）を、同じフォルダの JSON 2 本から作り直す。
 
-python deliberations/eval/draft/make_sheet.py   # JSON を直したら作り直す（シートを手で直さない）
+python deliberations/eval/make_sheet.py   # JSON を直したら作り直す（シートを手で直さない）
 """
 import json
 from pathlib import Path

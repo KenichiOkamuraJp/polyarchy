@@ -1,6 +1,6 @@
 """M0 の確認シートを Excel（確認シート.xlsx）で作る。正本は同じフォルダの JSON 2 本。
 
-python deliberations/eval/draft/make_xlsx.py   # JSON を直したら作り直す
+python deliberations/eval/make_xlsx.py   # JSON を直したら作り直す
 
 確認の結果（確認・コメント欄）は Excel の側に書く＝この xlsx は記入用の作業ファイル（git 外）。
 原文へのリンクは目録（data/raw/manifest.jsonl）の source_url に #page=N を付けたもの。
@@ -13,7 +13,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 
 D = Path(__file__).resolve().parent
-RAW = D.parent.parent / "data" / "raw"
+RAW = D.parent / "data" / "raw"
 A = json.load(open(D / "anchor_questions.json", encoding="utf-8"))
 L = json.load(open(D / "attribution_labels.json", encoding="utf-8"))
 URL = {}
@@ -88,7 +88,7 @@ ws = wb.active
 ws.title = "説明"
 intro = [
     ("M0 確認シート（第 1 便の評価問・帰属ラベルの下書き）", True),
-    ("作成 2026-10-03。正本は deliberations/eval/draft/ の anchor_questions.json・attribution_labels.json（本ファイルはそこから make_xlsx.py で作った記入用）。", False),
+    ("作成 2026-10-03。正本は deliberations/eval/ の anchor_questions.json・attribution_labels.json（本ファイルはそこから make_xlsx.py で作った記入用）。", False),
     ("", False),
     ("第 2 回の確認（第 1 回＝2026-10-03 の記入を反映した版）：オレンジの行だけ見てください（第 1 回の後に変えた行＝「今回の変更」に何を変えたか）。", True),
     ("黄色の行は第 1 回の確認結果をそのまま写してあります（変えたいときだけ書き換える）。外した 5 問は「5 外した問」に理由つきで残しています。", False),
