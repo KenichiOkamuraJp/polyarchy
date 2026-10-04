@@ -295,6 +295,7 @@ def test_ops_dashboard_memory_and_fuelsync():
     (d / "meminfo").write_text("MemTotal:       16000000 kB\nMemFree:  1000 kB\nMemAvailable:   12000000 kB\n")
     (d / "cg" / "system.slice" / "polyarchy-companies.service").mkdir(parents=True)
     (d / "cg" / "system.slice" / "polyarchy-companies.service" / "memory.peak").write_text(str(800 * 2**20) + "\n")
+    (d / "cg" / "system.slice" / "polyarchy-companies.service" / "memory.stat").write_text(f"anon {200 * 2**20}\nfile {100 * 2**20}\nkernel 0\n")
     (d / "fs").mkdir()
     (d / "fs" / "companies.result").write_text("failed\n")
     (d / "fs" / "companies.last_ok").write_text("2026-10-01T12:28:00+00:00\n")
@@ -317,8 +318,9 @@ def test_ops_dashboard_memory_and_fuelsync():
         od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR = d / "meminfo", d / "cg", d / "fs"
         od.subprocess.run, od.shutil.which, od.companies_enabled = fake_run, (lambda _: "/bin/systemctl"), (lambda: True)
         assert od.box_memory().startswith("3.81 GB ／ 15.26 GB（25%）"), od.box_memory()
-        mem = {u: (cur, peak, since) for u, cur, peak, since in od.service_memory()}
-        assert mem == {"polyarchy-companies": ("0.29 GB", "0.78 GB", "2026-10-01T10:35:40+09:00"), "qdrant": ("—", "—", "—")}, mem   # 止まっているユニットは載せない
+        mem = {u: (cur, file_, peak, since) for u, cur, file_, peak, since in od.service_memory()}
+        assert mem == {"polyarchy-companies": ("0.29 GB", "0.10 GB", "0.78 GB", "2026-10-01T10:35:40+09:00"),
+                       "qdrant": ("—", "—", "—", "—")}, mem   # 止まっているユニットは載せない・ファイルキャッシュは memory.stat の file
         fs = od.fuelsync_status()
         assert fs["services"]["companies"] == {"result": "failed", "last_ok": "2026-10-01T21:28:00+09:00"}
         assert fs["services"]["recommendations"]["result"] == "—" and fs["last_run"] == "2026-10-01T22:28:00+09:00"
@@ -356,6 +358,21 @@ def test_shell_var_not_followed_by_multibyte():
     bad = [f"{f}:{i}" for f in files for i, ln in enumerate((root / f).read_text(encoding="utf-8").splitlines(), 1) if pat.search(ln)]
     assert files and not bad, bad
 
+
+def test_env_backup_not_shipped():
+    """env の控え（deploy/env/staging.env.bak-<日付>）を tar で箱へ運ばない・git に載せない（2026-10-04 staging＝
+    tar の除外 *.env にも .gitignore にも当たらず、次の配布で箱に入るところだった）。"""
+    import fnmatch
+    import re
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    tar_ex = re.findall(r"--exclude='([^']+)'", (root / "deploy/scripts/upload_to_s3.sh").read_text(encoding="utf-8"))
+    for name in ("staging.env", "staging.env.bak-20261004", "prod.env.bak"):
+        assert any(fnmatch.fnmatch(name, p) for p in tar_ex), (name, tar_ex)
+    ign = subprocess.run(["git", "check-ignore", "--no-index", "deploy/env/staging.env.bak-20261004", "deploy/env/staging.env.example"],
+                         cwd=root, capture_output=True, text=True).stdout.split()
+    assert ign == ["deploy/env/staging.env.bak-20261004"], ign   # 控えは外れ、ひな型は追跡のまま
 
 if __name__ == "__main__":
     import sys

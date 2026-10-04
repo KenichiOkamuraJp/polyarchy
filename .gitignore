@@ -10,6 +10,8 @@
 # ── ★秘密（絶対にコミットしない）─────────────────────────────────────────────
 # recommendations/.env(API鍵) と deploy/env/*.env(プロファイル/トンネル) を除外。*.example は追跡。
 *.env
+# env の控え（staging.env.bak-<日付> 等）も＝*.env だけでは当たらない（2026-10-04）
+*.env.*
 !*.env.example
 web.env
 *.pem

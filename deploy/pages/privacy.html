@@ -17,17 +17,17 @@ a{color:var(--accent)}
 .note{border-left:4px solid var(--accent);padding:.4rem .8rem;background:rgba(127,127,127,.08)}
 </style></head><body>
 <main>
-<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/companies">companies（企業情報DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
+<nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/companies">companies（企業情報DB）</a><a href="/deliberations">deliberations（審議会議事録DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
 
 <h1>プライバシーポリシー</h1>
-<p>更新日：2026-09-03</p>
-<p>岡村 健一（以下「運営者」）は、Polyarchy（stats／recommendations／companies 各サービス。以下「本サービス」）において、次のとおり利用者の情報を取り扱います。</p>
+<p>更新日：2026-10-04</p>
+<p>岡村 健一（以下「運営者」）は、Polyarchy（stats／recommendations／companies／deliberations 各サービス。以下「本サービス」）において、次のとおり利用者の情報を取り扱います。</p>
 
 <h2>1. 収集する情報</h2>
 <table>
 <tr><th>情報</th><th>内容</th><th>取得方法</th></tr>
 <tr><td>認証情報</td><td>メールアドレス（および認証プロバイダが発行する利用者識別子）</td><td>接続時の OAuth 認証（外部認証プロバイダ。現在は WorkOS AuthKit）。本サービスの利用にはログインが必要です。運営者のサーバは検証済みのメールアドレスを受け取り、<strong>ハッシュ値（SHA-256 の先頭 16 桁）に変換して保存</strong>します。メールアドレスの平文はサーバ側の記録に残しません（メールアドレスが得られない場合は、プロバイダが発行する利用者識別子のハッシュ値で代替します）</td></tr>
-<tr><td>利用記録（捕捉ログ）</td><td>ツール名・ツールに渡された引数（検索語・系列 ID・期間・団体等）・結果件数または該当有無・時刻・利用者ハッシュ</td><td>ツールが呼ばれるたびにサーバが記録</td></tr>
+<tr><td>利用記録（捕捉ログ）</td><td>ツール名・ツールに渡された引数（検索語・系列 ID・期間・団体・会議体と回次等）・結果件数または該当有無・時刻・利用者ハッシュ</td><td>ツールが呼ばれるたびにサーバが記録</td></tr>
 <tr><td>接続ログ</td><td>接続元 IP・時刻・パス・応答コード等の技術情報</td><td>Cloudflare および運営者のサーバの標準的なアクセスログ</td></tr>
 </table>
 <p class="note"><strong>収集しないもの</strong>：会話の本文、Claude のメモリ・チャット履歴・要約、利用者がアップロードしたファイル。本サービスのツールはこれらにアクセスしません。ツールの機能に必要な引数以外の会話データは記録しません。</p>

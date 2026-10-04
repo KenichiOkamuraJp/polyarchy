@@ -144,6 +144,7 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
 
 1. **秘密パス**＝`aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/<env>/companies_http_path --value "/mcp-$(openssl rand -hex 16)"`（§4 と同じ流儀・値は控えない＝SSM が唯一の置き場）。
 2. **env**＝`deploy/env/<env>.env` に 3 行＝`ENABLE_COMPANIES_APP=true`・`TUNNEL_HOST_COMPANIES=companies.<domain>`・`AUTH_AUD_COMPANIES=https://companies.<domain>/<1 の秘密パス>`。
+   ★編集前の控えは**リポジトリの外**に取る（例 `~/polyarchy-env-backup/`）。`deploy/env/` に置いた `<env>.env.bak-<日付>` は、2026-10-04 より前の版では tar の除外（`*.env`）にも `.gitignore` にも当たらず配布で箱に入った（いまは `*.env.*` も除外＝念のため）。
 3. **SSM**＝`bash deploy/scripts/register-secrets.sh <env>`（`auth_aud_companies` を登録）。三点一致の確認＝値を表示せずに比べる：
    ```bash
    P=/polyarchy/<env>; H=companies.<domain>
@@ -151,7 +152,12 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
       "https://$H$(aws ssm get-parameter --name $P/companies_http_path --with-decryption --query Parameter.Value --output text)" ]] && echo "三点一致 OK（aud＝https://host＋秘密パス）" || echo "不一致"
    ```
 4. **IdP（WorkOS）**＝Resource indicator に 2 と同じ文字列 `https://companies.<domain>/<秘密パス>` を追加（三点一致＝PROD_MIGRATION §2.5）。
+   ★**保存の後、Connect → Configuration → MCP resource indicators の一覧に行が出ていることを確かめる**（2026-10-04 の deliberations は行が保存されておらず、claude.ai が「認証に失敗」になった）。
+   見分けの目印＝箱の CW Logs `polyarchy/<svc>` に「Bearer 欠如」の 401 しか無く、トークン付きの要求が 1 件も無ければ IdP 側（サーバ側のディスカバリ `/.well-known/oauth-protected-resource` が正しくても起きる）。
 5. **Terraform**＝`bash deploy/scripts/deploy.sh <env> apply`（ロググループ・health/401/5xx アラーム・箱ロールの書込先・S3 ライフサイクル。EC2 の差分は `ignore_changes` で出ない）。
+   ★**順序＝配布（8）より前**に固定する（2026-10-04 に整理）。理由はロググループ＝箱の CW agent はサービスのログが出た時点でロググループを自分で作る＝配布の後に apply すると作成が `ResourceAlreadyExists` でぶつかる（保持 30 日を terraform 側で持つ設計＝先に作る）。
+   その代わり、apply から配布の適用までの間は health アラームが ALARM になる（`treat_missing_data = breaching`＝サービスが立つまで値が来ない）＝**想定内**。通知は状態が変わったときだけ＝ALARM と OK の 1 通ずつで、適用の 3 分ほど後に OK に戻ることを確かめる。鳴る時間を短くするには、apply を配布（`release.sh`）の直前に回す。
+   ぶつかってしまったら＝`deploy/scripts/lib.sh` の `TF_ARGS` と同じ `-var` を付けて `terraform import 'aws_cloudwatch_log_group.<svc>[0]' polyarchy/<svc>` で取り込んでから apply し直す（保持は CW agent 側も 30 日で一致・差分はタグだけ）。
    ★フラグが false のままでも「変更 2」（箱ロールの `data/companies/query_log/*` 書込先・S3 ライフサイクル `companies-query-log-retention-30d`）は出る＝コミット済みのコード由来で想定内。
 6. **箱の deploy.env**＝★稼働中の箱は user_data を再実行しない＝`/etc/polyarchy/deploy.env` に同じ 2 行（`ENABLE_COMPANIES_APP`・`TUNNEL_HOST_COMPANIES`）を足す。
    SSM Session で編集してもよいが、`send-command` なら SSM のコマンド履歴に残る（監査線）。★`--parameters` はインライン JSON だと `$`・`\n`・`(` のエスケープで壊れる＝**ファイルに書いて `file://` で渡す**：
@@ -185,11 +191,12 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
 配線はコードに入っている（`ENABLE_DELIBERATIONS_APP` の opt-in・既定 false）。手順は上の companies と同じ型で、名前を置き換える（`companies`→`deliberations`・ポート :8767→:8768・SSM `deliberations_http_path`／`auth_aud_deliberations`・env `ENABLE_DELIBERATIONS_APP`／`TUNNEL_HOST_DELIBERATIONS`／`AUTH_AUD_DELIBERATIONS`・公開ページ `deliberations.html`）。違うところだけ：
 
 - **配布は 2 回に分ける**：自動適用のスクリプト（`/usr/local/bin/polyarchy-data-apply`）の変更は次の次の配布から効く＝**フラグを false のまま配線入りのコードを 1 回配布**し、箱のスクリプトが新しくなってから（ダッシュボードで版一致を確認してから）フラグを立てて 2 回目を配布する。1 回目で立てると、旧スクリプトは審議会DB の停止・起動・smoke・退避を知らない（bootstrap は新しいので設置・起動はされるが、切り戻しに入らない）。
+- **terraform（手順 5）は 1 回目と 2 回目の配布の間＝2 回目の `release.sh` の直前**：フラグ false の 1 回目の後はサービスが無い＝ログが出ない＝CW agent はまだロググループを作らない（ぶつからない）。health-deliberations の ALARM は 2 回目の適用までの間だけ（想定内）。2026-10-04 の staging は 2 回目の後に回して import で解消した。
 - **配布用のクローンに審議会DB のデータと専用 Qdrant が要る**：`release.sh` は手元の審議会DB の Qdrant（`DELIB_QDRANT_URL`・既定 `http://localhost:6340`）から束を書き出す（4 ゲート＋語彙と索引の一致の検査つき）。配布用のクローンの `deliberations/data/`（raw・cache・bm25）と、その Qdrant のストレージが同じ時点のものであること。開発用と配布用で 1 つの Qdrant を共有するなら、`qdrant-dev` と同じく**マウント元を配布用のクローンに置く**（政策主張DB と同じ流儀＝データの原本は配布用）。最初は開発用の `deliberations/data/` を配布用へ写すか、配布用で収集から取り込みまで回す（deliberations/CLAUDE.md）。
 - **データは束で運ぶ**：S3 `data/deliberations/bundle/`（Qdrant のスナップショット＋語彙・目録・解析結果・第 1 便 約 209MB）。箱の bootstrap が専用 Qdrant を上げた後、束が前回の復元から変わったか、コレクションが欠けたときだけ復元する（`deliberations.ops.bundle restore --if-changed`）。政策主張DB の `data/qdrant/` ミラーには混ぜない（bootstrap ⑥ はフラグに関係なく `deliberations/*` を除外）。
 - **箱のメモリ**：MCP（手元の目安 約 1.3GB）＋専用 Qdrant（小さい）。2026-10-04 の staging（t3.xlarge・使用 2.74／15.42GB）で同居可と判断（社内ノートの返答）。有効化の後はダッシュボード①のメモリに 2 行（polyarchy-deliberations・qdrant-deliberations）が出る。
 - **guard**＝`RL_HOSTS` に既存の全ホストと `deliberations.<domain>` を並べる（`cloudflare-guard.sh` 冒頭の例）。
-- **公開ページ**＝接続確認の後に `deliberations/docs/deliberations.html` を `deploy/pages/` へ移し、入口（index）とプライバシーポリシー（捕捉ログの対象に審議会DB）に足してから Pages へ。
+- **公開ページ**＝`deploy/pages/deliberations.html`（2026-10-04 に原稿から移し、入口・利用規約・プライバシーポリシーに足した）。接続確認の後に Pages へ（deploy/pages/README.md）。
 
 ### 配布用のクローンを開発用と分ける（推奨・2026-09-19）
 

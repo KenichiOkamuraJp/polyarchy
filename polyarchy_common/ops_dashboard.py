@@ -90,10 +90,12 @@ def _gb(n: int) -> str:
     return f"{n / 2**30:.2f} GB"
 
 
-def service_memory() -> list[tuple[str, str, str, str]]:
-    """サービスごとの (ユニット, 現在, 起動からの最大, 起動時刻)。現在＝systemd の MemoryCurrent。最大＝cgroup v2 の memory.peak
+def service_memory() -> list[tuple[str, str, str, str, str]]:
+    """サービスごとの (ユニット, 現在, うちファイルキャッシュ, 起動からの最大, 起動時刻)。現在＝systemd の MemoryCurrent。最大＝cgroup v2 の memory.peak
     （箱の Ubuntu 22.04 の systemd 249 には MemoryPeak が無い＝cgroup のファイルを読む・カーネル 5.19 以降）。取れない値は「—」。
-    時系列の横断の重い問（手元で 1 問 最大約 800MB・2026-10-01）の後も、毎時の生成で山が見える。"""
+    時系列の横断の重い問（手元で 1 問 最大約 800MB・2026-10-01）の後も、毎時の生成で山が見える。
+    ★MemoryCurrent はページキャッシュ（Qdrant が mmap で読んだセグメント等）を含む＝増えても回収できる分がある。
+    memory.stat の file を並べて、プロセス自身の分（anon）と分けて読む（2026-10-04・政策主張DB の Qdrant が配布のたびに増えて見えた）。"""
     if not shutil.which("systemctl"):
         return []
     out = []
@@ -108,14 +110,20 @@ def service_memory() -> list[tuple[str, str, str, str]]:
             continue
         cur = kv.get("MemoryCurrent", "")
         cur = _gb(int(cur)) if cur.isdigit() and int(cur) < 2**63 else "—"  # 未計測は [not set] か 2^64−1
-        peak = "—"
+        peak = file_ = "—"
+        cg = kv.get("ControlGroup", "")
         try:
-            cg = kv.get("ControlGroup", "")
             if cg:
                 peak = _gb(int((CGROUP_ROOT / cg.lstrip("/") / "memory.peak").read_text().strip()))
         except Exception:  # noqa: BLE001
             pass
-        out.append((u, cur, peak, _jst(kv.get("ActiveEnterTimestamp", "")) or "—"))
+        try:
+            if cg:
+                st = dict(line.split(" ", 1) for line in (CGROUP_ROOT / cg.lstrip("/") / "memory.stat").read_text().splitlines() if " " in line)
+                file_ = _gb(int(st["file"]))
+        except Exception:  # noqa: BLE001
+            pass
+        out.append((u, cur, file_, peak, _jst(kv.get("ActiveEnterTimestamp", "")) or "—"))
     return out
 
 
@@ -314,10 +322,11 @@ def render(generated_at: str, env_name: str) -> str:
     parts.append(f"</table></div><p>ディスク使用率：{e(disk_usage())}／メモリ（箱全体）：{e(box_memory())}</p>")
     mem = service_memory()
     if mem:
-        parts.append("<table><tr><th>メモリ</th><th>現在</th><th>起動からの最大</th><th>起動</th></tr>")
-        for u, cur, peak, since in mem:
-            parts.append(f"<tr><td>{e(u)}</td><td>{e(cur)}</td><td>{e(peak)}</td><td>{e(since)}</td></tr>")
-        parts.append("</table>")
+        parts.append("<table><tr><th>メモリ</th><th>現在</th><th>うちファイルキャッシュ</th><th>起動からの最大</th><th>起動</th></tr>")
+        for u, cur, file_, peak, since in mem:
+            parts.append(f"<tr><td>{e(u)}</td><td>{e(cur)}</td><td>{e(file_)}</td><td>{e(peak)}</td><td>{e(since)}</td></tr>")
+        parts.append("</table><p class=\"note\">現在・最大は cgroup の値＝ファイルキャッシュ（Qdrant が mmap で読んだセグメント等・"
+                     "メモリが足りなくなれば回収される）を含む。プロセス自身の分は 現在 − ファイルキャッシュ が目安。</p>")
     fs = fuelsync_status()
     if fs:
         parts.append("<table><tr><th>捕捉ログの S3 同期</th><th>結果</th><th>最終成功</th></tr>")

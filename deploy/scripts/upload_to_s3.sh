@@ -37,6 +37,7 @@ TARBALL="$(mktemp -t polyarchy.XXXXXX.tar.gz)"
 # --no-xattrs/--no-mac-metadata＝macOS の拡張属性（com.apple.provenance 等）を tar に入れない（箱の GNU tar が警告を大量に出す・2026-09-03）
 tar --no-xattrs --no-mac-metadata -czf "$TARBALL" -C "$PARENT_DIR" \
   --exclude='*.env' \
+  --exclude='*.env.*' \
   --exclude="$APP_BASENAME/*/data" \
   --exclude="$APP_BASENAME/*/scratchpad" \
   --exclude="$APP_BASENAME/*/notebooks" \
@@ -63,6 +64,8 @@ rm -rf "$STAGE_DIR"
 #   `*/.terraform` はどの階層の .terraform ディレクトリも除外（将来 init 位置が変わっても安全）。
 # ★`*/ops/usage` は箱が恒久蓄積する weekly.jsonl の置き場（手元版で上書きすると系列が途切れる）・`*/ops/triage` は手元の草稿。
 # ★`*/ops/dashboard` は箱の適用マーク（applied_data_release.json）の置き場＝手元の生成物で上書きしない（apply が tar を再展開するため）。
+# ★`*.env.*`＝env の控え（`staging.env.bak-<日付>` 等）も箱へ運ばない（`*.env` だけでは当たらなかった・2026-10-04 staging）。
+#   `*.env.example` も外れるが箱では使わない（手元の deploy.sh が読むだけ）。
 # ★`*/社内ノート` は git 管理外の社内向け開発ノート（引き継ぎ/ロードマップ/設計メモ）。
 #   .gitignore の「社内ノート/」と対で維持する＝tar は .gitignore を読まないため、ここに書かないと
 #   `deploy.sh prod all` で導入団体 AWS へ社内ノートが転写される。新規ノートは社内ノート/ 配下に

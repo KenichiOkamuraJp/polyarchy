@@ -20,7 +20,7 @@
 
 - [docs/再配布条件.md](docs/再配布条件.md)（設計）＝取得元の規約・`license` の判定・返す形の契約値
 - [docs/収録範囲.md](docs/収録範囲.md)（正典）＝何が入っていて何が入っていないか（数は `core/search.coverage()`）
-- `docs/deliberations.html`＝公開ページの原稿（**箱で有効にしてから `deploy/pages/` へ移して入口からリンク**。先に `deploy/pages/` に置くと運用側の配置で公開される）
+- 公開ページ＝`deploy/pages/deliberations.html`（2026-10-04 に staging で有効にしてから原稿をここから移した。入口・利用規約・プライバシーポリシーにも載せた）。返り値・収録が変わったらこのページも直す
 
 ## 実行（リポジトリ root を cwd に）
 
