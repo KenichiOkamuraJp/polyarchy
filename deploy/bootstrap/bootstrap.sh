@@ -5,7 +5,7 @@
 # 手順（ロードマップ§2.2）：
 #   ①OS準備 → ②Miniconda → ③env polyarchy(py3.12)+依存はロック（--require-hashes）＋本体 -e . --no-deps → ④fugashi辞書検証
 #   → ⑤HFモデル事前DL(EBS固定) → ⑥S3からデータ取得 → ⑦cloudflared導入+config
-#   → ⑧MCP 秘密パス＋Access 設定（SSM→env）→ ⑨web 秘密（staging のみ）→ ⑩systemd 設置（mcp/(web)/(stats)/fuelsync/logprune を enable。cloudflared はカットオーバー時に手動 start）
+#   → ⑧MCP 秘密パス＋Access 設定（SSM→env）→ ⑨web 秘密（staging のみ）→ ⑩systemd 設置（mcp/(web)/(stats)/(companies)/(deliberations)/fuelsync/logprune を enable。cloudflared はカットオーバー時に手動 start）
 # 秘密は .env で運ばず SSM Parameter Store から取る（仕様§3.3/§4.1）。ログは日本語。
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -30,6 +30,9 @@ REPO_DIR="${REPO_DIR:-$INSTALL_DIR/polyarchy}"
 ENABLE_STATS_APP="${ENABLE_STATS_APP:-false}"
 # companies（企業情報DB・別プロセス :8767）も opt-in。deploy.env に ENABLE_COMPANIES_APP=true で設置（モデル不要・ランタイム秘密なし）。
 ENABLE_COMPANIES_APP="${ENABLE_COMPANIES_APP:-false}"
+# deliberations（審議会議事録DB・別プロセス :8768＋専用 Qdrant :6340）も opt-in。deploy.env に ENABLE_DELIBERATIONS_APP=true で設置
+# （モデルは recommendations と同じ ruri＋リランカー＝事前DL 済み・ランタイム秘密なし・docs/審議会議事録DB_開発計画.md §8.3）。
+ENABLE_DELIBERATIONS_APP="${ENABLE_DELIBERATIONS_APP:-false}"
 
 SVC_USER=polyarchy
 CONDA_DIR=/opt/miniconda
@@ -123,7 +126,8 @@ mkdir -p "$APP_DIR/data"
 #   どのユーザからでも使える）。取得後に所有権をまとめて polyarchy へ渡す。
 # --delete は付けない（箱側で溜まった捕捉ログ＝燃料を消さない）。
 # cache/ は箱で作る（新着チェックの結果 等）＝S3 に古い写しが残っていても箱の最新を上書きしない（2026-10-02）。
-aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exclude "stats/*" --exclude "companies/*" --exclude "cache/*"
+# deliberations/ は審議会DB の束（S3 `data/deliberations/`）＝フラグに関係なく除外する（政策主張DB の data/ に紛れ込ませない）。
+aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exclude "stats/*" --exclude "companies/*" --exclude "deliberations/*" --exclude "cache/*"
 # .streamlit/config.toml は code tar に同梱済（fileWatcherType=none・§32.3）。
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR/data"
 # stats（統計参照DB）のデータ＝S3 `data/stats/` → `stats/data/`（共通契約 §4）。tar は */data を除外するので
@@ -141,6 +145,14 @@ if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
   mkdir -p "$REPO_DIR/companies/data"
   aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/companies/" "$REPO_DIR/companies/data/" --region "$AWS_REGION" --exclude "query_log/*"
   chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/companies/data"
+fi
+# deliberations（審議会議事録DB）のデータ＝S3 `data/deliberations/bundle/` → `deliberations/data/bundle/`（Qdrant のスナップショット＋
+# 語彙・目録・解析結果＝deliberations.ops.bundle）。Qdrant への復元は ⑩ で専用 Qdrant を上げた後（束が変わったときだけ）。
+if [[ "$ENABLE_DELIBERATIONS_APP" == "true" ]]; then
+  echo "[bootstrap] ⑥ deliberations データ同期 s3://$S3_BUCKET/$DATA_S3_PREFIX/deliberations/bundle/ → $REPO_DIR/deliberations/data/bundle/"
+  mkdir -p "$REPO_DIR/deliberations/data/bundle"
+  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/deliberations/bundle/" "$REPO_DIR/deliberations/data/bundle/" --region "$AWS_REGION" --delete --exclude ".restored_*"
+  chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/deliberations/data"
 fi
 
 # ── ⑥b Qdrant 導入（VECTOR_BACKEND=qdrant のときだけ・v7 本線）──
@@ -202,6 +214,10 @@ if [[ -n "$TUNNEL_ID" && -n "$TUNNEL_CRED" ]]; then
     if [[ "$ENABLE_COMPANIES_APP" == "true" && -n "${TUNNEL_HOST_COMPANIES:-}" ]]; then
       echo "  - hostname: $TUNNEL_HOST_COMPANIES"
       echo "    service: http://localhost:8767"
+    fi
+    if [[ "$ENABLE_DELIBERATIONS_APP" == "true" && -n "${TUNNEL_HOST_DELIBERATIONS:-}" ]]; then
+      echo "  - hostname: $TUNNEL_HOST_DELIBERATIONS"
+      echo "    service: http://localhost:8768"
     fi
     echo "  - service: http_status:404"
   } > /etc/cloudflared/config.yml
@@ -335,6 +351,28 @@ if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
 else
   rm -f /etc/systemd/system/polyarchy-companies.service
 fi
+if [[ "$ENABLE_DELIBERATIONS_APP" == "true" ]]; then
+  # deliberations の秘密パス（SSM deliberations_http_path・無ければ既定 /mcp）＋認証（SSM auth_aud_deliberations＝案 B のスイッチ）。
+  DELIB_PATH="$(ssm_get deliberations_http_path)"
+  DELIB_AUD="$(ssm_get access_aud_deliberations)"
+  DELIB_IDP_AUD="$(ssm_get auth_aud_deliberations)"
+  write_service_env /etc/polyarchy/deliberations.env "$DELIB_PATH" "$DELIB_AUD" "$DELIB_IDP_AUD" "${TUNNEL_HOST_DELIBERATIONS:-}"
+  if [[ -n "$DELIB_IDP_AUD" && -n "$AUTH_ISSUER_SSM" ]]; then
+    echo "[bootstrap] deliberations: IdP Bearer 検証を有効化（issuer=${AUTH_ISSUER_SSM}・案 B）"
+  fi
+  mkdir -p "$REPO_DIR/deliberations/data/query_log" "$REPO_DIR/deliberations/data/qdrant" "$REPO_DIR/deliberations/data/qdrant_snapshots"
+  chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/deliberations/data"
+  install -m 644 "$UNIT_SRC/qdrant-deliberations.service" /etc/systemd/system/qdrant-deliberations.service
+  install -m 644 "$UNIT_SRC/polyarchy-deliberations.service" /etc/systemd/system/polyarchy-deliberations.service
+else
+  # 無効にした箱では止めてから撤去する（プロセスを残さない）。設置したことの無い箱では何もしない。
+  for u in polyarchy-deliberations qdrant-deliberations; do
+    if [[ -f "/etc/systemd/system/$u.service" ]]; then
+      systemctl disable --now "$u.service" 2>/dev/null || true
+      rm -f "/etc/systemd/system/$u.service"
+    fi
+  done
+fi
 # ユニットは固定パス＋EnvironmentFile=/etc/polyarchy/deploy.env で自己完結（deploy.env は
 # user_data が生成済＝APP_DIR/HF_HOME/COLLECTION_NAME/S3_BUCKET 等）。drop-in は不要。
 
@@ -363,6 +401,20 @@ fi
 if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
   systemctl enable polyarchy-companies.service
   systemctl restart polyarchy-companies.service || echo "[bootstrap] ⚠ companies 起動失敗" >&2
+fi
+if [[ "$ENABLE_DELIBERATIONS_APP" == "true" ]]; then
+  # 専用 Qdrant → 応答待ち（最長 120 秒）→ 束が変わったか欠けたときだけ復元 → MCP。
+  systemctl enable qdrant-deliberations.service
+  systemctl restart qdrant-deliberations.service
+  for _ in $(seq 1 24); do curl -fsS -m 3 http://127.0.0.1:6340/collections >/dev/null 2>&1 && break; sleep 5; done
+  if [[ -f "$REPO_DIR/deliberations/data/bundle/deliberations_v1/bundle.json" ]]; then
+    sudo -u "$SVC_USER" bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR $ENV_PY -m deliberations.ops.bundle restore --if-changed --url http://127.0.0.1:6340" \
+      || echo "[bootstrap] ⚠ deliberations の束の復元に失敗（検索は旧データか空）" >&2
+  else
+    echo "[bootstrap] ⚠ deliberations の束が無い＝S3 data/deliberations/bundle/ 未配布？（release.sh を確認）" >&2
+  fi
+  systemctl enable polyarchy-deliberations.service
+  systemctl restart polyarchy-deliberations.service || echo "[bootstrap] ⚠ deliberations 起動失敗" >&2
 fi
 
 # ── ⑪ 運用（運用設計 §1.1/§1.2/§4.2 段2＝A1 と同時・2026-08-28）────────

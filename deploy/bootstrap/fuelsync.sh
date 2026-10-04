@@ -27,5 +27,6 @@ sync_one() { # $1=サービス名 $2=ローカルの query_log $3=S3 の prefix 
 sync_one recommendations "$REPO_DIR/recommendations/data/query_log" query_log
 sync_one stats "$REPO_DIR/stats/data/query_log" stats/query_log
 sync_one companies "$REPO_DIR/companies/data/query_log" companies/query_log
+sync_one deliberations "$REPO_DIR/deliberations/data/query_log" deliberations/query_log
 date -Is > "$STATE/last_run"
 exit $rc

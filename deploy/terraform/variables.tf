@@ -94,6 +94,18 @@ variable "tunnel_hostname_companies" {
   default     = ""
 }
 
+variable "enable_deliberations_app" {
+  description = "審議会議事録DB（deliberations）の MCP サーバ(:8768)と専用 Qdrant(:6340)を常駐させるか（別プロセス・モデルは recommendations と同じ ruri＋リランカー・ランタイム秘密なし）。既定 false。"
+  type        = bool
+  default     = false
+}
+
+variable "tunnel_hostname_deliberations" {
+  description = "deliberations MCP を出す公開ホスト名（enable_deliberations_app=true のとき ingress に追加）。"
+  type        = string
+  default     = ""
+}
+
 variable "tunnel_hostname_web" {
   description = "Web(chat_app) を出す公開ホスト名。enable_web_app=false の prod では未使用。"
   type        = string

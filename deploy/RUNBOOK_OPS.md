@@ -73,6 +73,8 @@ curl -sI https://recommendations.<domain>/healthz | head -1   # staging は reco
 | polyarchy-mcp | recommendations MCP :8765 | qdrant |
 | polyarchy-stats | stats MCP :8766（ENABLE_STATS_APP=true の箱のみ） | — |
 | polyarchy-companies | companies MCP :8767（ENABLE_COMPANIES_APP=true の箱のみ・モデル不要・ランタイム秘密なし） | — |
+| qdrant-deliberations | 審議会議事録DB 専用の Qdrant :6340（ENABLE_DELIBERATIONS_APP=true の箱のみ・ストレージ deliberations/data/qdrant＝政策主張DB の qdrant ミラーとは別） | deliberations より先 |
+| polyarchy-deliberations | deliberations MCP :8768（同上・モデルは recommendations と同じ ruri＋リランカー・ランタイム秘密なし） | qdrant-deliberations |
 | polyarchy-web | **廃止（2026-09-02）**＝unit はリポ残置・箱には無い | — |
 | cloudflared | 入口（トンネル） | 全 origin の後に start が安全 |
 | polyarchy-health.timer | 毎分 healthz→CW metric | — |
@@ -177,6 +179,17 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
 8. **配布**＝配布用のクローンで `release.sh <env>`（ゲート 13 本）→ 自動適用が `bootstrap` 再走行で ⑥ データ同期・⑧ companies.env・⑩ ユニット設置・ingress 追記まで行い、**ingress が変わったので cloudflared も再起動する**（2026-09-22〜・数秒の断＝stats/recommendations も一瞬切れる。config が変わらない通常のデータ更新では再起動しない）→ ダッシュボードで版一致・①に `polyarchy-companies` active と `:8767` ok・②に companies 収録 N 社（ダッシュボードは `ENABLE_COMPANIES_APP=true` の箱だけ companies の行を出す）。公開側の入口まで含めて見るときは `https://companies.<domain>/healthz` が 200 も補助に。
    ★それ以前の版の箱、または bootstrap を手で再走行したときは cloudflared が旧 ingress のまま＝公開側は 404（トンネルの catch-all）が続く。`send-command` で `logger -t polyarchy-dataapply '[manual] restart cloudflared'; systemctl restart cloudflared` を流してから healthz を確認する。
 9. **接続確認**＝claude.ai／Claude Code／ChatGPT の 3 経路（PROD_MIGRATION §2.5 と同じ）。公開ページ `companies.html` はこの後に Pages へ（先に出すと案内だけが先行する）。
+
+### サービスを足す（deliberations を有効にする・2026-10-04 配線）
+
+配線はコードに入っている（`ENABLE_DELIBERATIONS_APP` の opt-in・既定 false）。手順は上の companies と同じ型で、名前を置き換える（`companies`→`deliberations`・ポート :8767→:8768・SSM `deliberations_http_path`／`auth_aud_deliberations`・env `ENABLE_DELIBERATIONS_APP`／`TUNNEL_HOST_DELIBERATIONS`／`AUTH_AUD_DELIBERATIONS`・公開ページ `deliberations.html`）。違うところだけ：
+
+- **配布は 2 回に分ける**：自動適用のスクリプト（`/usr/local/bin/polyarchy-data-apply`）の変更は次の次の配布から効く＝**フラグを false のまま配線入りのコードを 1 回配布**し、箱のスクリプトが新しくなってから（ダッシュボードで版一致を確認してから）フラグを立てて 2 回目を配布する。1 回目で立てると、旧スクリプトは審議会DB の停止・起動・smoke・退避を知らない（bootstrap は新しいので設置・起動はされるが、切り戻しに入らない）。
+- **配布用のクローンに審議会DB のデータと専用 Qdrant が要る**：`release.sh` は手元の審議会DB の Qdrant（`DELIB_QDRANT_URL`・既定 `http://localhost:6340`）から束を書き出す（4 ゲート＋語彙と索引の一致の検査つき）。配布用のクローンの `deliberations/data/`（raw・cache・bm25）と、その Qdrant のストレージが同じ時点のものであること。開発用と配布用で 1 つの Qdrant を共有するなら、`qdrant-dev` と同じく**マウント元を配布用のクローンに置く**（政策主張DB と同じ流儀＝データの原本は配布用）。最初は開発用の `deliberations/data/` を配布用へ写すか、配布用で収集から取り込みまで回す（deliberations/CLAUDE.md）。
+- **データは束で運ぶ**：S3 `data/deliberations/bundle/`（Qdrant のスナップショット＋語彙・目録・解析結果・第 1 便 約 209MB）。箱の bootstrap が専用 Qdrant を上げた後、束が前回の復元から変わったか、コレクションが欠けたときだけ復元する（`deliberations.ops.bundle restore --if-changed`）。政策主張DB の `data/qdrant/` ミラーには混ぜない（bootstrap ⑥ はフラグに関係なく `deliberations/*` を除外）。
+- **箱のメモリ**：MCP（手元の目安 約 1.3GB）＋専用 Qdrant（小さい）。2026-10-04 の staging（t3.xlarge・使用 2.74／15.42GB）で同居可と判断（社内ノートの返答）。有効化の後はダッシュボード①のメモリに 2 行（polyarchy-deliberations・qdrant-deliberations）が出る。
+- **guard**＝`RL_HOSTS` に既存の全ホストと `deliberations.<domain>` を並べる（`cloudflare-guard.sh` 冒頭の例）。
+- **公開ページ**＝接続確認の後に `deliberations/docs/deliberations.html` を `deploy/pages/` へ移し、入口（index）とプライバシーポリシー（捕捉ログの対象に審議会DB）に足してから Pages へ。
 
 ### 配布用のクローンを開発用と分ける（推奨・2026-09-19）
 

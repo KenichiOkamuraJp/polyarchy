@@ -31,6 +31,7 @@
     ├ systemd cloudflared            ← 入口（手動 start：カットオーバー時。以後は自動適用が ingress の変化時だけ再起動）
     ├ systemd polyarchy-stats :8766  ← 統計参照DB（認証必須・稼働中）
     ├ systemd polyarchy-companies :8767  ← 企業情報DB（opt-in＝ENABLE_COMPANIES_APP・モデル不要・2026-09-22 配線・有効化は RUNBOOK §5「サービスを足す」）
+    ├ systemd qdrant-deliberations :6340＋polyarchy-deliberations :8768  ← 審議会議事録DB（opt-in＝ENABLE_DELIBERATIONS_APP・モデルは ruri＋リランカー・データは束〔Qdrant のスナップショット〕・2026-10-04 配線・有効化は RUNBOOK §5）
     ├ systemd polyarchy-fuelsync.timer → 捕捉ログ(燃料)を S3 へ（毎時・recommendations と stats と companies）
     ├ systemd polyarchy-logprune.timer → 捕捉ログの30日超過分を削除（毎日・recommendations と stats と companies）
     ├ systemd polyarchy-health.timer   → 毎分 /healthz → CloudWatch metric（運用設計 §1）

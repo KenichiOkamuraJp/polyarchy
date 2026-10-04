@@ -31,7 +31,7 @@ from pathlib import Path
 
 from polyarchy_common.capture import load_records
 from polyarchy_common.logsetup import configure_quiet_logging, get_logger
-from polyarchy_common.usage_report import (companies_enabled, freshness_summary,
+from polyarchy_common.usage_report import (companies_enabled, deliberations_enabled, freshness_summary,
                                            healthz_targets, pct, probe_healthz)
 
 configure_quiet_logging()
@@ -48,11 +48,13 @@ UPDATE_CHECK_PATH = ROOT / "recommendations" / "data" / "cache" / "update_check.
 FRESHNESS_RUN_PATH = ROOT / "stats" / "data" / "cache" / "freshness_last_run.json"
 APPLIED_RELEASE_PATH = ROOT / "ops" / "dashboard" / "applied_data_release.json"
 COMPANIES_REGISTRY_PATH = ROOT / "companies" / "data" / "store" / "companies.json"
+DELIB_BUNDLE_PATH = ROOT / "deliberations" / "data" / "bundle" / "deliberations_v1" / "bundle.json"
 FUELSYNC_DIR = ROOT / "ops" / "dashboard" / "fuelsync"  # deploy/bootstrap/fuelsync.sh が書く（2026-10-01）
 CGROUP_ROOT = Path("/sys/fs/cgroup")
 MEMINFO_PATH = Path("/proc/meminfo")
-MEMORY_UNITS = ("polyarchy-mcp", "polyarchy-stats", "qdrant")  # ＋ companies（有効な箱のみ）
-FUELSYNC_SERVICES = ("recommendations", "stats", "companies")
+MEMORY_UNITS = ("polyarchy-mcp", "polyarchy-stats", "qdrant")  # ＋ companies・deliberations（有効な箱のみ）
+FUELSYNC_SERVICES = ("recommendations", "stats", "companies", "deliberations")
+DELIB_UNITS = ("polyarchy-deliberations", "qdrant-deliberations")  # 審議会DB は MCP と専用 Qdrant の 2 つ
 UNITS = ("qdrant", "polyarchy-mcp", "polyarchy-stats", "cloudflared",
          "polyarchy-health.timer", "polyarchy-fuelsync.timer",
          "polyarchy-logprune.timer", "polyarchy-usagereport.timer", "polyarchy-dashboard.timer",
@@ -66,7 +68,7 @@ def unit_states() -> list[tuple[str, str]]:
     if not shutil.which("systemctl"):
         return []
     out = []
-    units = UNITS + (("polyarchy-companies",) if companies_enabled() else ())
+    units = UNITS + (("polyarchy-companies",) if companies_enabled() else ()) + (DELIB_UNITS if deliberations_enabled() else ())
     for u in units:
         try:
             rc = subprocess.run(["systemctl", "is-active", u], capture_output=True, text=True, timeout=5)
@@ -95,7 +97,7 @@ def service_memory() -> list[tuple[str, str, str, str]]:
     if not shutil.which("systemctl"):
         return []
     out = []
-    for u in MEMORY_UNITS + (("polyarchy-companies",) if companies_enabled() else ()):
+    for u in MEMORY_UNITS + (("polyarchy-companies",) if companies_enabled() else ()) + (DELIB_UNITS if deliberations_enabled() else ()):
         try:
             rc = subprocess.run(["systemctl", "show", u, "-p", "ActiveState,MemoryCurrent,ControlGroup,ActiveEnterTimestamp"],
                                 capture_output=True, text=True, timeout=5)
@@ -178,6 +180,11 @@ def data_scale() -> dict:
     if companies_enabled():
         try:  # mcp_server が n_companies として返す数と同じ（companies.json の社数）
             d["companies"] = len(json.loads(COMPANIES_REGISTRY_PATH.read_text(encoding="utf-8")))
+        except Exception:  # noqa: BLE001
+            pass
+    if deliberations_enabled():
+        try:  # 配布された束の点の数（箱の bootstrap が復元したもの）
+            d["deliberations_points"] = json.loads(DELIB_BUNDLE_PATH.read_text(encoding="utf-8"))["points"]
         except Exception:  # noqa: BLE001
             pass
     return d
@@ -329,6 +336,8 @@ def render(generated_at: str, env_name: str) -> str:
 <tr><th>recommendations 収録</th><td>{scale.get('recommendations_docs', '—')} 文書</td></tr>""")
     if companies_enabled():
         parts.append(f"<tr><th>companies 収録</th><td>{scale.get('companies', '—')} 社</td></tr>")
+    if deliberations_enabled():
+        parts.append(f"<tr><th>deliberations 収録</th><td>{scale.get('deliberations_points', '—')} 単位</td></tr>")
     parts.append("</table>")
 
     # ③ 鮮度

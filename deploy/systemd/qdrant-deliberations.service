@@ -1,0 +1,31 @@
+# 審議会議事録DB（deliberations）専用の Qdrant（127.0.0.1:6340）。政策主張DB の qdrant.service（:6333）とは別プロセス・別ストレージ。
+# ★分ける理由：政策主張DB の Qdrant のストレージ（recommendations/data/qdrant）は自動適用のたびに S3 から --delete 付きで
+#   ミラーされる（apply_data_update.sh ②）＝同じ Qdrant に審議会DB のコレクションを置くと配布のたびに消える。
+#   審議会DB のデータは束（Qdrant のスナップショット・deliberations.ops.bundle）で運び、bootstrap が束の変わったときだけ復元する。
+# バイナリは qdrant.service と同じ /usr/local/bin/qdrant（bootstrap ⑥b が版・sha256 固定で導入）。
+# 設置は bootstrap ⑩（ENABLE_DELIBERATIONS_APP=true のとき）。127.0.0.1 バインド＝箱の外に露出しない。
+[Unit]
+Description=Qdrant for deliberations (127.0.0.1:6340, storage=deliberations/data/qdrant)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polyarchy
+Group=polyarchy
+WorkingDirectory=/opt/polyarchy/polyarchy/deliberations
+Environment=QDRANT__SERVICE__HOST=127.0.0.1
+Environment=QDRANT__SERVICE__HTTP_PORT=6340
+Environment=QDRANT__SERVICE__GRPC_PORT=6341
+Environment=QDRANT__STORAGE__STORAGE_PATH=/opt/polyarchy/polyarchy/deliberations/data/qdrant
+Environment=QDRANT__STORAGE__SNAPSHOTS_PATH=/opt/polyarchy/polyarchy/deliberations/data/qdrant_snapshots
+Environment=QDRANT__TELEMETRY_DISABLED=true
+ExecStart=/usr/local/bin/qdrant
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qdrant-deliberations
+
+[Install]
+WantedBy=multi-user.target

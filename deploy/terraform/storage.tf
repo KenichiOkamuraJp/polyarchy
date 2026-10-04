@@ -98,4 +98,18 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
       noncurrent_days = 30
     }
   }
+  # deliberations（審議会議事録DB）の捕捉ログも同じ 30 日（polyarchy-logprune.service の deliberations 行と揃える）。
+  rule {
+    id     = "deliberations-query-log-retention-30d"
+    status = "Enabled"
+    filter {
+      prefix = "${var.data_s3_prefix}/deliberations/query_log/"
+    }
+    expiration {
+      days = 30
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
 }

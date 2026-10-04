@@ -26,6 +26,13 @@
             "timezone": "UTC"
           },
           {
+            "file_path": "/var/log/polyarchy/polyarchy-deliberations.log",
+            "log_group_name": "polyarchy/deliberations",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": 30,
+            "timezone": "UTC"
+          },
+          {
             "file_path": "/var/log/polyarchy/polyarchy-dataapply.log",
             "log_group_name": "polyarchy/dataapply",
             "log_stream_name": "{instance_id}",

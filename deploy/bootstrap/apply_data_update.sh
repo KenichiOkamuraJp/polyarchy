@@ -3,14 +3,14 @@
 # トリガ＝S3 release/data.json（release.sh がゲート全 PASS 時にのみ書く）。前回適用と同じなら何もしない。
 #
 # 工程（2026-09-03 改訂＝コード自動反映＋自動切り戻し・残タスク B15 論点1）:
-#   ① 退避   ＝現行のデータ（qdrant・catalog/bm25/eval・stats registry/values・companies store）を $RB_DIR へ rsync
+#   ① 退避   ＝現行のデータ（qdrant・catalog/bm25/eval・stats registry/values・companies store・deliberations の束と専用 qdrant）を $RB_DIR へ rsync
 #              （稼働中に 1 回目→停止後に差分の 2 回目＝停止時間を伸ばさず整合コピー）。現行の code tar も prev として保持。
 #   ② 反映   ＝サービス停止 → code tar 再展開（★bootstrap はコードを更新しないため apply が行う＝旧地雷の解消）
 #              → qdrant ミラー同期（--delete）→ bootstrap 再走行（データ差分 sync・pip 再解決・ユニット設置）→ 再起動
 #              → ★入口：bootstrap が /etc/cloudflared/config.yml を書き換えていた（ingress の追加・削除）ときだけ cloudflared も再起動
 #                （数秒の断。通常のデータ更新では config が変わらない＝入口を揺らさない。2026-09-22 staging 実測＝再起動しないと
 #                 新ホストは 25 分以上 404 のまま・切り戻し経路でも同じ判定）
-#   ③ 検証   ＝qdrant 応答待ち → 箱上 smoke（recommendations＋stats＋companies〔有効時〕）
+#   ③ 検証   ＝qdrant 応答待ち → 箱上 smoke（recommendations＋stats＋companies〔有効時〕＋deliberations〔有効時〕）
 #   ④ 判定   ＝PASS：マーク更新（status=APPLIED）・メトリクス dataapply=1
 #              FAIL：**自動切り戻し**＝停止 → ①の退避を書き戻し（qdrant はミラー）→ prev tar 再展開＋pip → 再起動 → smoke 再実行
 #                    → マーク status=ROLLED_BACK（このマニフェストは再試行しない＝15 分毎の再適用ループを防ぐ）
@@ -68,6 +68,10 @@ REC_EXCL=(--exclude=pdfs/ --exclude=query_log/ --exclude=cache/ --exclude=qdrant
 STATS_EXCL=(--exclude=query_log/ --exclude=cache/ --exclude=values_archive/)
 COMPANIES_EXCL=(--exclude=query_log/ --exclude=cache/ --exclude=verify/ --exclude=logs/)
 COMPANIES_ON=0; [[ "${ENABLE_COMPANIES_APP:-false}" == "true" ]] && COMPANIES_ON=1  # companies は opt-in（deploy.env）
+# deliberations（審議会議事録DB）も opt-in。データ＝束（bundle/）＋専用 Qdrant のストレージ（qdrant/）＋復元の印＝丸ごと退避・書き戻す
+# （政策主張DB の qdrant ミラーとは別＝qdrant-deliberations.service・:6340）。捕捉ログとスナップショットの作業場は除外。
+DELIB_EXCL=(--exclude=query_log/ --exclude=qdrant_snapshots/ --exclude=cache/)
+DELIB_ON=0; [[ "${ENABLE_DELIBERATIONS_APP:-false}" == "true" ]] && DELIB_ON=1
 snapshot_data() { # 現行データ → ${RB_DIR}（--delete＝前回退避の残骸を残さない）。戻り値＝rsync の合否
   rsync -a --delete "${REC_EXCL[@]}"   "$APP_DIR/data/"        "$RB_DIR/recommendations_data/" || return 1
   if [[ -d "$REPO_DIR/stats/data" ]]; then
@@ -75,6 +79,9 @@ snapshot_data() { # 現行データ → ${RB_DIR}（--delete＝前回退避の�
   fi
   if [[ "$COMPANIES_ON" == 1 && -d "$REPO_DIR/companies/data" ]]; then
     rsync -a --delete "${COMPANIES_EXCL[@]}" "$REPO_DIR/companies/data/" "$RB_DIR/companies_data/" || return 1
+  fi
+  if [[ "$DELIB_ON" == 1 && -d "$REPO_DIR/deliberations/data" ]]; then
+    rsync -a --delete "${DELIB_EXCL[@]}" "$REPO_DIR/deliberations/data/" "$RB_DIR/deliberations_data/" || return 1
   fi
   return 0
 }
@@ -86,6 +93,10 @@ restore_data() { # $RB_DIR → 現行（除外パターンは受け側でも保�
   if [[ "$COMPANIES_ON" == 1 && -d "$RB_DIR/companies_data" ]]; then
     rsync -a --delete "${COMPANIES_EXCL[@]}" "$RB_DIR/companies_data/" "$REPO_DIR/companies/data/" || warn "companies データの書き戻しで rsync エラー"
     chown -R polyarchy:polyarchy "$REPO_DIR/companies/data"
+  fi
+  if [[ "$DELIB_ON" == 1 && -d "$RB_DIR/deliberations_data" ]]; then
+    rsync -a --delete "${DELIB_EXCL[@]}" "$RB_DIR/deliberations_data/" "$REPO_DIR/deliberations/data/" || warn "deliberations データの書き戻しで rsync エラー"
+    chown -R polyarchy:polyarchy "$REPO_DIR/deliberations/data"
   fi
   chown -R polyarchy:polyarchy "$APP_DIR/data" "$REPO_DIR/stats/data"
 }
@@ -105,7 +116,12 @@ pip_resolve() { # 切り戻し時の依存再解決（bootstrap ③ と同じ＝
       || warn "pip 再解決に失敗（コードは旧版に戻っている・依存差分があれば bootstrap 再走行）"
   fi
 }
-svc_stop()  { systemctl stop polyarchy-mcp polyarchy-stats qdrant; [[ "$COMPANIES_ON" == 1 ]] && systemctl stop polyarchy-companies; return 0; }
+svc_stop()  {
+  systemctl stop polyarchy-mcp polyarchy-stats qdrant
+  [[ "$COMPANIES_ON" == 1 ]] && systemctl stop polyarchy-companies
+  [[ "$DELIB_ON" == 1 ]] && systemctl stop polyarchy-deliberations qdrant-deliberations
+  return 0
+}
 # 入口（cloudflared）＝config.yml が「いま動いているプロセスが読んだ内容」から変わったときだけ再起動する。
 #   bootstrap ⑦ は再走行のたびに config.yml を生成する（ingress は deploy.env の ENABLE_*_APP／TUNNEL_HOST_* から）が、
 #   cloudflared は起動時にしか config を読まない＝ingress を足しても再起動しなければ新ホストは 404（トンネルの catch-all）のまま。
@@ -135,6 +151,11 @@ svc_start() { # qdrant → 応答待ち（最長 300 秒）→ アプリ → 入
   curl -fsS -m 3 http://127.0.0.1:6333/collections >/dev/null 2>&1 && ok=1
   systemctl restart polyarchy-mcp polyarchy-stats
   [[ "$COMPANIES_ON" == 1 ]] && { systemctl restart polyarchy-companies || ok=0; }
+  if [[ "$DELIB_ON" == 1 ]]; then
+    systemctl restart qdrant-deliberations || ok=0
+    for _ in $(seq 1 24); do curl -fsS -m 3 http://127.0.0.1:6340/collections >/dev/null 2>&1 && break; sleep 5; done
+    systemctl restart polyarchy-deliberations || ok=0
+  fi
   reload_ingress
   [[ "$ok" == 1 ]]
 }
@@ -144,6 +165,9 @@ smoke() { # 箱上 smoke（recommendations＋stats＋companies〔有効時〕）
   sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR $PY -m stats.eval.mcp_smoke" || ok=0
   if [[ "$COMPANIES_ON" == 1 ]]; then
     sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR $PY -m companies.eval.mcp_smoke" || ok=0
+  fi
+  if [[ "$DELIB_ON" == 1 ]]; then
+    sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR HF_HOME=$HF_HOME DELIB_QDRANT_URL=http://127.0.0.1:6340 $PY -m deliberations.eval.mcp_smoke" || ok=0
   fi
   if [[ -e "$DRILL_FLAG" ]]; then warn "訓練フラグ $DRILL_FLAG あり＝smoke を FAIL 扱いにする（演習）"; ok=0; fi
   [[ "$ok" == 1 ]]

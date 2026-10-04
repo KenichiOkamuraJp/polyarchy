@@ -5,7 +5,8 @@
 #   使い方: bash deploy/scripts/release.sh <staging|prod>
 #
 # 工程（一気通貫＝手順を飛ばす余地を作らない・運用設計 §2.4／RUNBOOK §5）:
-#   ① 品質ゲート実行（recommendations 4種＋stats 4種＋共通テスト＝9 本。ENABLE_COMPANIES_APP=true なら companies 4種を足して 13 本。qdrant-dev 起動が前提）
+#   ① 品質ゲート実行（recommendations 4種＋stats 4種＋共通テスト＝9 本。ENABLE_COMPANIES_APP=true なら companies 4種、
+#      ENABLE_DELIBERATIONS_APP=true なら deliberations 4種＋束の書き出しを足す。qdrant-dev〔と審議会DB の qdrant-delib〕起動が前提）
 #   ② 全 PASS を機械判定（1つでも FAIL なら upload せず終了＝箱には何も起きない）
 #   ③ qdrant-dev を止めて upload_to_s3.sh（データ転送。転送失敗でもマニフェストは書かれない）
 #   ④ リリースマニフェスト release/data.json を最後に書く（→ 箱の polyarchy-dataapply.timer が
@@ -78,6 +79,27 @@ if [[ "${ENABLE_COMPANIES_APP:-false}" == "true" ]]; then
   COMPANIES_GATES="4/4 PASS"
   COMPANIES_N="$(python3 -c "import json; print(len(json.load(open('companies/data/store/companies.json'))))")"
 fi
+# deliberations（審議会議事録DB）も opt-in＝env の ENABLE_DELIBERATIONS_APP=true のときだけ 4 ゲート＋束の書き出し。
+# 手元の専用 Qdrant（qdrant-delib・:6340）と解析結果（deliberations/data/cache）が前提。アンカーは非劣化（>=）。
+DELIB_GATES="対象外"; DELIB_POINTS=0
+if [[ "${ENABLE_DELIBERATIONS_APP:-false}" == "true" ]]; then
+  DELIB_URL="${DELIB_QDRANT_URL:-http://localhost:6340}"
+  curl -fsS -m 3 "$DELIB_URL/collections" >/dev/null || fail "ENABLE_DELIBERATIONS_APP=true だが審議会DB の Qdrant（${DELIB_URL}）が応答しない（docker start qdrant-delib）"
+  [[ -f deliberations/data/cache/units.jsonl ]] || fail "ENABLE_DELIBERATIONS_APP=true だが deliberations/data/cache が無い（deliberations/CLAUDE.md の手順で収集・解析・取り込み）"
+  DELIB_REQUIRE_HIT5="${DELIB_REQUIRE_HIT5:-91.4}"; DELIB_REQUIRE_MRR="${DELIB_REQUIRE_MRR:-0.836}"
+  say "  [+4] deliberations 4 ゲート（アンカー非劣化 hit@5>=${DELIB_REQUIRE_HIT5}・MRR>=${DELIB_REQUIRE_MRR}・帰属・層・スモーク）"
+  python -m deliberations.eval.retrieval >>"$GATE_LOG" 2>&1 || fail "deliberations retrieval が異常終了"
+  D_LINE="$(grep -E '^ALL[[:space:]]' "$GATE_LOG" | tail -1)"
+  D_HIT5="$(awk '{print $3}' <<<"$D_LINE" | tr -d '%')"; D_MRR="$(awk '{print $4}' <<<"$D_LINE")"
+  python3 -c "import sys; sys.exit(0 if float('$D_HIT5')>=float('$DELIB_REQUIRE_HIT5') and float('$D_MRR')>=float('$DELIB_REQUIRE_MRR') else 1)" \
+    || fail "deliberations アンカー劣化（hit@5 ${D_HIT5}%・MRR ${D_MRR}＜基準 ${DELIB_REQUIRE_HIT5}%・${DELIB_REQUIRE_MRR}）"
+  python -m deliberations.eval.attribution_gate >>"$GATE_LOG" 2>&1 || fail "deliberations 帰属ゲート FAIL"
+  python -m deliberations.eval.layer_gate       >>"$GATE_LOG" 2>&1 || fail "deliberations 層ゲート FAIL"
+  python -m deliberations.eval.mcp_smoke        >>"$GATE_LOG" 2>&1 || fail "deliberations mcp_smoke FAIL"
+  python -m deliberations.ops.bundle export --url "$DELIB_URL" >>"$GATE_LOG" 2>&1 || fail "deliberations の束の書き出しに失敗"
+  DELIB_GATES="4/4 PASS（hit@5 ${D_HIT5}%・MRR ${D_MRR}）"
+  DELIB_POINTS="$(python3 -c "import json; print(json.load(open('deliberations/data/bundle/deliberations_v1/bundle.json'))['points'])")"
+fi
 echo "② 全ゲート PASS ✅"
 
 say "③ 配布（qdrant-dev 停止 → upload → 再開）"
@@ -106,8 +128,9 @@ json.dump({
   "code_version": "$GITV",
   "gates": {"hit5_pct": float("$HIT5"), "mrr": float("$MRR"),
              "filter": "27/27", "multistage": "12/12", "smoke": "PASS",
-             "stats": "4/4 PASS", "common": "PASS", "companies": "$COMPANIES_GATES"},
-  "scale": {"stats_series": int("$SERIES_N"), "recommendations_docs": int("$DOCS_N"), "companies": int("$COMPANIES_N")},
+             "stats": "4/4 PASS", "common": "PASS", "companies": "$COMPANIES_GATES", "deliberations": "$DELIB_GATES"},
+  "scale": {"stats_series": int("$SERIES_N"), "recommendations_docs": int("$DOCS_N"), "companies": int("$COMPANIES_N"),
+            "deliberations_points": int("$DELIB_POINTS")},
   "released_by": "release.sh（ゲート全 PASS 時のみ本ファイルが書かれる）",
 }, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 PYEOF

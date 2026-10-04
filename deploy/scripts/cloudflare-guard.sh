@@ -45,6 +45,10 @@ MCP_HOST="${MCP_HOST:-recommendations.polyarchy.net}"
 #     SERVICE=companies MCP_HOST=companies.<domain> SSM_PATH_PARAM=/polyarchy/<env>/companies_http_path \
 #     RL_HOSTS=recommendations.<domain>,stats.<domain>,companies.<domain> IP_ALLOWLIST=off \
 #     bash cloudflare-guard.sh apply && bash cloudflare-guard.sh status   # 式に既存ホストが残っていること
+#   deliberations（companies と同じ形・RL_HOSTS に既存の全ホストを並べる）:
+#     SERVICE=deliberations MCP_HOST=deliberations.<domain> SSM_PATH_PARAM=/polyarchy/<env>/deliberations_http_path \
+#     RL_HOSTS=recommendations.<domain>,stats.<domain>,companies.<domain>,deliberations.<domain> IP_ALLOWLIST=off \
+#     bash cloudflare-guard.sh apply && bash cloudflare-guard.sh status
 SERVICE="${SERVICE:-mcp}"
 # レート制限ルールは Free プランで1本のため単一ルールに全ホストを載せる（RL_HOSTS＝カンマ区切り）。
 # 空＝apply 時に「既存ルールの式にあるホスト ∪ MCP_HOST」を引き継ぐ（rl_hosts_effective）。

@@ -93,7 +93,7 @@ echo "[upload] データ同期 → s3://$BUCKET/$DATA_PREFIX/ （Qdrant/BM25語�
     --exclude "qdrant/*" \
   --exclude "*.bak" --exclude "*.bak[0-9]" \
   --exclude "*.phase11*.bak" \
-  --exclude "eval/results/*" --exclude "stats/*" --exclude "companies/*" --exclude "query_log/*" \
+  --exclude "eval/results/*" --exclude "stats/*" --exclude "companies/*" --exclude "deliberations/*" --exclude "query_log/*" \
   --exclude "cache/*"  # 箱で作る（新着チェックの結果 等）＝手元の古い値を S3 に載せると bootstrap の同期が箱の最新を上書きする（2026-10-02）
 
 # stats（統計参照DB）のデータ＝S3 `data/stats/`（共通契約 §4）。registry（git 追跡・2MB）＋values（88MB）＋eval を運ぶ。
@@ -109,6 +109,15 @@ if [[ -f "$REPO_DIR/companies/data/store/companies.json" ]]; then
   echo "[upload] companies データ同期 → s3://$BUCKET/$DATA_PREFIX/companies/ （store/eval）"
   "${AWS[@]}" s3 sync "$REPO_DIR/companies/data/" "s3://$BUCKET/$DATA_PREFIX/companies/" --region "$REGION" \
     --exclude "cache/*" --exclude "verify/*" --exclude "logs/*" --exclude "query_log/*" --exclude "*.bak"
+fi
+
+# deliberations（審議会議事録DB）のデータ＝S3 `data/deliberations/bundle/`（Qdrant のスナップショット＋語彙・目録・解析結果＝
+# deliberations.ops.bundle export が release.sh の中で作る）。束が無い環境では何もしない。--delete は bundle/ の中だけ
+# （親の data/deliberations/ には箱の捕捉ログ query_log/ が fuelsync で入る＝消さない）。
+if [[ -f "$REPO_DIR/deliberations/data/bundle/deliberations_v1/bundle.json" ]]; then
+  echo "[upload] deliberations の束 → s3://$BUCKET/$DATA_PREFIX/deliberations/bundle/"
+  "${AWS[@]}" s3 sync "$REPO_DIR/deliberations/data/bundle/" "s3://$BUCKET/$DATA_PREFIX/deliberations/bundle/" --region "$REGION" \
+    --delete --exclude ".restored_*"
 fi
 
 # ★ここで「bootstrap 再走行で取り込まれる」と案内しない：bootstrap の再走行はコードを更新しない（RUNBOOK §5）。

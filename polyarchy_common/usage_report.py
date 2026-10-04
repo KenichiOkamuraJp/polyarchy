@@ -43,15 +43,18 @@ log = get_logger("polyarchy.usage_report")
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIRS = {"recommendations": ROOT / "recommendations" / "data" / "query_log",
             "stats": ROOT / "stats" / "data" / "query_log",
-            "companies": ROOT / "companies" / "data" / "query_log"}
+            "companies": ROOT / "companies" / "data" / "query_log",
+            "deliberations": ROOT / "deliberations" / "data" / "query_log"}
 # 箱の保護コピー（polyarchy-fuelsync.service が sync する先）→ ローカルミラー（query_log/ 配下＝git 外）
-S3_PREFIXES = {"recommendations": "data/query_log", "stats": "data/stats/query_log", "companies": "data/companies/query_log"}
+S3_PREFIXES = {"recommendations": "data/query_log", "stats": "data/stats/query_log", "companies": "data/companies/query_log",
+               "deliberations": "data/deliberations/query_log"}
 OUT_DIR = ROOT / "ops" / "usage"
 WEEKLY_PATH = OUT_DIR / "weekly.jsonl"
 HTML_PATH = OUT_DIR / "usage_report.html"
 FRESHNESS_STATE = ROOT / "stats" / "data" / "cache" / "freshness.json"
 HEALTHZ_DEFAULT = ("http://localhost:8765/healthz", "http://localhost:8766/healthz")
 HEALTHZ_COMPANIES = "http://localhost:8767/healthz"
+HEALTHZ_DELIBERATIONS = "http://localhost:8768/healthz"
 LOW_HIT = 3   # recommendations の低ヒット閾値（coverage_warning と同じ count<3）
 
 
@@ -118,6 +121,7 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
             "stats_lookup": 0, "stats_found_true": 0, "stats_found_false": 0,
             "stats_nf_reasons": Counter(), "stats_catalog": 0,
             "companies": 0, "companies_screen": 0, "companies_trend": 0, "companies_unavailable": Counter(),
+            "deliberations": 0, "deliberations_zero": 0, "deliberations_list": 0,
         })
         w["total"] += 1
         w[svc] += 1
@@ -135,6 +139,11 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
                 w["recommendations_orgs_filter"] += 1
             if rec.get("since") is not None or rec.get("until") is not None:
                 w["recommendations_period_filter"] += 1
+        elif svc == "deliberations":  # 審議会議事録DB（捕捉＝tool・引数・hits）
+            if rec.get("tool") == "list_meeting":
+                w["deliberations_list"] += 1
+            elif rec.get("hits") == 0:
+                w["deliberations_zero"] += 1
         elif svc == "companies":
             if rec.get("tool") == "screen_companies":
                 w["companies_screen"] += 1
@@ -201,9 +210,15 @@ def companies_enabled() -> bool:
     return os.environ.get("ENABLE_COMPANIES_APP", "false") == "true"
 
 
+def deliberations_enabled() -> bool:
+    """deliberations（審議会議事録DB）も opt-in（deploy.env の ENABLE_DELIBERATIONS_APP＝health_metric.sh と同じ判定）。"""
+    return os.environ.get("ENABLE_DELIBERATIONS_APP", "false") == "true"
+
+
 def healthz_targets() -> tuple[str, ...]:
-    """既定の healthz 一覧。companies を有効にした箱だけ :8767 を足す（無効の箱で「応答なし」と出さない）。"""
-    return HEALTHZ_DEFAULT + ((HEALTHZ_COMPANIES,) if companies_enabled() else ())
+    """既定の healthz 一覧。companies／deliberations を有効にした箱だけ :8767／:8768 を足す（無効の箱で「応答なし」と出さない）。"""
+    return (HEALTHZ_DEFAULT + ((HEALTHZ_COMPANIES,) if companies_enabled() else ())
+            + ((HEALTHZ_DELIBERATIONS,) if deliberations_enabled() else ()))
 
 
 def probe_healthz(urls: Iterable[str]) -> list[dict]:
@@ -245,7 +260,7 @@ def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at:
  .wrap {{ overflow-x: auto; }}
 </style></head><body>
 <h1>Polyarchy 週次利用レポート</h1>
-<p class="note">生成 {e(generated_at)}／入力＝recommendations・stats・companies の捕捉ログ（ローカル＋箱の保護コピー）。
+<p class="note">生成 {e(generated_at)}／入力＝recommendations・stats・companies・deliberations の捕捉ログ（ローカル＋箱の保護コピー）。
 <b>検索語・ヒット文書名・個人を特定する情報は含まない</b>（数字のみ＝恒久蓄積可・プライバシーポリシー整合）。</p>"""
     parts = [head]
     if latest:
@@ -255,7 +270,8 @@ def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at:
 recommendations 0 件率 {e(pct(latest['recommendations_zero'], latest['recommendations']))}・低ヒット率(&lt;{LOW_HIT}) {e(pct(latest['recommendations_low'], latest['recommendations']))}／
 stats lookup found=false {latest['stats_found_false']} 件（拡充候補の一次情報）／
 companies {latest.get('companies', 0)} 件（横断検索 {latest.get('companies_screen', 0)}・時系列 {latest.get('companies_trend', 0)}）・使えなかった入力
-{e("・".join(f"{k} {v}" for k, v in (latest.get('companies_unavailable') or {}).items()) or "—")}（未収録・開示なし＝取込の改善候補／unknown_aggregate:aggregate＝語彙に無い集約を求められた回数）</p>""")
+{e("・".join(f"{k} {v}" for k, v in (latest.get('companies_unavailable') or {}).items()) or "—")}（未収録・開示なし＝取込の改善候補／unknown_aggregate:aggregate＝語彙に無い集約を求められた回数）／
+deliberations {latest.get('deliberations', 0)} 件（回の一覧 {latest.get('deliberations_list', 0)}・検索 0 件 {latest.get('deliberations_zero', 0)}）</p>""")
     parts.append("""<h2>週次推移</h2><div class="wrap"><table>
 <tr><th>週</th><th>週初</th><th>計</th><th>recommendations</th><th>stats</th><th>source 内訳</th><th>利用者</th>
 <th>c: 0件</th><th>c: 低ヒット</th><th>c: orgs指定</th><th>c: 期間指定</th>

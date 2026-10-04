@@ -293,6 +293,9 @@ AI・デジタル改革推進会議（後継）は、2026-10-02 時点で掲載�
 - systemd のユニット `deploy/systemd/polyarchy-deliberations.service`（:8768・`DELIB_` の env・HF_HOME は既存の事前DL と同じ）。bootstrap はユニットを名前で 1 つずつ設置する＝ファイルを置くだけでは設置されない。
 - 箱へ運ぶ束 `python -m deliberations.ops.bundle export|restore`：コレクション 1 つを Qdrant のスナップショットで書き出し、語彙・目録・解析結果と sha256 つきでまとめる（第 1 便 209MB）。手元で別名に復元し、同じ問の検索結果が順位とスコアまで一致することを確認。手元と箱の Qdrant は同じ v1.19.0（束は版が違えば復元を中止）。
 
+**置き場の判断＝案 A（既存の箱に同居）に決定（2026-10-04・本人）**：staging は t3.xlarge（16GB）で使用 2.74／15.42GB・政策主張DB の MCP は最大 1.76GB・ディスク空き 62GB（運用側がダッシュボードから読んだ値＝SSM のコマンドは運用側の Claude からは流せなかった・社内ノートの返答）。目安（政策主張DB の RSS の 8 割＋500MB≒1.9GB）の 6 倍以上の空き。
+**★同じ箱でも Qdrant は分ける（2026-10-04・配線の途中で変更）**：§3 では「同じ Qdrant に別コレクション」としていたが、政策主張DB の Qdrant のストレージは自動適用のたびに S3 から `--delete` 付きでミラーされる（`apply_data_update.sh` ②）＝同じ Qdrant に置くと配布のたびに審議会DB のコレクションが消える。毎回スナップショットから戻す案は、審議会DB の復元の失敗が政策主張DB の配布の切り戻しを巻き込むので採らない。**審議会DB 専用の Qdrant（`qdrant-deliberations.service`・:6340・ストレージ `deliberations/data/qdrant`）を同じ箱に立てる**。増えるメモリは Qdrant 1 つ分（政策主張DB の Qdrant は 0.45GB・審議会DB は点が少ない）。
+
 **置き場の判断（M6 の最初・箱の実測の後）**
 | 案 | 内容 | 判断の材料 |
 |---|---|---|
@@ -300,7 +303,7 @@ AI・デジタル改革推進会議（後継）は、2026-10-02 時点で掲載�
 | B | 箱を一段大きくして同居 | A が足りないとき。費用の増分 |
 | C | 当面は箱に置かず手元の stdio だけ | 利用者が限られる間。公開ページは出さない |
 
-**配線の一覧（A・B のとき。companies の前例＝`ENABLE_COMPANIES_APP` と同じ opt-in の型で `ENABLE_DELIBERATIONS_APP`・既定 false）**
+**配線の一覧（2026-10-04 に配線済み・既定 false＝有効化は RUNBOOK §5「サービスを足す（deliberations）」。companies の前例＝`ENABLE_COMPANIES_APP` と同じ opt-in の型）**
 | 場所 | 足すこと |
 |---|---|
 | `deploy/bootstrap/bootstrap.sh` | フラグ・SSM（`deliberations_http_path`・`auth_aud_deliberations`）から `deliberations.env`・query_log の作成・ユニットの設置／撤去・cloudflared の ingress（`TUNNEL_HOST_DELIBERATIONS`）・束の復元（コレクションが無いか版が変わったとき） |
