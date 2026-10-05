@@ -262,6 +262,8 @@ bash deploy/scripts/release.sh <staging|prod>
 
 **release.sh がやること**＝ゲート 9 本（recommendations 4＝retrieval アンカー非劣化・filter 全問・多段・smoke（基準値はルート README「品質の担保」）／stats 4＝smoke・exact_match・test_core・find_quality／共通テスト 1）＋ env が `ENABLE_COMPANIES_APP=true` なら companies 4（smoke・exact_match・test_core・find_quality）＝13 本（出力は `[10-13/13]` まで）を実行し**全 PASS のときだけ** upload → 最後に S3 `release/data.json`
 （リリースマニフェスト＝出荷時のゲート数値入り）を書く。**1 つでも FAIL なら S3 に何も置かれない**。
+配布の結果の確認は `release.sh` の出力に頼らなくてよい＝ゲートの結果は `release/data.json` の `code_version` と `gates`（全 PASS のときだけ書かれる）、
+箱への反映は下のダッシュボード②で足りる（AI のセッションでは配布の出力の読み取りが権限の判定で拒否されることがある＝2026-10-04。S3 の読み取りは通る）。
 
 **箱側の反映は自動**＝`polyarchy-dataapply.timer`（15 分毎）がマニフェストの変化を検知し、
 退避（rsync）→ サービス停止 → **コード tar 再展開**（2026-09-03〜＝コード変更もこの経路で自動反映・tar 再展開の手作業は廃止）
