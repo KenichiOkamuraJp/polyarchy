@@ -34,7 +34,7 @@
 {"id": "neg-sna-fy1993", "series_id": "cao.sna2020.private_consumption.fy", "period": "FY1993", "region": "JP", "expect": "not_found", "reason": "out_of_range", "note": "2020年基準の年次推計は1994年度から。それ以前は基準の異なる遡及系列＝別系列（接続しない）"}
 {"id": "neg-sna-a-as-fy", "series_id": "cao.sna2020.gdp_nominal.a", "period": "FY2024", "region": "JP", "expect": "not_found", "reason": "period_format", "note": "暦年系列に年度表記"}
 {"id": "neg-qe-fq", "series_id": "cao.qe2020.gdp_real.sa.q", "period": "FY2024Q1", "region": "JP", "expect": "not_found", "reason": "period_format", "note": "QE 季調系列は暦年四半期表記（2024Q1）。年度四半期表記は法人企業統計"}
-{"id": "neg-gap-future", "series_id": "boj.gap.output_gap.q", "period": "2026Q2", "region": "JP", "expect": "not_found", "reason": "out_of_range", "note": "需給ギャップは2026Q1まで＝近い四半期を返さない"}
+{"id": "neg-gap-future", "series_id": "boj.gap.output_gap.q", "period": "2026Q3", "region": "JP", "expect": "not_found", "reason": "out_of_range", "note": "需給ギャップは2026Q2まで＝近い四半期を返さない（2026-10-05 定型更新で 2026Q2→2026Q3 にずらした）"}
 {"id": "neg-pot-q", "series_id": "boj.gap.potential_growth.h", "period": "2024Q1", "region": "JP", "expect": "not_found", "reason": "period_format", "note": "潜在成長率は年度半期表記 FY2024H1"}
 {"id": "neg-labour-share-derived", "series_id": "cao.sna2020.labour_share.fy", "period": "FY2024", "region": "JP", "expect": "not_found", "reason": "derived_see_components", "note": "構成系列（雇用者報酬・国民所得）が揃っても派生値は計算しない"}
 {"id": "neg-sna2020-nfc-fy1980", "series_id": "cao.sna2020.net_lending.nfc.fy", "period": "FY1980", "region": "JP", "expect": "not_found", "reason": "out_of_range", "note": "現行基準（2020年基準）の制度部門別は FY1994 から。旧基準（cao.sna2000/cao.sna1990）は別系列＝接続しない。"}
