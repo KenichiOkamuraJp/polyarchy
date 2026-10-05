@@ -566,6 +566,44 @@ def main() -> int:
         and csv_value(qe_csv, "1994Q2", "財貨・サービス", "輸入") is None
         and csv_value(qe_csv, "1995Q1", "国内総生産(支出側)") == "9.9",
         "qe_update csv_value＝独立パーサ（引用符・桁区切り・年キャリー・空欄は None）")
+
+    # 2026-10-06 運用側からの依頼（stats 定型更新で踏んだ 3 件）
+    # ① 政府経済見通し＝dataset ごとに対応する版だけと比べる（mitoshi＝閣議決定・mitoshi_mid＝年央試算）。両方の版を要求すると常に「更新あり」
+    from stats.ops.freshness import carry_pending, mitoshi_changed
+    info = {"mitoshi": {"edition": "2026-01-23"}, "shisan": {"edition": "2026-07-30"}}
+    chk(mitoshi_changed("mitoshi", ["2026-01-23 閣議決定（令和8年度の経済見通しと経済財政運営の基本的態度）"], info) is False
+        and mitoshi_changed("shisan", ["2026-07-30 年央試算（令和8年度）"], info) is False,
+        "freshness mitoshi：収録の版が取得元の最新と一致＝更新なし（閣議決定・年央試算それぞれ）")
+    chk(mitoshi_changed("mitoshi", ["2026-01-23 閣議決定（…）"], {**info, "mitoshi": {"edition": "2027-01-22"}}) is True
+        and mitoshi_changed("shisan", ["2026-07-30 年央試算（…）"], {**info, "mitoshi": {"edition": "2027-01-22"}}) is False,
+        "freshness mitoshi：閣議決定の新版は mitoshi だけを更新ありにする（年央試算の側は動かない）")
+    # ② 取込待ち＝検知した日を残し、その日以降に取り込まれる（値の retrieved_at が追いつく）まで消さない
+    chk(carry_pending(None, True, "2026-09-01", "2026-10-05") == "2026-10-05", "取込待ち：変化を検知した日から")
+    chk(carry_pending("2026-10-05", False, "2026-09-01", "2026-10-06") == "2026-10-05", "取込待ち：翌日の差分が無くても残る（日次の差分で消えない）")
+    chk(carry_pending("2026-10-05", False, "2026-10-05", "2026-10-06") is None
+        and carry_pending("2026-10-05", True, "2026-10-07", "2026-10-07") is None, "取込待ち：検知の日以降に取り込めば消える")
+    chk(carry_pending("2026-10-05", False, "2026-09-01", "2026-10-06", stateless=True) is None,
+        "取込待ち：収録と取得元を直接比べる型（QE・見通し 等）は今の比較だけで決める（誤検知が残り続けない）")
+    chk(carry_pending("2026-10-05", None, "2026-09-01", "2026-10-06") == "2026-10-05"
+        and carry_pending("2026-10-05", None, "2026-09-01", "2026-10-06", stateless=True) == "2026-10-05",
+        "取込待ち：probe 失敗（changed=None）の日は前回の状態を持ち越す")
+    from stats.ops.freshness import _jst_date
+    chk(_jst_date("Fri, 02 Oct 2026 01:37:52 GMT") == "2026-10-02" and _jst_date("Thu, 01 Oct 2026 16:00:00 GMT") == "2026-10-02"
+        and _jst_date("") == "", "取込待ち：検知の日は Last-Modified の JST の日付（retrieved_at と同じ物差し）")
+    # ③ 時間で壊れない評価問：負例の未来の期は収録の最終期からの相対（@last+N）で書く
+    from stats.core.periods import shift
+    chk(shift("2026Q2", 1) == "2026Q3" and shift("2026Q4", 1) == "2027Q1" and shift("FY2026Q4", 1) == "FY2027Q1"
+        and shift("FY2026H2", 1) == "FY2027H1" and shift("FY2026", 1) == "FY2027" and shift("2070", 1) == "2071",
+        "periods.shift：四半期・年度四半期・半期・年度・暦年の繰り上がり")
+    chk(shift("2026-12", 1) == "2027-01" and shift("2026-10-02", 1) == "2026-10-03" and shift("2026-12-31", 1) == "2027-01-01"
+        and shift("2026-03-31E", 1) == "2026-04-01E" and shift("2026年", 1) is None, "periods.shift：月・日（年末の繰り上がり・末残の E は保つ）・表記外は None")
+    from stats.eval.exact_match import ROLLING_LOCATORS, _load as _load_eval, resolve_period
+    chk(resolve_period("@last+1", "2026Q2") == "2026Q3" and resolve_period("@last+5", "FY2025") == "FY2030"
+        and resolve_period("2026Q3", "2026Q2") == "2026Q3" and resolve_period("@last+1", "") is None,
+        "評価セット：@last+N を収録の最終期から解決（絶対の期はそのまま・収録なしは None）")
+    rolling = [c["id"] for c in _load_eval("exact_match.jsonl")
+               if ((c.get("source_locator") or {}).get("type"), (c.get("source_locator") or {}).get("file")) in ROLLING_LOCATORS]
+    chk(not rolling, f"正例が「当月分」など中身が入れ替わるファイルを参照しない（{rolling or 'なし'}）")
     print("総合: PASS ✅" if ok else "総合: FAIL ✗")
     return 0 if ok else 1
 

@@ -2,7 +2,8 @@
 財務省の公表 CSV からの取込（国債金利情報 jgbcm.csv／jgbcm_all.csv）。設計は docs/データソース選定.md §1（財務省）。
 
 - 国債金利情報：Shift_JIS・行＝基準日（和暦 'S49.9.24'／'H10.4.1'／'R8.7.31'）・列＝年限（1年…40年）。値は公表どおりの文字列（％）、'-' は値ではない。
-- 全期間 = data/jgbcm_all.csv（1974-09-24〜前年度末）＋ jgbcm.csv（当年度分）。両方を取り、同一日は当年度分を優先（改定は無い前提・差があればエラー）。
+- 全期間 = data/jgbcm_all.csv（1974-09-24〜前月末）＋ jgbcm.csv（当月分）。両方を取り、同一日は当月分を優先（改定は無い前提・差があればエラー）。
+  ★月が替わると当月分の行は jgbcm_all.csv へ移る（accessor の file が変わる）＝評価の正例は jgbcm_all.csv の日を使う（2026-10-05 の定型更新で踏んだ）。
 - accessor: {"type": "mof_csv", "dataset": "jgbcm", "col": "10年"}
 - 原本は stats/data/cache/mof/<取得日>/。
 

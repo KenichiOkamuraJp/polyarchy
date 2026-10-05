@@ -244,8 +244,12 @@ def stats_changed_summary() -> dict:
         if isinstance(rows, dict):
             rows = rows.get("rows", [])
         changed = [r for r in rows if r.get("changed") is True]
+        # 取込待ち＝検知した後まだ取り込まれていない（日次の差分の「変化」は翌日に消える＝溜まっている分はこちら）
+        pending = sorted((r for r in rows if r.get("pending_since")), key=lambda r: r["pending_since"])
         return {"n": len(rows), "changed": len(changed),
-                "datasets": sorted({str(r.get("dataset", r.get("key", "?"))) for r in changed})[:6]}
+                "datasets": sorted({str(r.get("dataset", r.get("key", "?"))) for r in changed})[:6],
+                "pending": len(pending), "oldest": pending[0]["pending_since"] if pending else "",
+                "pending_datasets": [str(r.get("dataset", "?")) for r in pending][:6]}
     except Exception:  # noqa: BLE001
         return {}
 
@@ -371,6 +375,11 @@ def render(generated_at: str, env_name: str) -> str:
         ds = "・".join(e(x) for x in sc["datasets"]) or "—"
         parts.append(f"<p><b>stats 取得元の更新検知</b>（Last-Modified/ETag の変化）："
                      f"<b>変化 {sc['changed']} 件</b>／{sc['n']} 確認（{ds}）</p>")
+        if "pending" in sc:  # 旧版の freshness の出力には無い
+            pds = "・".join(e(x) for x in sc["pending_datasets"]) or "—"
+            oldest = f"・最古 {e(sc['oldest'])} に検知" if sc["oldest"] else ""
+            parts.append(f"<p><b>stats 取込待ち</b>（検知した後まだ取り込まれていない＝上の「変化」は日次の差分で翌日には消える）："
+                         f"<b>{sc['pending']} 件</b>{oldest}（{pds}）</p>")
 
     # ④ 利用（直近 4 週）
     parts.append("<h2>④ 利用（直近 4 週・詳細は ops/report/usage_report.html）</h2>")

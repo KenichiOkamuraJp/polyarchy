@@ -89,5 +89,9 @@ class ValueStore:
         """全地域を通じた期間の一覧（地域粒度が national/pref/cty のどれでも空にならない）。"""
         return sorted({p for (p, _r) in self._load(series_id)})
 
+    def last_retrieved(self, series_id: str) -> str:
+        """値の retrieved_at の最大（＝最後に取り込んだ日・無ければ空）。"""
+        return max((r.retrieved_at for r in self._load(series_id).values()), default="")
+
     def count(self, series_id: str) -> int:
         return len(self._load(series_id))

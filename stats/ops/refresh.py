@@ -115,7 +115,8 @@ def main(argv=None) -> int:
     else:
         print("── freshness（存否確認）", file=sys.stderr)
         rows = freshness.check(a.only)
-        targets = sorted({(r["org"], r["dataset"]) for r in rows if r["changed"]})
+        # 取込待ち（前回までに検知して、まだ取り込まれていないもの）も対象＝日次の差分で消えた分を拾う
+        targets = sorted({(r["org"], r["dataset"]) for r in rows if r["changed"] or r.get("pending_since")})
         probe_failed = any(r["note"].startswith("probe 失敗") or "解析失敗" in r["note"] for r in rows)
         if probe_failed:
             log.warning("probe 不能の dataset あり＝手動確認（python -m stats.ops.freshness --json）")

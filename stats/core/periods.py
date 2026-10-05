@@ -74,6 +74,21 @@ def matches_freq(period_text: str, freq: str) -> bool:
     return p.freq == freq
 
 
+def shift(period_text: str, n: int) -> Optional[str]:
+    """同じ freq で n 期先の表記（評価セットの @last+N 用＝値の補間には使わない）。表記外は None。"""
+    p = parse(period_text)
+    if p is None:
+        return None
+    if p.freq in ("a", "fy"):
+        return f"{'FY' if p.freq == 'fy' else ''}{p.year + n}"
+    if p.freq in ("q", "fq", "h", "m"):
+        per = {"q": 4, "fq": 4, "h": 2, "m": 12}[p.freq]
+        y, s = divmod(p.year * per + (p.sub - 1) + n, per)
+        return {"q": f"{y}Q{s + 1}", "fq": f"FY{y}Q{s + 1}", "h": f"FY{y}H{s + 1}", "m": f"{y}-{s + 1:02d}"}[p.freq]
+    d = dt.date(p.year, p.sub // 100, p.sub % 100) + dt.timedelta(days=n)
+    return d.isoformat() + ("E" if p.text.endswith("E") else "")
+
+
 def hint_for(freq: str) -> str:
     return f"この系列の期間表記は {FREQ_LABEL.get(freq, freq)}＝例 \"{FREQ_EXAMPLE.get(freq, '')}\""
 
