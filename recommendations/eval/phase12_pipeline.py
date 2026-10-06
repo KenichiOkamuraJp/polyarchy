@@ -47,8 +47,8 @@ USERDERIVED = EVAL_DIR / "eval_set_userderived.json"
 GATE_MODULE = "recommendations.eval.evalset_gate"  # 起動は python -m（cwd=リポ root 前提・ファイルパス直指定をやめた）
 
 # 正典の不変アンカー（§30.7・引き継ぎ）。append は前後でこの一致を assert する。
-# 正典を変えたコミットで更新する（197 問＝4a51f5f5… → B26 で 209 問＝a15e842f…）。
-CANONICAL_SHA256 = "a15e842f3e9e86a9e4aaa2fc6ae696fd35dabec801c0ab4cdea5f78f4405deca"
+# 正典を変えたコミットで更新する（197 問＝4a51f5f5… → B26 で 209 問＝a15e842f… → B27 で 214 問＝5d91ce8e…）。
+CANONICAL_SHA256 = "5d91ce8ef336663b4dbfd3196f59f612f504c10b307cc0280bc1c6fc304bbb69"
 
 _U_ID = re.compile(r"^u(\d+)$")
 
