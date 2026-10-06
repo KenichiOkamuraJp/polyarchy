@@ -114,8 +114,51 @@ def narration_context(sentence: str) -> tuple[str | None, str | None]:
     return single, None
 
 
-def parse(path: str) -> tuple[list[Unit], list[tuple[int, str]]]:
-    """記録を解析して (単位の列, 本文より前の行＝出席者の一覧) を返す。"""
+PAREN_HEAD = re.compile(r"^[(（]([^()（）]{1,30})[)）]\s*(.*)$")
+MARK_ONLY = re.compile(r"^[⚫●•◼■➢▶o・･]\s*$")
+SECTION = re.compile(r"^<[^>]*>$")
+
+
+def parse_paren(path: str) -> tuple[list[Unit], list[tuple[int, str]]]:
+    """デジタル庁の議事要旨（Source.record_style="paren"）。本文は「◼ 議事」の後。「(名前)本文」＝その名前の
+    発言の要約（named・名前が発言者の型に当たらなければ不明）。箇条の記号だけの行・「<…>」の節の見出しは区切り。
+    区切りの後の地の文（「冒頭、…から、…ご発言があった。」「事務局より、…説明した。」）は narration
+    （発言者は文の中の名前が 1 つのときだけ）。"""
+    lines = record_lines(path)
+    # 「◼ 議事」は 1 行のことも、「◼」と「議事」の 2 行に割れることもある（議事次第の「2. 議事」は除く）
+    start = next((k + 1 for k, (_, s) in enumerate(lines) if re.fullmatch(r"[◼■]\s*議事", s.strip())
+                  or (s.strip() == "議事" and k and lines[k - 1][1].strip() in ("◼", "■"))), len(lines))
+    head, body = lines[:start], lines[start:]
+    units: list[Unit] = []
+    cur: Unit | None = None
+    for k, (p, raw) in enumerate(body):
+        s = raw.strip()
+        if not s or MARK_ONLY.match(s) or SECTION.match(s):
+            cur = None
+            continue
+        if m := PAREN_HEAD.match(s):
+            name = m.group(1).strip()
+            named = _is_named(name)
+            cur = Unit(name if named else UNKNOWN, "named" if named else "anonymous", p, [m.group(2)], p)
+            units.append(cur)
+            continue
+        if cur is None:
+            who, _ = narration_context(_sentence(body, k))
+            if who:  # 「意見募集の結果等を事務局から報告し」＝助詞の後ろだけを名前に
+                who = re.split(r"[をはがにでと]", who)[-1]
+                who = who if _is_named(who) else None
+            cur = Unit(who or UNKNOWN, "narration", p, [s], p)
+            units.append(cur)
+            continue
+        cur.lines.append(s)
+        cur.end_page = p
+    return [u for u in units if u.text], head
+
+
+def parse(path: str, style: str = "") -> tuple[list[Unit], list[tuple[int, str]]]:
+    """記録を解析して (単位の列, 本文より前の行＝出席者の一覧) を返す。style＝Source.record_style。"""
+    if style == "paren":
+        return parse_paren(path)
     lines = _merge_marker_only(record_lines(path))
     # 本文の始まり＝最初の「○／〇」の行のうち文になっているもの（出席者の一覧の「○AI 戦略会議 構成員」を除く）
     # 規制改革推進会議の WG のように発言者の行がすべて名前だけの記録は、名前だけの最初の行から（括弧の型・府省名・役職）

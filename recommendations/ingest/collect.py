@@ -709,6 +709,9 @@ def collect_nissho(years: list[int] | None, limit: int | None,
 #           2025は直PDF、2018-2024はHTML詳細→ *_basicpolicies_ja.pdf（本文, 概要/PR資料/英語版は除外）。
 #   - kisei 規制改革推進会議: 答申等ページの**裸日付PDF** opinion/YYMMDD.pdf（答申/中間答申本文）。
 #           point/main/initiatives/_N（概要・別紙・分割版）は除外。日付は6桁stem=20YYMMDD。
+#   - dsgl デジタル社会推進標準ガイドライン DS-920（生成AIの調達・利活用に係るガイドライン・デジタル社会推進会議幹事会決定）:
+#           版ごとのお知らせページの本文 PDF（*_guideline_01.pdf）。概要・英語版・見え消し版は採らない。新しい版はページを足す。
+#   - juten デジタル社会の実現に向けた重点計画（閣議決定）: 現行と過去資料のページの「本文」PDF（統合版・概要は採らない）。2024 年版から。
 #   - zaiseishin 財政制度等審議会: 答申・報告ページの**建議**リンク→詳細ページ先頭PDF(=01.pdf=建議本文)。
 #           02+（概要・参考資料）は本文でないので採らない。日付は詳細dir zaiseiaYYYYMMDD 由来。
 #   - zeicho 政府税制調査会: 現行サイトは議事録/会議資料のみで答申アーカイブが無い →
@@ -717,6 +720,13 @@ def collect_nissho(years: list[int] | None, limit: int | None,
 
 CEFP_CABINET = "https://www5.cao.go.jp/keizai-shimon/kaigi/cabinet/cabinet-index.html"
 KISEI_REPORT = "https://www8.cao.go.jp/kisei-kaikaku/kisei/publication/p_report.html"
+DSGL_PAGES = (  # DS-920 の版ごとのお知らせページ（初版 2025-05-27・第 2.0 版 2026-06-12）
+    "https://www.digital.go.jp/news/3579c42d-b11c-4756-b66e-3d3e35175623",
+    "https://www.digital.go.jp/news/decb64eb-f26e-41cb-8d37-f3dd173108b8",
+)
+JUTEN_PAGES = ("https://www.digital.go.jp/policies/priority-policy-program",
+               "https://www.digital.go.jp/policies/priority-policy-program-past")
+JUTEN_FROM = "20240101"  # 2021〜2023 年版は本文・工程表・別冊を 1 本にまとめた別の型（範囲外）
 ZAISEISHIN_REPORT = ("https://www.mof.go.jp/about_mof/councils/fiscal_system_council/"
                      "sub-of_fiscal_system/report/index.html")
 
@@ -924,6 +934,51 @@ def gov_aiplan_index() -> list[dict]:
     return entries
 
 
+def gov_dsgl_index() -> list[dict]:
+    """DS-920（行政の進化と革新のための生成AIの調達・利活用に係るガイドライン）の本文 PDF を版ごとに返す。
+    日付は本文 PDF の名前の YYYYMMDD＝表紙の決定日（初版・第 2.0 版で一致を確認）。"""
+    pat = re.compile(r"/(\d{8})_resources_standard_guidelines_guideline_01\.pdf$")
+    entries, seen = [], set()
+    for page in DSGL_PAGES:
+        soup = BeautifulSoup(_get(page).text, "html.parser")
+        for a in soup.find_all("a", href=True):
+            href = urljoin(page, a["href"])
+            m = pat.search(href)
+            txt = re.sub(r"\s*（PDF.*$", "", " ".join(a.get_text().split()))
+            if not m or m.group(1) in seen or not txt.startswith("行政の進化と革新のための生成AIの調達"):
+                continue
+            ymd = m.group(1)
+            seen.add(ymd)
+            y, mo, d = int(ymd[:4]), int(ymd[4:6]), int(ymd[6:8])
+            entries.append({
+                "source": "dsgl", "num": ymd, "title": f"{txt}（DS-920・{y}年{mo}月{d}日 デジタル社会推進会議幹事会決定）",
+                "date": f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}", "doc_type": "方針", "pdf_url": href, "html_url": None,
+            })
+    return entries
+
+
+def gov_juten_index() -> list[dict]:
+    """デジタル社会の実現に向けた重点計画（閣議決定）の本文 PDF（リンクの文字列が「本文」）を年版ごとに返す。"""
+    pat = re.compile(r"/(\d{8})_policies_priority_outline_\d+\.pdf$")
+    entries, seen = [], set()
+    for page in JUTEN_PAGES:
+        soup = BeautifulSoup(_get(page).text, "html.parser")
+        for a in soup.find_all("a", href=True):
+            href = urljoin(page, a["href"])
+            m = pat.search(href)
+            txt = " ".join(a.get_text().split())
+            if not m or not txt.startswith("本文") or m.group(1) in seen or m.group(1) < JUTEN_FROM:
+                continue
+            ymd = m.group(1)
+            seen.add(ymd)
+            y, mo, d = int(ymd[:4]), int(ymd[4:6]), int(ymd[6:8])
+            entries.append({
+                "source": "juten", "num": ymd, "title": f"デジタル社会の実現に向けた重点計画（令和{y - 2018}年{mo}月{d}日閣議決定）",
+                "date": f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}", "doc_type": "方針", "pdf_url": href, "html_url": None,
+            })
+    return entries
+
+
 def _title_with_subtitle(pdf_path: Path, title: str) -> str:
     """本文 1 頁目の「<title>」の次の行が「～…～」なら副題として足す（版の見分け）。無ければ title のまま。"""
     import fitz  # PyMuPDF（取込側と同じ抽出器）
@@ -937,12 +992,13 @@ def _title_with_subtitle(pdf_path: Path, title: str) -> str:
 
 GOV_SOURCES = {"cefp": gov_cefp_index, "kisei": gov_kisei_index,
                "zaiseishin": gov_zaiseishin_index,
-               "dgk": gov_dgk_index, "aiplan": gov_aiplan_index}
+               "dgk": gov_dgk_index, "aiplan": gov_aiplan_index,
+               "dsgl": gov_dsgl_index, "juten": gov_juten_index}
 
 
 def collect_gov(years: list[int] | None, limit: int | None,
                 skip_existing: bool = False, source: str | None = None) -> list[dict]:
-    """政府(諮問会議/規制改革/財政審/デジタル行財政改革会議/人工知能基本計画)の成果文書を収集。
+    """政府(諮問会議/規制改革/財政審/デジタル行財政改革会議/人工知能基本計画/DS-920/重点計画)の成果文書を収集。
 
     source 指定で単一サブ系統のみ（スパイク/テスト用）。years 指定で発行年フィルタ。
     limit はサブ系統ごとの取得上限（横断合計でなく各系統に適用）。
@@ -1125,7 +1181,7 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None, help="取得PDF数の上限（スパイク用）")
     ap.add_argument("--skip-existing", action="store_true", help="既存ファイルは再取得しない")
     ap.add_argument("--source", choices=list(GOV_SOURCES), default=None,
-                    help="政府のサブ系統を1つに限定（cefp/kisei/zaiseishin/dgk/aiplan）")
+                    help="政府のサブ系統を1つに限定（cefp/kisei/zaiseishin/dgk/aiplan/dsgl/juten）")
     args = ap.parse_args()
 
     print(f"収集: {args.org}  years={args.years}  limit={args.limit}  "

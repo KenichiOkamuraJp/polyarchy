@@ -2643,5 +2643,65 @@
   "expected_source": "gov_aiplan_20260714.pdf",
   "expected_org": "gov",
   "qtype": "temporal"
+ },
+ {
+  "id": "232",
+  "question": "デジタル社会の実現に向けた重点計画（2026年7月閣議決定）は、AIエージェントが個人に代わってどのように行政手続を進める姿を描き、政府横断の法制度の見直しを何の実現に向けたものとしているか。",
+  "expected_keywords": [
+   "AIエージェント",
+   "AI駆動型国家",
+   "自律的に取得"
+  ],
+  "expected_source": "gov_juten_20260721.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "233",
+  "question": "デジタル社会の実現に向けた重点計画（2025年6月閣議決定）は、AI・デジタル技術の徹底活用の項目の中で、地方創生2.0をどのような取組として位置付けているか。",
+  "expected_keywords": [
+   "地方創生2.0",
+   "地域におけるデジタル・新技術の徹底活用",
+   "AI・デジタル技術等のテクノロジーの徹底活用"
+  ],
+  "expected_source": "gov_juten_20250613.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "234",
+  "question": "行政の進化と革新のための生成AIの調達・利活用に係るガイドライン（第2.0版）は、生成AIシステム特有のリスクケースが発生したときの対応として、どの資料を参照し、どのような仕組みの実現方法を示すよう求めているか。",
+  "expected_keywords": [
+   "AIインシデントレスポンス・アプローチブック",
+   "代替モデル",
+   "悪意のある学習データ"
+  ],
+  "expected_source": "gov_dsgl_20260612.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "235",
+  "question": "政府の生成AIの調達・利活用に係るガイドラインの初版（2025年5月 デジタル社会推進会議幹事会決定）は、対象とする生成AIをどう限定していたか。",
+  "expected_keywords": [
+   "テキスト生成AI",
+   "大規模言語モデル(LLM)を構成要素とする",
+   "画像や動画等を生成するAI"
+  ],
+  "expected_source": "gov_dsgl_20250527.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "236",
+  "question": "政府の生成AIの調達・利活用に係るガイドラインの第2.0版（2026年6月）は、対象とする生成AIの入力と出力をどう定めているか。",
+  "expected_keywords": [
+   "入力はテキスト及び音声",
+   "出力はテキスト、画像又は音声",
+   "AIガバナンスの枠組みの対象"
+  ],
+  "expected_source": "gov_dsgl_20260612.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
  }
 ]

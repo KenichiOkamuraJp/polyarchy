@@ -34,7 +34,7 @@ from deliberations.ingest.sources import (BROWSER_UA, BROWSER_UA_HOSTS, BY_ORG, 
 
 JST = timezone(timedelta(hours=9))
 RECORD_LABEL = re.compile(r"議事録|議事要旨|議事概要")
-NONPUBLIC = re.compile(r"[【（(](非公開|非公表)[】）)]")
+NONPUBLIC = re.compile(r"[【（(](非公開|非公表)[】）)]|※\s*(非公開|非公表)")  # 「※非公表」＝デジタル庁
 FILE_EXT = re.compile(r"(?i)\.(pdf|xlsx?|docx?|pptx?)$")
 _last = [0.0]
 
@@ -110,7 +110,8 @@ def nonpublic_items(page: str) -> list[dict]:
 
 def page_date(page: str) -> str | None:
     t = unicodedata.normalize("NFKC", _text(_strip_noise(page)))
-    m = re.search(r"令和\s*([0-9]+|元)\s*年\s*([0-9]+)\s*月\s*([0-9]+)\s*日", t)
+    # 「令和7年（2025年）9月18日」（デジタル庁）の西暦の括弧も読み飛ばす
+    m = re.search(r"令和\s*([0-9]+|元)\s*年\s*(?:[（(]\s*\d{4}\s*年\s*[）)])?\s*([0-9]+)\s*月\s*([0-9]+)\s*日", t)
     if not m:
         return None
     y = 1 if m.group(1) == "元" else int(m.group(1))
@@ -184,6 +185,17 @@ def _get(url: str, path: str, offline: bool, refetch: bool = False) -> tuple[byt
     return body, True
 
 
+def _session_no(src: Source, a: dict) -> int | None:
+    """一覧のリンク → 回次。回の URL に回次があればそこから（括弧の組 1）、無ければリンクの文字列の「第N回」から。"""
+    m = re.search(src.session_href, a["href"])
+    if not m:
+        return None
+    if m.groups():
+        return int(m.group(1))
+    k = re.search(r"第\s*(\d+)\s*回", unicodedata.normalize("NFKC", a["label"]))
+    return int(k.group(1)) if k else None
+
+
 def collect_source(src: Source, offline: bool, refresh_pages: bool, old: dict) -> list[dict]:
     """1 会議体分の目録の行を返す。"""
     rows: list[dict] = []
@@ -193,8 +205,8 @@ def collect_source(src: Source, offline: bool, refresh_pages: bool, old: dict) -
         return rows
     idx = idx_raw.decode("utf-8", "replace")
     links = anchors(idx, src.index, from_h1=False)
-    sessions = sorted({int(m.group(1)): a["href"] for a in links
-                       if (m := re.search(src.session_href, a["href"]))}.items())
+    sessions = sorted({n: a["href"] for a in links
+                       if (n := _session_no(src, a)) is not None}.items())
     records: dict[int, list[dict]] = {}
     for a in links:
         m = re.search(src.record_href, a["href"])

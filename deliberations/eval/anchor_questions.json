@@ -1,26 +1,28 @@
 {
  "meta": {
-  "状態": "確定（M0・2026-10-03＝本人の確認 2 回）＋第 2 便の K01〜K10（2026-10-06・本人の確認待ち）",
+  "状態": "確定（M0・2026-10-03＝本人の確認 2 回）＋第 2 便の K01〜K10・L01〜L06（2026-10-06・本人の確認待ち）",
   "作成": "2026-10-03",
-  "問の数": 45,
+  "問の数": 51,
   "型の内訳": {
    "A_政務・回次の特定": 10,
-   "B_名前つき要約・逐語（発言者の特定）": 18,
+   "B_名前つき要約・逐語（発言者の特定）": 22,
    "C_匿名の要約（発言者は不明で返るべき）": 9,
    "D_決定文書との往復（初出の回と資料）": 5,
-   "E_ヒアリングの資料（提出者の特定）": 3
+   "E_ヒアリングの資料（提出者の特定）": 3,
+   "F_資料（回次・提出者の特定）": 2
   },
   "会議体の内訳": {
    "dgk": 11,
    "ai_hq": 5,
    "ai_senryaku": 12,
    "ai_senmon": 7,
-   "kisei_ai_wg": 10
+   "kisei_ai_wg": 10,
+   "da_ai_board": 6
   },
   "正解の照合": "evidence.quote は PyMuPDF get_text() の抽出文字列そのまま（行単位）。page は 1 始まり。",
   "path の基点": "deliberations/data/raw/",
   "確認": "第 1 回＝2026-10-03（本人・Excel）：✓32・保留 8。保留のうち 5 問（D04・D06〜D09）は外し（dropped）、3 問（A09・C05・C06）は書き直した。 第 2 回＝2026-10-03：変えた 12 問すべて ✓（全 35 問 ✓）。",
-  "第2便": "K01〜K10＝規制改革推進会議 デジタル・AIワーキング・グループ（2026-10-06 作成）。引用は抽出行そのまま・発言の範囲（answer_span）は原文の「○」の行から次の「○」の行の前まで。review は「未」＝本人の確認待ち"
+  "第2便": "K01〜K10＝規制改革推進会議 デジタル・AIワーキング・グループ（2026-10-06 作成）。引用は抽出行そのまま・発言の範囲（answer_span）は原文の「○」の行から次の「○」の行の前まで。review は「未」＝本人の確認待ち。L01〜L06＝先進的AI利活用アドバイザリーボード（デジタル庁・2026-10-06 作成）。議事要旨は「(名前)本文」の型＝answer_span は「(名前)」の行から次の箇条の記号・節の見出し・「(名前)」の行の前まで"
  },
  "questions": [
   {
@@ -2264,6 +2266,278 @@
     "page": 12,
     "line": "○経済産業省(石曽根ロボット政策室長)"
    },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "L01",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "先進的AI利活用アドバイザリーボードの第1回で、今後の生成AIのキーワードはマルチエージェントで、複数のAIシステムが連携する過程で生じる「誤動作」が課題になると述べた構成員は誰か。",
+   "expected": {
+    "path": "da_ai_board/01/20250918_meeting_ai-advisory_summary_09.pdf",
+    "page": 4,
+    "org": "da_ai_board",
+    "session_no": 1,
+    "date": "2025-09-18",
+    "material_no": "",
+    "material_name": "議事要旨（PDF／585KB）",
+    "doc_kind": "議事要旨",
+    "speaker": "北村構成員",
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "da_ai_board/01/20250918_meeting_ai-advisory_summary_09.pdf",
+     "start_page": 4,
+     "end_page": 4,
+     "first_line": "(北村構成員)今後の生成AI のキーワードはマルチエージェント。従来は生成結果に含まれる『誤回答』が課題だっ",
+     "last_line": "—が課題になる。",
+     "lines": 3
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "da_ai_board/01/20250918_meeting_ai-advisory_summary_09.pdf",
+     "page": 4,
+     "quote": [
+      "(北村構成員)今後の生成AI のキーワードはマルチエージェント。従来は生成結果に含まれる『誤回答』が課題だっ"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 4,
+    "line": "(北村構成員)今後の生成AI のキーワードはマルチエージェント。従来は生成結果に含まれる『誤回答』が課題だっ"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "L02",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "先進的AI利活用アドバイザリーボードで、半年〜1年単位で規程やガイドラインを改訂する方式には限界があり、変更点を随時公表する仕組みが要ると述べた構成員は誰か。",
+   "expected": {
+    "path": "da_ai_board/03/20260408_meeting_ai-advisory_summary_05.pdf",
+    "page": 6,
+    "org": "da_ai_board",
+    "session_no": 3,
+    "date": "2026-03-10",
+    "material_no": "",
+    "material_name": "議事要旨（PDF／766KB）",
+    "doc_kind": "議事要旨",
+    "speaker": "北村構成員",
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "da_ai_board/03/20260408_meeting_ai-advisory_summary_05.pdf",
+     "start_page": 6,
+     "end_page": 6,
+     "first_line": "(北村構成員)AI を取り巻く環境は急速に変化しており、従来のように半年〜1年単位で規程やガイドラインを",
+     "last_line": "した形での運用の在り方を検討することが重要である。",
+     "lines": 4
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "da_ai_board/03/20260408_meeting_ai-advisory_summary_05.pdf",
+     "page": 6,
+     "quote": [
+      "(北村構成員)AI を取り巻く環境は急速に変化しており、従来のように半年〜1年単位で規程やガイドラインを",
+      "改訂する方式には限界がある。そのため、変更点や更新内容を随時公表する仕組みとして、いわゆるリリースノート"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 6,
+    "line": "(北村構成員)AI を取り巻く環境は急速に変化しており、従来のように半年〜1年単位で規程やガイドラインを"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "L03",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "先進的AI利活用アドバイザリーボード第5回で、民間ではシャドーAIなど、AIツールが導入されていること自体を把握できていない例が多いと指摘した構成員は誰か。",
+   "expected": {
+    "path": "da_ai_board/05/20260825_meeting_ai-advisory_summary_06.pdf",
+    "page": 2,
+    "org": "da_ai_board",
+    "session_no": 5,
+    "date": "2026-07-14",
+    "material_no": "",
+    "material_name": "議事要旨（PDF／730KB）",
+    "doc_kind": "議事要旨",
+    "speaker": "佐久間構成員",
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "da_ai_board/05/20260825_meeting_ai-advisory_summary_06.pdf",
+     "start_page": 2,
+     "end_page": 2,
+     "first_line": "(佐久間構成員)民間実務において、「シャドーAI」をはじめとして、AI ツールが導入されていること自体を把握で",
+     "last_line": "管理すべきとしているものの、今後も留意が必要である。",
+     "lines": 17
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "da_ai_board/05/20260825_meeting_ai-advisory_summary_06.pdf",
+     "page": 2,
+     "quote": [
+      "(佐久間構成員)民間実務において、「シャドーAI」をはじめとして、AI ツールが導入されていること自体を把握で",
+      "きていないパターンが多々見られる。AI ガバナンス協会において50 社程度に対しアンケートを取ったところ、AI として"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 2,
+    "line": "(佐久間構成員)民間実務において、「シャドーAI」をはじめとして、AI ツールが導入されていること自体を把握で"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "L04",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "生成AIの調達・利活用ガイドラインの改訂に向けて、経団連関係企業へのヒアリング結果をアドバイザリーボードで報告した構成員は誰か。",
+   "expected": {
+    "path": "da_ai_board/02/20260113_meeting_ai-advisory_summary_06.pdf",
+    "page": 6,
+    "org": "da_ai_board",
+    "session_no": 2,
+    "date": "2026-01-13",
+    "material_no": "",
+    "material_name": "議事要旨（PDF／689KB）",
+    "doc_kind": "議事要旨",
+    "speaker": "永沼構成員",
+    "speaker_role": "構成員（政府外）",
+    "answer_span": {
+     "path": "da_ai_board/02/20260113_meeting_ai-advisory_summary_06.pdf",
+     "start_page": 6,
+     "end_page": 6,
+     "first_line": "(永沼構成員)ガイドライン改訂にあたり、第1 回アドバイザリーボードで示された各論点について、令和7 年12 月に",
+     "last_line": "ロスリファレンスの明確化や、将来的な集約の検討を求める意見が示された。",
+     "lines": 16
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "da_ai_board/02/20260113_meeting_ai-advisory_summary_06.pdf",
+     "page": 6,
+     "quote": [
+      "経団連関係企業へのヒアリングを実施した。ガイドラインの対象AI の拡大について反対意見はなく、技術進展の速い分"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 6,
+    "line": "(永沼構成員)ガイドライン改訂にあたり、第1 回アドバイザリーボードで示された各論点について、令和7 年12 月に"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "L05",
+   "type": "F_資料（回次・提出者の特定）",
+   "question": "デジタル庁が先進的AI利活用アドバイザリーボードに示した資料では、生成AI利用環境「源内」をどのようなスケジュールで政府内に展開するとしていたか。",
+   "expected": {
+    "path": "da_ai_board/02/20260113_meeting_ai-advisory_outline_02.pdf",
+    "page": 14,
+    "org": "da_ai_board",
+    "session_no": 2,
+    "date": "2026-01-13",
+    "material_no": "資料2",
+    "material_name": "ガバメントAIの取組について（PDF／7,001KB）",
+    "presenter": "事務局",
+    "presenter_type": "事務局"
+   },
+   "evidence": [
+    {
+     "path": "da_ai_board/02/20260113_meeting_ai-advisory_outline_02.pdf",
+     "page": 14,
+     "quote": [
+      "2026年1月~",
+      "一部省庁で試験的利用(リリース1.0)規模:全体で数百人"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": null,
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "L06",
+   "type": "F_資料（回次・提出者の特定）",
+   "question": "先進的AI利活用アドバイザリーボード第6回で構成員が提出した資料は、日本ディープラーニング協会のどのような認証制度を紹介しているか。",
+   "expected": {
+    "path": "da_ai_board/06/20260929_meeting_ai-advisory_outline05.pdf",
+    "page": 2,
+    "org": "da_ai_board",
+    "session_no": 6,
+    "date": "2026-09-29",
+    "material_no": "資料5",
+    "material_name": "柴山構成員提出資料（PDF／448KB）",
+    "presenter": "柴山構成員",
+    "presenter_type": "構成員（政府外）"
+   },
+   "evidence": [
+    {
+     "path": "da_ai_board/06/20260929_meeting_ai-advisory_outline05.pdf",
+     "page": 2,
+     "quote": [
+      "AIを安全に開発・利用するための最低限のガバナンスを",
+      "構築していることを、JDLAが認証し第三者的に示す制度"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": null,
    "note": "",
    "要確認": null,
    "review": [

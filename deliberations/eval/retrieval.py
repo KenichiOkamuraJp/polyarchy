@@ -30,13 +30,13 @@ def frags(q: dict) -> list[str]:
     out = []
     for ev in q["evidence"]:
         for line in ev["quote"]:
-            f = re.sub(r"^[○〇・･]", "", n(line))
+            f = re.sub(r"^[○〇・･]|^\([^()]{1,30}\)", "", n(line))  # デジタル庁の議事要旨の(名前)も外す
             if len(f) >= 12:
                 out.append(f[:20])
     sp = q["expected"].get("answer_span")
     if sp:
         f = re.sub(r"^[○〇・･]", "", n(sp["first_line"]))
-        f = re.sub(r"^【[^】]*】", "", f)
+        f = re.sub(r"^【[^】]*】|^\([^()]{1,30}\)", "", f)
         if len(f) >= 12:
             out.append(f[-15:])
     return out

@@ -97,7 +97,7 @@ def build_material(row: dict) -> tuple[dict, list[dict]]:
 
 def build_record(row: dict) -> tuple[dict, list[dict]]:
     src = BY_ORG[row["org"]]
-    us, head = records.parse(row["path"])
+    us, head = records.parse(row["path"], src.record_style)
     head_text = "".join(s for _, s in head)
     us = [x for u in records.merge_named(us) for x in records.split_long(u)]
     rtype = records.record_type(us)

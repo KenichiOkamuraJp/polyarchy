@@ -21,6 +21,9 @@ class Source:
     # ヒアリングの会議（出席者が委員等・事務局・関係者〔府省と外部の団体〕に分かれる）。委員・事務局・府省の型に
     # 当たらない提出者・発言者（「団体名（氏名 役職）」・「…提出資料」）を外部（ヒアリング）と読む（attribution.py）
     hearing: bool = False
+    # 記録の書式。""＝第 1 便の型（○・【】・箇条）。"paren"＝デジタル庁の議事要旨（「◼ 議事」の後に
+    # 「(生田目構成員)本文」「(事務局)本文」が箇条の記号の行〔⚫・➢・o〕と交互に並ぶ）＝records.py
+    record_style: str = ""
 
 
 SOURCES: tuple[Source, ...] = (
@@ -44,6 +47,12 @@ SOURCES: tuple[Source, ...] = (
            "https://www8.cao.go.jp/kisei-kaikaku/kisei/meeting/meeting.html",
            r"/wg/2501_06ai/\d{6}/ai(\d+)_agenda\.html$", r"/wg/2501_06ai/\d{6}/ai(\d+)_minutes\.pdf$", 2,
            ("内閣府規制改革推進室",), hearing=True),  # 議事録の出席者欄の（事務局）（第 1〜10 回）
+    # デジタル庁の会議は回の URL に回次が無い（uuid）＝session_href に括弧の組が無いときは、リンクの文字列
+    # 「第N回」から回次を読む（collect.py）。記録は回のページにある（一覧には無い）
+    Source("da_ai_board", "先進的AI利活用アドバイザリーボード", "デジタル庁",
+           "https://www.digital.go.jp/councils/ai-advisory-board",
+           r"/councils/ai-advisory-board/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", r"(?!)", 3,
+           ("デジタル庁",), record_style="paren"),  # 議事要旨の出席者欄の「(2) デジタル庁」＝開催する庁
 )
 
 BY_ORG = {s.org: s for s in SOURCES}

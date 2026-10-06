@@ -41,7 +41,7 @@ def find_unit(units: list[dict], quote: list[str], speaker: str = "", page: int 
         frag = re.sub(r"^[○〇・･]", "", n(q))
         if speaker and frag.startswith(n(speaker)):
             frag = frag[len(n(speaker)):]
-        frag = re.sub(r"^【[^】]*】", "", frag)
+        frag = re.sub(r"^【[^】]*】|^\([^()]{1,30}\)", "", frag)  # 見出し【名前】・デジタル庁の議事要旨の(名前)
         if len(frag) >= 10:
             frags.append(frag)
     for frag in sorted(frags, key=len, reverse=True):
