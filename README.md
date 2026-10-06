@@ -127,7 +127,7 @@ Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃＝v5 データは S3 `d
 
 | ゲート | 基準 |
 |---|---|
-| `python -m deliberations.eval.retrieval` | hit@5 96.1% / MRR 0.844（アンカー問 51＝M0 で本人が確定した 35＋2026-10-06 に足した 16〔本人の確認待ち〕・ミス 2＝初めて出た回の型〔検索は関連度順のため後の回が上に来る＝初出の特定は利用側の期間の絞り込みと list_meeting〕） |
+| `python -m deliberations.eval.retrieval` | hit@5 96.1% / MRR 0.844（アンカー問 51＝M0 で本人が確定した 35＋2026-10-06 に足した 16〔2026-10-07 本人が確認〕・ミス 2＝初めて出た回の型〔検索は関連度順のため後の回が上に来る＝初出の特定は利用側の期間の絞り込みと list_meeting〕） |
 | `python -m deliberations.eval.attribution_gate` | 帰属の取り違え 0（M0 の帰属ラベル＝資料 40・発言 42）・全単位の fail-closed |
 | `python -m deliberations.eval.layer_gate` | 公開以外 0・機密の自己試験で遮断・layer の無い検索を拒む・匿名の単位に発言者なし |
 | `python -m deliberations.eval.mcp_smoke` | ツール 2 本・読み取り専用・layer 引数なし・返り値の帰属と注記 |
