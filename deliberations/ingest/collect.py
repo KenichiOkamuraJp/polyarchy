@@ -65,7 +65,8 @@ def _text(fragment: str) -> str:
 
 
 def _strip_noise(s: str) -> str:
-    return re.sub(r"(?is)<(script|style|head)\b.*?</\1>", "", s)
+    # HTML のコメントも除く（規制改革推進会議の回のページは差し替え前のリンクをコメントの中に残している）
+    return re.sub(r"(?is)<!--.*?-->|<(script|style|head)\b.*?</\1>", "", s)
 
 
 def anchors(page: str, base: str, from_h1: bool = True) -> list[dict]:
@@ -136,6 +137,32 @@ def material_no(prefix: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+LABEL_NO = re.compile(r"^((?:参考資料|資料)\s*[0-9０-９][0-9０-９\-－‐ー―の・]*|参考資料(?=\s))\s*(.+)$")
+# 分割版（1 つの資料を複数の PDF に分けて載せる型＝リンクの文字列は「１（PDF形式…）」だけ）。資料名と番号は最初の
+# 部分の前の文字列「資料１－２ GOGEN株式会社 御提出資料 分割版：」にあり、2 つ目以降は「／」の後に続く
+SPLIT_PART = re.compile(r"^([0-9０-９]{1,2})\s*[（(]PDF")
+
+
+def split_label(prefix: str, label: str) -> tuple[str, str]:
+    """資料番号がリンクの文字列の先頭にある型（規制改革推進会議「資料１ー１ 経済産業省提出資料」）を
+    (prefix, label) に分ける。前のセルに番号がある型（prefix に番号あり）はそのまま。"""
+    if material_no(prefix) or not (m := LABEL_NO.match(label)):
+        return prefix, label
+    return m.group(1), m.group(2).strip()
+
+
+def row_text_before(page: str, href: str) -> str:
+    """リンクの前の、同じ表の行（<tr>・<li>・<p> の始まりから）の文字列。分割版の資料名が <br> の前の
+    行の中にある型（規制改革推進会議 第 3 回）で、名前と番号を読む。"""
+    s = _strip_noise(page)
+    tail = href.rsplit("/", 1)[-1]
+    i = s.find(tail)
+    if i < 0:
+        return ""
+    j = max(s.rfind(t, 0, i) for t in ("<tr", "<li", "<p>", "<p "))
+    return _text(s[j if j >= 0 else 0: s.rfind("<a", 0, i)])
+
+
 def _local(path: str) -> bytes | None:
     p = RAW_DIR / path
     return p.read_bytes() if p.exists() else None
@@ -188,15 +215,26 @@ def collect_source(src: Source, offline: bool, refresh_pages: bool, old: dict) -
         seen = {a["href"] for a in items}
         items += [a for a in records.get(n, []) if a["href"] not in seen]
         done = set()
+        split_ctx: tuple[str, str] | None = None
         for a in items:
             if a["href"] in done:
                 continue
             done.add(a["href"])
             path = f"{d}/{a['href'].rsplit('/', 1)[-1]}"
             body, got = _get(a["href"], path, offline)
-            kind = kind_candidate(a["prefix"], a["label"])
-            rows.append({**meta, "material_name": a["label"], "material_no": material_no(a["prefix"]),
-                         "list_prefix": a["prefix"], "doc_kind": kind, "source_url": a["href"],
+            prefix, label = split_label(a["prefix"], a["label"])
+            if sp := SPLIT_PART.match(label):
+                if "分割版" in prefix:
+                    base = prefix.split("分割版")[0].strip() or row_text_before(page, a["href"]).split("分割版")[0].strip()
+                    bp, bl = split_label("", base)
+                    split_ctx = (bp, bl)
+                if split_ctx:
+                    prefix, label = split_ctx[0], f"{split_ctx[1]}（分割版 {unicodedata.normalize('NFKC', sp.group(1))}）"
+            else:
+                split_ctx = None
+            kind = kind_candidate(prefix, label)
+            rows.append({**meta, "material_name": label, "material_no": material_no(prefix),
+                         "list_prefix": prefix, "doc_kind": kind, "source_url": a["href"],
                          "path": path if body is not None else None, "public": True,
                          "fetch_error": None if body is not None else "取得できない"})
             if got:

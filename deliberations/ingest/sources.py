@@ -18,6 +18,9 @@ class Source:
     record_href: str
     batch: int         # 便（開発計画 §3.2）
     secretariat: tuple[str, ...] = ()  # その会議の事務局（記録の出席者欄の【事務局】で確かめた名前だけを書く）
+    # ヒアリングの会議（出席者が委員等・事務局・関係者〔府省と外部の団体〕に分かれる）。委員・事務局・府省の型に
+    # 当たらない提出者・発言者（「団体名（氏名 役職）」・「…提出資料」）を外部（ヒアリング）と読む（attribution.py）
+    hearing: bool = False
 
 
 SOURCES: tuple[Source, ...] = (
@@ -36,6 +39,11 @@ SOURCES: tuple[Source, ...] = (
     Source("ai_senryaku", "AI戦略会議", "内閣府",
            "https://www8.cao.go.jp/cstp/ai/ai_senryaku/ai_senryaku.html",
            r"/ai_senryaku/(\d+)kai/\1kai\.html$", r"/ai_senryaku/(\d+)kai/[^/]+\.pdf$", 1),
+    # 規制改革推進会議の WG は会議の一覧（全 WG・全期）にだけ記録が載る＝一覧はそのページ。回のフォルダは開催日（YYMMDD）
+    Source("kisei_ai_wg", "規制改革推進会議 デジタル・AIワーキング・グループ", "内閣府",
+           "https://www8.cao.go.jp/kisei-kaikaku/kisei/meeting/meeting.html",
+           r"/wg/2501_06ai/\d{6}/ai(\d+)_agenda\.html$", r"/wg/2501_06ai/\d{6}/ai(\d+)_minutes\.pdf$", 2,
+           ("内閣府規制改革推進室",), hearing=True),  # 議事録の出席者欄の（事務局）（第 1〜10 回）
 )
 
 BY_ORG = {s.org: s for s in SOURCES}

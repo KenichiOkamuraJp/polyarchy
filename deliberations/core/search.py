@@ -232,5 +232,5 @@ def coverage_note() -> str:
     parts = [f"{c['name']}（第{c['sessions'][0]}〜{c['sessions'][1]}回・{c['period'][0]}〜{c['period'][1]}）"
              for c in coverage().values() if c["period"]]
     return ("該当なし。収録＝" + "・".join(parts) + "の公開の配布資料と記録。会議の決定文書は政策主張DB"
-            "（search_policy_docs）。上の会議体以外の審議会・会議（規制改革推進会議の WG など）は未収録。")
+            "（search_policy_docs）。上の会議体以外の審議会・会議（規制改革推進会議の本会議・ほかの WG など）は未収録。")
 

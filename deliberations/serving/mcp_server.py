@@ -20,7 +20,8 @@ from polyarchy_common.logsetup import configure_quiet_logging, get_logger, guard
 INSTRUCTIONS = (
     "Polyarchy 審議会議事録DB(deliberations)。政府の会議体の過程文書＝回ごとの配布資料・議事録・議事要旨を"
     "横断検索する読み取り専用サービス(公開データのみ)。収録＝デジタル行財政改革会議(本会議)・人工知能戦略本部・"
-    "人工知能戦略専門調査会・AI戦略会議(第1便)。会議の決定文書(取りまとめ・基本計画など)は政策主張DB"
+    "人工知能戦略専門調査会・AI戦略会議・規制改革推進会議 デジタル・AIワーキング・グループ(企業・団体・府省の"
+    "ヒアリング)。会議の決定文書(取りまとめ・基本計画など)は政策主張DB"
     "(search_policy_docs)にあり、ここには入れない＝決まった内容は政策主張DB、決まるまでの議論・資料はこちら。"
     "返す断片には毎回、会議体・回次・開催日・資料番号・提出者または発言者とその区分(政務/事務局/府省・会議体/"
     "構成員(政府外)/外部(ヒアリング)/不明)・出典URLが付く。構成員(政府外)・外部・不明の断片は提出者・発言者の"
@@ -33,7 +34,8 @@ SEARCH_DESC = (
     "審議会・会議体の配布資料と議事録・議事要旨を検索する(関連度順の抜粋＋帰属)。"
     "例：「第14回デジタル行財政改革会議で担当大臣の資料は会議の改組について何と書いているか」"
     "「AI戦略会議で構成員からどんな懸念が出たか」。絞り込み＝orgs(会議体: dgk=デジタル行財政改革会議・"
-    "ai_hq=人工知能戦略本部・ai_senmon=人工知能戦略専門調査会・ai_senryaku=AI戦略会議)・since/until"
+    "ai_hq=人工知能戦略本部・ai_senmon=人工知能戦略専門調査会・ai_senryaku=AI戦略会議・"
+    "kisei_ai_wg=規制改革推進会議 デジタル・AIワーキング・グループ)・since/until"
     "(YYYYMMDD)・doc_kinds(資料/参考資料/議事録/議事要旨)・roles(政務/事務局/府省・会議体/構成員(政府外)/"
     "外部(ヒアリング)/不明)。top_k は既定 5・上限 20。ある論点が最初に出た回や前後の回を見るときは、"
     "ヒットの会議体と回次で list_meeting を呼ぶ。"
@@ -104,11 +106,12 @@ def search_deliberations(query: str, orgs: list[str] | None = None, since: int |
           annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
 def list_meeting(org: str, session_no: int) -> dict:
     from deliberations.core.search import list_meeting as _list
+    from deliberations.ingest.sources import BY_ORG
     r = _list(org, int(session_no))
     capture("list_meeting", {"org": org, "session_no": session_no}, len(r["items"]) if r else 0)
     if r is None:
         return {"found": False, "org": org, "session_no": session_no,
-                "reason": "その会議体・回次は収録していない（会議体のコードは dgk/ai_hq/ai_senmon/ai_senryaku）"}
+                "reason": f"その会議体・回次は収録していない（会議体のコードは {'/'.join(BY_ORG)}）"}
     return {"found": True, **r}
 
 

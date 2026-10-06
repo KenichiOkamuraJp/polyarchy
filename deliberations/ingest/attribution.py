@@ -26,6 +26,8 @@ KOSEI_RE = re.compile(r"(構成員|委員|座長代理|座長|主査)$")
 OFFICIAL_RE = re.compile(r"(統括官|審議官|参事官|事務局長|局長|次長|室長|部長|課長)$")
 BODY_RE = re.compile(r"(省|庁|府|事務局|推進室|委員会|会議|研究会|本部|審議会)$")
 EXTERNAL_RE = re.compile(r"株式会社|有限会社|代表取締役|取締役|社長|理事長|会長|協会|連合会|会議所|財団|社団|大学|機構|法人")
+# ヒアリングの会議（Source.hearing）だけで外部と読む語（府省・委員・事務局の型に当たらない関係者）
+HEARING_EXTERNAL_RE = re.compile(r"研究所|教授|弁護士|組合|連盟|(県|市|町|村)$")
 DATE_RE = re.compile(r"(\d{4}|令和\s*(\d+|元)|[○〇]+)\s*年\s*[\d○〇]+\s*月(\s*[\d○〇]+\s*日)?")
 
 
@@ -39,6 +41,14 @@ def _is_secretariat(name: str, src: Source) -> bool:
     return any(_ns(x) in n for x in src.secretariat) or (_ns(src.name) in n and n.endswith("事務局"))
 
 
+def _in_secretariat_section(surname: str, head_text: str) -> bool:
+    """出席者欄の「（事務局）」の節（次の「（…）」の節まで）に、その姓が書かれているか（規制改革推進会議の議事録の書式）。"""
+    if not surname:
+        return False
+    h = _ns(head_text)
+    return any(surname in seg for seg in re.findall(r"\(事務局\)(.*?)(?=\((?:委員等|関係者|有識者|説明者)\)|$)", h))
+
+
 # ── 発言者の区分 ───────────────────────────────────────────────────────────
 
 def speaker_role(speaker: str, src: Source, head_text: str = "") -> str:
@@ -46,6 +56,8 @@ def speaker_role(speaker: str, src: Source, head_text: str = "") -> str:
     s = _ns(speaker)
     if not s or s == UNKNOWN:
         return UNKNOWN
+    if src.hearing and (m := re.fullmatch(r"(.+?)\(([^()]{2,})\)", s)):
+        return _hearing_paren_role(m.group(1), m.group(2), src, head_text)  # 括弧の中の官職の「大臣官房」で政務にしない
     if "国家公安委員会委員長" in s or SEIMU_RE.search(s):
         return SEIMU
     if re.search(r"(会議|本部|審議会)議長(代理)?$", s):  # 「…会議議長」＝別の会議体の代表
@@ -62,6 +74,8 @@ def speaker_role(speaker: str, src: Source, head_text: str = "") -> str:
     if OFFICIAL_RE.search(s):  # 官職＝その会議の事務局の名が付いていれば事務局、それ以外は府省
         if _is_secretariat(s, src):
             return JIMU
+        if src.hearing and _in_secretariat_section(OFFICIAL_RE.sub("", s), head_text):
+            return JIMU  # 「大平参事官」＝出席者欄の（事務局）の節に書かれた名前
         # 「濱野事務局長」のように所属が無いときは、出席者欄で同じ姓の肩書を読む
         sur = OFFICIAL_RE.sub("", s)
         m = re.search(re.escape(sur) + r".{0,6}?([^\s]{0,40}?" + OFFICIAL_RE.pattern.rstrip("$") + ")", _ns(head_text)) if sur else None
@@ -72,7 +86,23 @@ def speaker_role(speaker: str, src: Source, head_text: str = "") -> str:
         return GAIBU
     if BODY_RE.search(s):
         return FUSHO
+    if src.hearing and HEARING_EXTERNAL_RE.search(s):
+        return GAIBU  # 「菊永弁護士」＝ヒアリングの関係者
     return UNKNOWN
+
+
+def _hearing_paren_role(org: str, person: str, src: Source, head_text: str) -> str:
+    """ヒアリングの会議の「団体名（氏名 役職）」→ 区分。府省は府省・会議体（その会議の事務局の名・出席者欄の
+    （事務局）の節の名前なら事務局）、それ以外の団体（企業・業界団体・自治体・研究機関）は外部（ヒアリング）。"""
+    if SEIMU_RE.search(org):
+        return SEIMU  # 「平大臣(ビデオメッセージ)」
+    if _is_secretariat(org, src) or _in_secretariat_section(OFFICIAL_RE.sub("", person), head_text):
+        return JIMU
+    if EXTERNAL_RE.search(org) or HEARING_EXTERNAL_RE.search(org):
+        return GAIBU
+    if re.search(r"(省|庁|府)$", org):
+        return FUSHO
+    return GAIBU
 
 
 # ── 資料の提出者 ───────────────────────────────────────────────────────────
@@ -93,8 +123,13 @@ def clean_name(name: str) -> str:
     return re.sub(r"\s*[（(]PDF[^）)]*[）)]\s*$", "", name or "").strip()
 
 
-def by_name(name: str) -> Presenter | None:
+def by_name(name: str, src: Source | None = None) -> Presenter | None:
     n = _ns(clean_name(name))
+    hearing = bool(src and src.hearing)
+    if hearing:  # 規制改革推進会議の書式：「…御提出資料」「当日投影資料 …提出資料」
+        n = re.sub(r"御提出資料", "提出資料", re.sub(r"^当日(投影|配布)資料", "", n))
+        n = re.sub(r"提出資料提出資料", "提出資料", n)
+        n = re.sub(r"（分割版\d+）$", "", n)
     rules = [
         (r"^(.*?国家公安委員会委員長)提出資料", SEIMU, "「…国家公安委員会委員長提出資料」"),
         (r"^(.+?大臣)(提出)?資料", SEIMU, "「…大臣提出資料」"),
@@ -103,13 +138,16 @@ def by_name(name: str) -> Presenter | None:
         (r"^(.+?座長(代理)?)(提出)?資料", KOSEI, "「…座長資料」"),
         (r"^(事務局)", JIMU, "「事務局…」"),
         (r"^(.+?(省|庁))提出資料", FUSHO, "「…省・庁提出資料」"),
-        (r"^(.+?(会議|本部|研究会|審議会))提出資料", FUSHO, "「…会議提出資料」＝別の政府の会議体"),
+        (r"^(.+?(会議|本部|審議会))提出資料" if hearing else r"^(.+?(会議|本部|研究会|審議会))提出資料", FUSHO,
+         "「…会議提出資料」＝別の政府の会議体"),
         (r"^(.*?(株式会社|法人|協会|連合会|会議所|大学|財団|機構).*?)提出資料", GAIBU, "「法人・団体名＋提出資料」"),
     ]
     for pat, typ, rule in rules:
         if m := re.match(pat, n):
             pres = m.group(1)
             return Presenter(typ, pres if pres != "構成員" else UNKNOWN, "資料名", rule)
+    if hearing and (m := re.match(r"^(.+?)提出資料$", n)):
+        return Presenter(GAIBU, m.group(1), "資料名", "ヒアリングの会議の「…提出資料」で、委員・事務局・府省の型に当たらない＝関係者（外部）")
     if re.match(r"^(.+?)提出資料$", n):
         return Presenter(UNKNOWN, re.sub(r"提出資料$", "", n), "資料名", "「…提出資料」だが区分の型に当たらない＝既定にしない")
     return None
@@ -198,7 +236,7 @@ def origin_of(path: str) -> tuple[str, str]:
 def material_presenter(row: dict, src: Source) -> Presenter:
     """目録の 1 行（資料・参考資料）→ 提出者。"""
     name = _ns(clean_name(row.get("material_name", "")))
-    p = by_name(row.get("material_name", ""))
+    p = by_name(row.get("material_name", ""), src)
     if not p and (re.search(r"名簿", name) or re.search(r"(会議|本部|チーム)構成員$", name)):
         res = Presenter(JIMU, JIMU, "既定", "名簿＝会議資料の慣行により事務局（M0 の確認）")
     elif p and p.presenter_type != KOSEI or (p and p.presenter != UNKNOWN):

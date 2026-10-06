@@ -122,6 +122,8 @@ def main() -> None:
     for row in rows:
         if not row.get("path") or not row["path"].lower().endswith(".pdf"):
             continue
+        if row["doc_kind"] == "議事次第":  # 議事次第の PDF（議題の一覧）は検索の単位にしない＝回のページと list_meeting で足りる
+            continue
         d, u = (build_record if row["doc_kind"] == "記録" else build_material)(row)
         docs.append(d)
         units += u

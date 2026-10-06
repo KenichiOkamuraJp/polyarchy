@@ -1,23 +1,26 @@
 {
  "meta": {
-  "状態": "確定（M0・2026-10-03＝本人の確認 2 回）",
+  "状態": "確定（M0・2026-10-03＝本人の確認 2 回）＋第 2 便の K01〜K10（2026-10-06・本人の確認待ち）",
   "作成": "2026-10-03",
-  "問の数": 35,
+  "問の数": 45,
   "型の内訳": {
    "A_政務・回次の特定": 10,
-   "B_名前つき要約・逐語（発言者の特定）": 11,
+   "B_名前つき要約・逐語（発言者の特定）": 18,
    "C_匿名の要約（発言者は不明で返るべき）": 9,
-   "D_決定文書との往復（初出の回と資料）": 5
+   "D_決定文書との往復（初出の回と資料）": 5,
+   "E_ヒアリングの資料（提出者の特定）": 3
   },
   "会議体の内訳": {
    "dgk": 11,
    "ai_hq": 5,
    "ai_senryaku": 12,
-   "ai_senmon": 7
+   "ai_senmon": 7,
+   "kisei_ai_wg": 10
   },
   "正解の照合": "evidence.quote は PyMuPDF get_text() の抽出文字列そのまま（行単位）。page は 1 始まり。",
   "path の基点": "deliberations/data/raw/",
-  "確認": "第 1 回＝2026-10-03（本人・Excel）：✓32・保留 8。保留のうち 5 問（D04・D06〜D09）は外し（dropped）、3 問（A09・C05・C06）は書き直した。 第 2 回＝2026-10-03：変えた 12 問すべて ✓（全 35 問 ✓）。"
+  "確認": "第 1 回＝2026-10-03（本人・Excel）：✓32・保留 8。保留のうち 5 問（D04・D06〜D09）は外し（dropped）、3 問（A09・C05・C06）は書き直した。 第 2 回＝2026-10-03：変えた 12 問すべて ✓（全 35 問 ✓）。",
+  "第2便": "K01〜K10＝規制改革推進会議 デジタル・AIワーキング・グループ（2026-10-06 作成）。引用は抽出行そのまま・発言の範囲（answer_span）は原文の「○」の行から次の「○」の行の前まで。review は「未」＝本人の確認待ち"
  },
  "questions": [
   {
@@ -1813,6 +1816,462 @@
      "comment": "",
      "date": "2026-10-03",
      "round": 2
+    }
+   ]
+  },
+  {
+   "id": "K01",
+   "type": "E_ヒアリングの資料（提出者の特定）",
+   "question": "規制改革推進会議のデジタル・AIワーキング・グループで、データセンター事業者側は、過去にどの電池設備で建築基準法上の緩和が適用された例を挙げ、リチウムイオン蓄電池について何を求めたか。",
+   "expected": {
+    "path": "kisei_ai_wg/10/ai10_0102.pdf",
+    "page": 5,
+    "org": "kisei_ai_wg",
+    "session_no": 10,
+    "date": "2026-05-15",
+    "material_no": "資料１－２",
+    "material_name": "特定非営利活動法人日本データセンター協会／ＮＴＴグローバルデータセンター・ジャパン株式会社／グーグル・クラウド・ジャパン合同会社提出資料（PDF形式：914KB）",
+    "presenter": "特定非営利活動法人日本データセンター協会／ＮＴＴグローバルデータセンター・ジャパン株式会社／グーグル・クラウド・ジャパン合同会社",
+    "presenter_type": "外部（ヒアリング）"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/10/ai10_0102.pdf",
+     "page": 5,
+     "quote": [
+      "過去にNAS 電池設備においても建築基準法において条件を満たすことで特例(消"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": null,
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "K02",
+   "type": "E_ヒアリングの資料（提出者の特定）",
+   "question": "デジタル・AIワーキング・グループ第10回で、国立情報学研究所の有識者は、データセンターのリチウムイオン蓄電池にUL規格を導入することについて、どのような前提を置くべきだとしたか。",
+   "expected": {
+    "path": "kisei_ai_wg/10/ai10_0107.pdf",
+    "page": 2,
+    "org": "kisei_ai_wg",
+    "session_no": 10,
+    "date": "2026-05-15",
+    "material_no": "資料１－７",
+    "material_name": "国立情報学研究所佐藤一郎教授提出資料（PDF形式：64KB）",
+    "presenter": "国立情報学研究所佐藤一郎教授",
+    "presenter_type": "外部（ヒアリング）"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/10/ai10_0107.pdf",
+     "page": 2,
+     "quote": [
+      "が、住宅地・商業地への近接、狭隘道路といった日本のDCの特性と合致する",
+      "ことを前提にすべきであり、UL規格の拡張や適用地域の限定を含めて、導入"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": null,
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "K03",
+   "type": "E_ヒアリングの資料（提出者の特定）",
+   "question": "規制改革推進会議のWGに消防庁が提出した資料では、リチウムイオン蓄電池の電解液は消防法上どの危険物に当たり、どれだけの量から危険物施設としての安全対策が求められるとしているか。",
+   "expected": {
+    "path": "kisei_ai_wg/10/ai10_0105.pdf",
+    "page": 3,
+    "org": "kisei_ai_wg",
+    "session_no": 10,
+    "date": "2026-05-15",
+    "material_no": "資料１－５",
+    "material_name": "消防庁提出資料（PDF形式：432KB）",
+    "presenter": "消防庁",
+    "presenter_type": "府省・会議体"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/10/ai10_0105.pdf",
+     "page": 3,
+     "quote": [
+      "〇リチウムイオン蓄電池について、内部の電解液が消防法上の危険物(引火性液体:第4類第2石油類等)に該当する。"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": null,
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "K04",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "デジタル・AIワーキング・グループ第10回で、AIデータセンターのラック当たりの消費電力が従来のデータセンターの常識を超えるレベルに達していると説明したのは誰か。",
+   "expected": {
+    "path": "kisei_ai_wg/10/ai10_minutes.pdf",
+    "page": 5,
+    "org": "kisei_ai_wg",
+    "session_no": 10,
+    "date": "2026-05-15",
+    "material_no": "",
+    "material_name": "議事録（PDF形式:532KB）",
+    "doc_kind": "議事録",
+    "speaker": "グーグル・クラウド・ジャパン合同会社(金井ジャパンリード)",
+    "speaker_role": "外部（ヒアリング）",
+    "answer_span": {
+     "path": "kisei_ai_wg/10/ai10_minutes.pdf",
+     "start_page": 4,
+     "end_page": 6,
+     "first_line": "○グーグル・クラウド・ジャパン合同会社(金井ジャパンリード)",
+     "last_line": "パナソニックさん、お願いします。",
+     "lines": 56
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/10/ai10_minutes.pdf",
+     "page": 5,
+     "quote": [
+      "だ結果、ラック当たりの消費電力は従来のデータセンターの常識を超えるレベルに達し"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 4,
+    "line": "○グーグル・クラウド・ジャパン合同会社(金井ジャパンリード)"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "K05",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "規制改革推進会議のWGで弁護士法72条とAIリーガルテックが議論された回に、法務省は72条がリーガルテックそのものを規制するものかについてどう説明したか。",
+   "expected": {
+    "path": "kisei_ai_wg/06/ai06_minutes.pdf",
+    "page": 16,
+    "org": "kisei_ai_wg",
+    "session_no": 6,
+    "date": "2026-01-09",
+    "material_no": "",
+    "material_name": "議事録（PDF形式:435KB）",
+    "doc_kind": "議事録",
+    "speaker": "法務省(神渡課長)",
+    "speaker_role": "府省・会議体",
+    "answer_span": {
+     "path": "kisei_ai_wg/06/ai06_minutes.pdf",
+     "start_page": 15,
+     "end_page": 18,
+     "first_line": "○法務省(神渡課長)",
+     "last_line": "以上です。",
+     "lines": 94
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/06/ai06_minutes.pdf",
+     "page": 16,
+     "quote": [
+      "士又は弁護士法人ではない者が非弁活動を行うことを規制するものであって、リーガル",
+      "テックそのものを規制するものではございません。あくまで弁護士法72条の規定は、用"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 15,
+    "line": "○法務省(神渡課長)"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "K06",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "政府情報システムの調達・開発へのAI駆動開発の導入を議論したWGで、デジタル庁は庁内の開発環境に開発支援AIをいつから導入したと説明したか。",
+   "expected": {
+    "path": "kisei_ai_wg/08/ai08_minutes.pdf",
+    "page": 21,
+    "org": "kisei_ai_wg",
+    "session_no": 8,
+    "date": "2026-04-16",
+    "material_no": "",
+    "material_name": "議事録（PDF形式:518KB）",
+    "doc_kind": "議事録",
+    "speaker": "デジタル庁(北間審議官)",
+    "speaker_role": "府省・会議体",
+    "answer_span": {
+     "path": "kisei_ai_wg/08/ai08_minutes.pdf",
+     "start_page": 20,
+     "end_page": 24,
+     "first_line": "○デジタル庁(北間審議官)",
+     "last_line": "以上であります。ありがとうございます。",
+     "lines": 150
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/08/ai08_minutes.pdf",
+     "page": 21,
+     "quote": [
+      "まずデジタル庁では今年4月から、デジタル庁内部開発環境に開発支援AIというも",
+      "のを導入しております。少し補足しますと、政府というのは実は調達するところがほぼ"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 20,
+    "line": "○デジタル庁(北間審議官)"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "K07",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "歩行型ロボットの公道実証実験を議論したデジタル・AIワーキング・グループで、警察庁は歩道走行型ロボットの公道実証実験を現在どの許可のスキームで扱っていると説明したか。",
+   "expected": {
+    "path": "kisei_ai_wg/09/ai09_minutes.pdf",
+    "page": 8,
+    "org": "kisei_ai_wg",
+    "session_no": 9,
+    "date": "2026-04-30",
+    "material_no": "",
+    "material_name": "議事録（PDF形式:442KB）",
+    "doc_kind": "議事録",
+    "speaker": "警察庁(稲盛交通企画課長)",
+    "speaker_role": "府省・会議体",
+    "answer_span": {
+     "path": "kisei_ai_wg/09/ai09_minutes.pdf",
+     "start_page": 8,
+     "end_page": 11,
+     "first_line": "○警察庁(稲盛交通企画課長)",
+     "last_line": "以上です。",
+     "lines": 117
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/09/ai09_minutes.pdf",
+     "page": 8,
+     "quote": [
+      "警察庁からは、歩道走行型ロボットの公道実証実験の取扱いということで、現在、道",
+      "路使用許可というスキームにおきまして対応させていただいておりますので、その概要"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 8,
+    "line": "○警察庁(稲盛交通企画課長)"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "K08",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "AI等を活用した採用代行について、厚生労働省は職業安定法上の「当該者の判断」が人によるかAIによるかで扱いが変わるかをどう説明したか。",
+   "expected": {
+    "path": "kisei_ai_wg/07/ai07_minutes.pdf",
+    "page": 38,
+    "org": "kisei_ai_wg",
+    "session_no": 7,
+    "date": "2026-02-13",
+    "material_no": "",
+    "material_name": "議事録（PDF形式:501KB）",
+    "doc_kind": "議事録",
+    "speaker": "厚生労働省",
+    "speaker_role": "府省・会議体",
+    "answer_span": {
+     "path": "kisei_ai_wg/07/ai07_minutes.pdf",
+     "start_page": 36,
+     "end_page": 39,
+     "first_line": "○厚生労働省",
+     "last_line": "以上でございます。よろしくお願いいたします。",
+     "lines": 105
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/07/ai07_minutes.pdf",
+     "page": 38,
+     "quote": [
+      "そして、下線部にございますけれども、「当該者の判断」につきましては、電子情報",
+      "処理組織により自動的に行われているかどうかに関わらないということになっており"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 36,
+    "line": "○厚生労働省"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "K09",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "自転車防犯登録のデジタル化を議論したWGで、防犯登録カードの控えを紙媒体で保管している指定団体の割合について説明したのは誰か。",
+   "expected": {
+    "path": "kisei_ai_wg/07/ai07_minutes.pdf",
+    "page": 11,
+    "org": "kisei_ai_wg",
+    "session_no": 7,
+    "date": "2026-02-13",
+    "material_no": "",
+    "material_name": "議事録（PDF形式:501KB）",
+    "doc_kind": "議事録",
+    "speaker": "警察庁(佐藤室長)",
+    "speaker_role": "府省・会議体",
+    "answer_span": {
+     "path": "kisei_ai_wg/07/ai07_minutes.pdf",
+     "start_page": 9,
+     "end_page": 11,
+     "first_line": "○警察庁(佐藤室長)",
+     "last_line": "私からの説明は以上です。ありがとうございました。",
+     "lines": 65
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/07/ai07_minutes.pdf",
+     "page": 11,
+     "quote": [
+      "合ですが、円グラフのとおり、9割以上の指定団体が紙媒体で保管している状況が確認"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 9,
+    "line": "○警察庁(佐藤室長)"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
+    }
+   ]
+  },
+  {
+   "id": "K10",
+   "type": "B_名前つき要約・逐語（発言者の特定）",
+   "question": "デジタル・AIワーキング・グループ第9回で、経済産業省はAIロボティクス戦略で2040年にどれだけの市場の獲得を目指すと説明したか。",
+   "expected": {
+    "path": "kisei_ai_wg/09/ai09_minutes.pdf",
+    "page": 13,
+    "org": "kisei_ai_wg",
+    "session_no": 9,
+    "date": "2026-04-30",
+    "material_no": "",
+    "material_name": "議事録（PDF形式:442KB）",
+    "doc_kind": "議事録",
+    "speaker": "経済産業省(石曽根ロボット政策室長)",
+    "speaker_role": "府省・会議体",
+    "answer_span": {
+     "path": "kisei_ai_wg/09/ai09_minutes.pdf",
+     "start_page": 12,
+     "end_page": 14,
+     "first_line": "○経済産業省(石曽根ロボット政策室長)",
+     "last_line": "以上でございます。",
+     "lines": 85
+    },
+    "answer_unit": "発言の全体（見出し・箇条の頭から次の見出し・箇条の頭まで＝answer_span）に含まれるチャンクならどれでも可"
+   },
+   "evidence": [
+    {
+     "path": "kisei_ai_wg/09/ai09_minutes.pdf",
+     "page": 13,
+     "quote": [
+      "2040年に20兆円の市場を獲得するために、どういった取組が必要なのかといったとこ"
+     ]
+    }
+   ],
+   "speaker_mark_in_text": {
+    "page": 12,
+    "line": "○経済産業省(石曽根ロボット政策室長)"
+   },
+   "note": "",
+   "要確認": null,
+   "review": [
+    {
+     "result": "未",
+     "comment": "",
+     "date": "2026-10-06",
+     "round": 1
     }
    ]
   }
