@@ -13,8 +13,8 @@
 #      15 分以内に検知して自動適用＝コード tar の再展開も含む・smoke FAIL なら自動切り戻し・人手の箱操作ゼロ・全て記録経路）
 #
 # 合否の物差し（アンカー・正典＝ルート README「品質の担保」。改定時は env で上書き）:
-#   REQUIRE_HIT5（既定 85.8）・REQUIRE_MRR（既定 0.708）＝非劣化条件（>=）
-#   （2026-09-08 B19 遡及拡充で 86.9/0.715 から・2026-10-02 B26 で 86.2/0.713 から・同日の定型更新で 85.4/0.714 から・2026-10-07 B27 で 85.4/0.710 から改定＝README 注を参照）
+#   REQUIRE_HIT5（既定 86.1）・REQUIRE_MRR（既定 0.708）＝非劣化条件（>=）
+#   （2026-09-08 B19 遡及拡充で 86.9/0.715 から・2026-10-02 B26 で 86.2/0.713 から・同日の定型更新で 85.4/0.714 から・2026-10-07 B27 で 85.4/0.710 から・同日 B29 で 85.8/0.708 から改定＝README 注を参照）
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 ENV_NAME="${1:?使い方: bash release.sh <staging|prod>}"
@@ -24,7 +24,7 @@ ENV_FILE="$SCRIPT_DIR/../env/${ENV_NAME}.env"
 [[ -f "$ENV_FILE" ]] || { echo "ERROR: $ENV_FILE が無い" >&2; exit 1; }
 # shellcheck disable=SC1090
 source "$ENV_FILE"
-REQUIRE_HIT5="${REQUIRE_HIT5:-85.8}"
+REQUIRE_HIT5="${REQUIRE_HIT5:-86.1}"
 REQUIRE_MRR="${REQUIRE_MRR:-0.708}"
 GATE_LOG="$(mktemp -t polyarchy-release-gates.XXXXXX)"
 cd "$REPO_DIR"
