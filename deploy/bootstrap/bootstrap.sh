@@ -127,7 +127,7 @@ mkdir -p "$APP_DIR/data"
 # --delete は付けない（箱側で溜まった捕捉ログ＝燃料を消さない）。
 # cache/ は箱で作る（新着チェックの結果 等）＝S3 に古い写しが残っていても箱の最新を上書きしない（2026-10-02）。
 # deliberations/ は審議会DB の束（S3 `data/deliberations/`）＝フラグに関係なく除外する（政策主張DB の data/ に紛れ込ませない）。
-aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exclude "stats/*" --exclude "companies/*" --exclude "deliberations/*" --exclude "cache/*"
+aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exact-timestamps --exclude "stats/*" --exclude "companies/*" --exclude "deliberations/*" --exclude "cache/*"
 # .streamlit/config.toml は code tar に同梱済（fileWatcherType=none・§32.3）。
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR/data"
 # stats（統計参照DB）のデータ＝S3 `data/stats/` → `stats/data/`（共通契約 §4）。tar は */data を除外するので
@@ -135,7 +135,7 @@ chown -R "$SVC_USER:$SVC_USER" "$APP_DIR/data"
 if [[ "$ENABLE_STATS_APP" == "true" ]]; then
   echo "[bootstrap] ⑥ stats データ同期 s3://$S3_BUCKET/$DATA_S3_PREFIX/stats/ → $REPO_DIR/stats/data/"
   mkdir -p "$REPO_DIR/stats/data"
-  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/stats/" "$REPO_DIR/stats/data/" --region "$AWS_REGION" --exclude "query_log/*"
+  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/stats/" "$REPO_DIR/stats/data/" --region "$AWS_REGION" --exact-timestamps --exclude "query_log/*"
   chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/stats/data"
 fi
 # companies（企業情報DB）のデータ＝S3 `data/companies/` → `companies/data/`（値の置き場 store/ と評価問 eval/）。
@@ -143,15 +143,19 @@ fi
 if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
   echo "[bootstrap] ⑥ companies データ同期 s3://$S3_BUCKET/$DATA_S3_PREFIX/companies/ → $REPO_DIR/companies/data/"
   mkdir -p "$REPO_DIR/companies/data"
-  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/companies/" "$REPO_DIR/companies/data/" --region "$AWS_REGION" --exclude "query_log/*"
+  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/companies/" "$REPO_DIR/companies/data/" --region "$AWS_REGION" --exact-timestamps --exclude "query_log/*"
   chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/companies/data"
 fi
+# ★ S3→箱の sync は --exact-timestamps を付ける：既定の sync は大きさが同じファイルを取り直さない＝中身が変わっても
+#   大きさが同じなら古いまま残る（2026-10-07：審議会DB の束の bundle.json が 614 バイトのまま＝6,121→9,402 点の束が
+#   「変わっていない」と判定され、10-04 以降の 4 回の配布で復元されなかった）。箱のファイルは S3 から写したもの＝時刻が
+#   S3 と一致するので、付けても全部を取り直すことにはならない。
 # deliberations（審議会議事録DB）のデータ＝S3 `data/deliberations/bundle/` → `deliberations/data/bundle/`（Qdrant のスナップショット＋
 # 語彙・目録・解析結果＝deliberations.ops.bundle）。Qdrant への復元は ⑩ で専用 Qdrant を上げた後（束が変わったときだけ）。
 if [[ "$ENABLE_DELIBERATIONS_APP" == "true" ]]; then
   echo "[bootstrap] ⑥ deliberations データ同期 s3://$S3_BUCKET/$DATA_S3_PREFIX/deliberations/bundle/ → $REPO_DIR/deliberations/data/bundle/"
   mkdir -p "$REPO_DIR/deliberations/data/bundle"
-  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/deliberations/bundle/" "$REPO_DIR/deliberations/data/bundle/" --region "$AWS_REGION" --delete --exclude ".restored_*"
+  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/deliberations/bundle/" "$REPO_DIR/deliberations/data/bundle/" --region "$AWS_REGION" --delete --exact-timestamps --exclude ".restored_*"
   chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/deliberations/data"
 fi
 
