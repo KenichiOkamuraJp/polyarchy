@@ -712,6 +712,8 @@ def collect_nissho(years: list[int] | None, limit: int | None,
 #   - dsgl デジタル社会推進標準ガイドライン DS-920（生成AIの調達・利活用に係るガイドライン・デジタル社会推進会議幹事会決定）:
 #           版ごとのお知らせページの本文 PDF（*_guideline_01.pdf）。概要・英語版・見え消し版は採らない。新しい版はページを足す。
 #   - juten デジタル社会の実現に向けた重点計画（閣議決定）: 現行と過去資料のページの「本文」PDF（統合版・概要は採らない）。2024 年版から。
+#   - seicho 日本成長戦略（閣議決定）と戦略17分野の官民投資ロードマップ（日本成長戦略本部決定）: 内閣官房の一覧ページの
+#           pdf/jgsYYYY.pdf・pdf/rmYYYY.pdf（本文）。英語版・概要・参考資料は採らない。日付は直前の「＜…決定（令和…）＞」。
 #   - zaiseishin 財政制度等審議会: 答申・報告ページの**建議**リンク→詳細ページ先頭PDF(=01.pdf=建議本文)。
 #           02+（概要・参考資料）は本文でないので採らない。日付は詳細dir zaiseiaYYYYMMDD 由来。
 #   - zeicho 政府税制調査会: 現行サイトは議事録/会議資料のみで答申アーカイブが無い →
@@ -727,6 +729,9 @@ DSGL_PAGES = (  # DS-920 の版ごとのお知らせページ（初版 2025-05-2
 JUTEN_PAGES = ("https://www.digital.go.jp/policies/priority-policy-program",
                "https://www.digital.go.jp/policies/priority-policy-program-past")
 JUTEN_FROM = "20240101"  # 2021〜2023 年版は本文・工程表・別冊を 1 本にまとめた別の型（範囲外）
+SEICHO_INDEX = "https://www.cas.go.jp/jp/seisaku/nipponseichosenryaku/index.html"
+SEICHO_DOCS = {"jgs": ("日本成長戦略", "閣議決定"),
+               "rm": ("戦略17分野における「主要な製品・技術等」の官民投資ロードマップ", "日本成長戦略本部決定")}
 ZAISEISHIN_REPORT = ("https://www.mof.go.jp/about_mof/councils/fiscal_system_council/"
                      "sub-of_fiscal_system/report/index.html")
 
@@ -979,6 +984,32 @@ def gov_juten_index() -> list[dict]:
     return entries
 
 
+def gov_seicho_index() -> list[dict]:
+    """日本成長戦略（閣議決定）と官民投資ロードマップ（本部決定）の本文 PDF を返す。日付と決定主体は、リンクの前の
+    「＜閣議決定（令和８年７月２１日）＞」「＜日本成長戦略本部決定（令和８年７月２１日）＞」から読む。"""
+    soup = BeautifulSoup(_get(SEICHO_INDEX).text, "html.parser")
+    pat = re.compile(r"/pdf/(jgs|rm)(\d{4})\.pdf$")
+    entries, seen = [], set()
+    for a in soup.find_all("a", href=True):
+        href = urljoin(SEICHO_INDEX, a["href"])
+        m = pat.search(href)
+        if not m or (m.group(1), m.group(2)) in seen:
+            continue
+        kind, year = m.group(1), m.group(2)
+        title, decided = SEICHO_DOCS[kind]
+        prev = a.find_previous(string=re.compile(decided + r"（"))
+        iso = _wareki_to_iso(prev.replace(decided, "") if prev else "")
+        if not iso or not iso.startswith(year):
+            continue  # 決定日が読めない版は採らない（推定しない）
+        seen.add((kind, year))
+        y, mo, d = int(iso[:4]), int(iso[5:7]), int(iso[8:10])
+        entries.append({
+            "source": "seicho", "num": f"{kind}{year}", "date": iso, "doc_type": "方針",
+            "title": f"{title}（令和{y - 2018}年{mo}月{d}日{decided}）", "pdf_url": href, "html_url": None,
+        })
+    return entries
+
+
 def _title_with_subtitle(pdf_path: Path, title: str) -> str:
     """本文 1 頁目の「<title>」の次の行が「～…～」なら副題として足す（版の見分け）。無ければ title のまま。"""
     import fitz  # PyMuPDF（取込側と同じ抽出器）
@@ -995,12 +1026,12 @@ def _title_with_subtitle(pdf_path: Path, title: str) -> str:
 GOV_SOURCES = {"cefp": gov_cefp_index, "kisei": gov_kisei_index,
                "zaiseishin": gov_zaiseishin_index,
                "dgk": gov_dgk_index, "aiplan": gov_aiplan_index,
-               "dsgl": gov_dsgl_index, "juten": gov_juten_index}
+               "dsgl": gov_dsgl_index, "juten": gov_juten_index, "seicho": gov_seicho_index}
 
 
 def collect_gov(years: list[int] | None, limit: int | None,
                 skip_existing: bool = False, source: str | None = None) -> list[dict]:
-    """政府(諮問会議/規制改革/財政審/デジタル行財政改革会議/人工知能基本計画/DS-920/重点計画)の成果文書を収集。
+    """政府(諮問会議/規制改革/財政審/デジタル行財政改革会議/人工知能基本計画/DS-920/重点計画/日本成長戦略)の成果文書を収集。
 
     source 指定で単一サブ系統のみ（スパイク/テスト用）。years 指定で発行年フィルタ。
     limit はサブ系統ごとの取得上限（横断合計でなく各系統に適用）。
@@ -1183,7 +1214,7 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None, help="取得PDF数の上限（スパイク用）")
     ap.add_argument("--skip-existing", action="store_true", help="既存ファイルは再取得しない")
     ap.add_argument("--source", choices=list(GOV_SOURCES), default=None,
-                    help="政府のサブ系統を1つに限定（cefp/kisei/zaiseishin/dgk/aiplan/dsgl/juten）")
+                    help="政府のサブ系統を1つに限定（cefp/kisei/zaiseishin/dgk/aiplan/dsgl/juten/seicho）")
     args = ap.parse_args()
 
     print(f"収集: {args.org}  years={args.years}  limit={args.limit}  "

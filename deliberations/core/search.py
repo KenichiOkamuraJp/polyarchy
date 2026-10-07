@@ -193,6 +193,8 @@ def list_meeting(org: str, session_no: int) -> dict | None:
                 it["origin_body"] = d["origin_body"]
         if not r.get("public", True):
             it["note"] = "非公開（会議の一覧に名前だけが載っている）"
+        elif r.get("superseded"):
+            it["note"] = "同じ回の議事録（逐語）を検索の対象にしている＝この議事要旨は一覧にだけ載せる"
         items.append(it)
     return {"org": org, "session_no": session_no, "date": page.get("date"), "title": page.get("title"),
             "mochimawari": page.get("mochimawari", False), "page_url": page["source_url"], "items": items}

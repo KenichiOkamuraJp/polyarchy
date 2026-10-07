@@ -71,7 +71,8 @@ def split_page(text: str) -> list[str]:
     return parts
 
 
-def build_material(row: dict) -> tuple[dict, list[dict]]:
+def build_material(row: dict, seen: set | None = None) -> tuple[dict, list[dict]]:
+    """seen＝dedupe_pages の会議体で、先に配られた回のページの本文（空白を除く）。同じ文面のページは単位にしない。"""
     src = BY_ORG[row["org"]]
     pr = material_presenter(row, src)
     pages = slide_pages(row["path"])
@@ -81,7 +82,14 @@ def build_material(row: dict) -> tuple[dict, list[dict]]:
            "license": license_of(pr.presenter_type),
            "sparse_pages": sum(p.quality == "sparse" for p in pages)}
     units = []
+    dup = 0
     for pg in pages:
+        if seen is not None:
+            key = re.sub(r"\s", "", pg.text)
+            if key in seen:
+                dup += 1
+                continue
+            seen.add(key)
         pres = pr.page_presenters.get(str(pg.no)) if pr.page_presenters else None
         parts = split_page(pg.text) if pg.chars > PAGE_MAX else [pg.text]
         for k, part in enumerate(parts, 1):
@@ -92,6 +100,8 @@ def build_material(row: dict) -> tuple[dict, list[dict]]:
                           "license": license_of(pr.presenter_type),
                           "speaker": "", "speaker_role": "", "mode": "", "text": part,
                           "text_quality": pg.quality, "chars": len(re.sub(r"\s", "", part))})
+    if seen is not None:
+        doc["dup_pages"] = dup  # 先に配られた回と同じ文面で単位にしなかったページ
     return doc, units
 
 
@@ -117,14 +127,24 @@ def build_record(row: dict) -> tuple[dict, list[dict]]:
 
 def main() -> None:
     rows = [json.loads(l) for l in MANIFEST.open(encoding="utf-8")]
+    # dedupe_pages の会議体は開催日・会議体・回の順に並べ、先に配られたページを残す（同じ日の本部と会議は会議〔seicho〕が先）
+    dd = sorted((r for r in rows if BY_ORG[r["org"]].dedupe_pages),
+                key=lambda r: (r.get("date") or "", r["org"], r["session_no"], r.get("path") or ""))
+    rows = [r for r in rows if not BY_ORG[r["org"]].dedupe_pages] + dd
+    seen: set = set()
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     docs, units = [], []
     for row in rows:
         if not row.get("path") or not row["path"].lower().endswith(".pdf"):
             continue
+        if row.get("superseded"):  # 議事録のある回の議事要旨（collect.py）＝目録と list_meeting にだけ載せる
+            continue
         if row["doc_kind"] == "議事次第":  # 議事次第の PDF（議題の一覧）は検索の単位にしない＝回のページと list_meeting で足りる
             continue
-        d, u = (build_record if row["doc_kind"] == "記録" else build_material)(row)
+        if row["doc_kind"] == "記録":
+            d, u = build_record(row)
+        else:
+            d, u = build_material(row, seen if BY_ORG[row["org"]].dedupe_pages else None)
         docs.append(d)
         units += u
     with DOCUMENTS.open("w", encoding="utf-8") as f:

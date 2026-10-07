@@ -2708,5 +2708,44 @@
   "expected_source": "gov_dsgl_20260612.pdf",
   "expected_org": "gov",
   "qtype": "temporal"
+ },
+ {
+  "id": "237",
+  "question": "日本成長戦略（2026年7月閣議決定）は、「強い経済」の構築に向けて、官民連携の危機管理投資・成長投資を何を中心に徹底し、国内投資を全国に拡げるために何に対応するとしているか。",
+  "expected_answer": "17の戦略分野を中心とした官民連携の危機管理投資・成長投資を徹底し、国内投資を全国に拡げていくために8つの分野横断的な課題に対応する。",
+  "expected_keywords": [
+   "17の戦略分野",
+   "8つの分野横断的な課題",
+   "危機管理投資"
+  ],
+  "expected_source": "gov_seicho_jgs2026.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "238",
+  "question": "日本成長戦略本部が決定した戦略17分野の官民投資ロードマップは、AIロボットについて世界の中でどのような位置と世界シェア、2040年の市場獲得の目標を掲げているか。",
+  "expected_answer": "米中に並ぶ第三極として世界シェア3割超を獲得し、2040年に20兆円の市場獲得を目指す。",
+  "expected_keywords": [
+   "米中に並ぶ第三極",
+   "世界シェア3割超",
+   "20兆円の市場獲得"
+  ],
+  "expected_source": "gov_seicho_rm2026.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
+ },
+ {
+  "id": "239",
+  "question": "戦略17分野の官民投資ロードマップは、バーティカルAI（領域特化型AI）の国内市場の規模を2024年と2030年でどう見込んでいるか。",
+  "expected_answer": "2024年の国内バーティカルAI市場は約1兆円で、2030年には約3兆円になる見通し（フィジカルAIに先行して市場が発現）。",
+  "expected_keywords": [
+   "バーティカルAI",
+   "国内バーティカルAI市場は約1兆円",
+   "2030年には約3兆円"
+  ],
+  "expected_source": "gov_seicho_rm2026.pdf",
+  "expected_org": "gov",
+  "qtype": "temporal"
  }
 ]

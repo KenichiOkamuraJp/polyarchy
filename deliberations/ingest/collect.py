@@ -141,6 +141,8 @@ def material_no(prefix: str) -> str:
 LABEL_NO = re.compile(r"^((?:参考資料|資料)\s*[0-9０-９][0-9０-９\-－‐ー―の・]*|参考資料(?=\s))\s*(.+)$")
 # 分割版（1 つの資料を複数の PDF に分けて載せる型＝リンクの文字列は「１（PDF形式…）」だけ）。資料名と番号は最初の
 # 部分の前の文字列「資料１－２ GOGEN株式会社 御提出資料 分割版：」にあり、2 つ目以降は「／」の後に続く
+# 回のページの中の、資料ではないリンク（「※最終版は こちら に掲載」の「こちら」・英語版）＝内閣官房 日本成長戦略
+SKIP_LABEL = re.compile(r"^こちら$|English")
 SPLIT_PART = re.compile(r"^([0-9０-９]{1,2})\s*[（(]PDF")
 
 
@@ -229,7 +231,7 @@ def collect_source(src: Source, offline: bool, refresh_pages: bool, old: dict) -
         done = set()
         split_ctx: tuple[str, str] | None = None
         for a in items:
-            if a["href"] in done:
+            if a["href"] in done or SKIP_LABEL.search(a["label"]):
                 continue
             done.add(a["href"])
             path = f"{d}/{a['href'].rsplit('/', 1)[-1]}"
@@ -255,6 +257,11 @@ def collect_source(src: Source, offline: bool, refresh_pages: bool, old: dict) -
             rows.append({**meta, "material_name": it["label"], "material_no": material_no(it["prefix"]),
                          "list_prefix": it["prefix"], "doc_kind": kind_candidate(it["prefix"], it["label"]),
                          "source_url": url, "path": None, "public": False})
+    # 同じ回に議事録（逐語）と議事要旨の両方があれば、議事要旨は目録に残すが検索の単位にしない（同じ発言の二重を避ける）
+    verbatim = {r["session_no"] for r in rows if r["doc_kind"] == "記録" and "議事録" in r["material_name"]}
+    for r in rows:
+        if r["doc_kind"] == "記録" and r["session_no"] in verbatim and "議事録" not in r["material_name"]:
+            r["superseded"] = True
     for r in rows:
         if r.get("path"):
             b = (RAW_DIR / r["path"]).read_bytes()

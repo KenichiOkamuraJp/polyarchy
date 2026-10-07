@@ -56,6 +56,12 @@ def speaker_role(speaker: str, src: Source, head_text: str = "") -> str:
     s = _ns(speaker)
     if not s or s == UNKNOWN:
         return UNKNOWN
+    if s.endswith("氏") and (g := re.search(r"\(" + re.escape(s[:-1]) + r"([^()]{1,60})\)", _ns(head_text))):
+        # 「○長澤仁志氏」＝出席者欄の「(長澤 仁志 一般社団法人日本船主協会会長)」の所属で読む
+        org = g.group(1)
+        if EXTERNAL_RE.search(org) or HEARING_EXTERNAL_RE.search(org) or re.search(r"[A-Za-z]", org):
+            return GAIBU
+        return FUSHO if re.search(r"(省|庁)", org) else UNKNOWN
     if src.hearing and (m := re.fullmatch(r"(.+?)\(([^()]{2,})\)", s)):
         return _hearing_paren_role(m.group(1), m.group(2), src, head_text)  # 括弧の中の官職の「大臣官房」で政務にしない
     if "国家公安委員会委員長" in s or SEIMU_RE.search(s):
@@ -131,6 +137,8 @@ def by_name(name: str, src: Source | None = None) -> Presenter | None:
         n = re.sub(r"提出資料提出資料", "提出資料", n)
         n = re.sub(r"（分割版\d+）$", "", n)
     rules = [
+        (r"^(.+?)様提出資料", GAIBU, "「…様提出資料」＝敬称つき＝会議に招いた外部の提出者（日本成長戦略会議）"),
+        (r"^(.+?有識者議員)提出資料", KOSEI, "「…有識者議員提出資料」＝合同開催の相手の会議の民間議員"),
         (r"^(.*?国家公安委員会委員長)提出資料", SEIMU, "「…国家公安委員会委員長提出資料」"),
         (r"^(.+?大臣)(提出)?資料", SEIMU, "「…大臣提出資料」"),
         (r"^(構成員)提出資料", KOSEI, "「構成員提出資料」（どの構成員かはページごと）"),
@@ -159,6 +167,8 @@ def _classify_line(line: str, src: Source) -> tuple[str, str] | None:
         return None
     if ":" in s or re.match(r"^(議長|副議長|本部長|副本部長|構成員|座長|委員)", s):
         return None  # 名簿・組織図の役割の行（提出者の行ではない）
+    if re.match(r"^[◎○〇●◆■□]", s):
+        return None  # 組織図の箇条（「◎文科大臣」＝体制の図の担当大臣・提出者の行ではない）
     if "大臣" in s and len(s) <= 30 and not re.search(r"[、。()「」]", s):
         return SEIMU, line.strip()
     if "事務局" in s and len(s) <= 40:

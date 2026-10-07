@@ -24,6 +24,9 @@ class Source:
     # 記録の書式。""＝第 1 便の型（○・【】・箇条）。"paren"＝デジタル庁の議事要旨（「◼ 議事」の後に
     # 「(生田目構成員)本文」「(事務局)本文」が箇条の記号の行〔⚫・➢・o〕と交互に並ぶ）＝records.py
     record_style: str = ""
+    # 同じ案が回をまたいで何度も配られる会議体（日本成長戦略＝ロードマップ案 324 ページが 3 回）。先に配られた回と
+    # 同じ文面のページは検索の単位にしない（文書は目録・list_meeting に残る・直されたページは残る＝build.py）
+    dedupe_pages: bool = False
 
 
 SOURCES: tuple[Source, ...] = (
@@ -53,6 +56,16 @@ SOURCES: tuple[Source, ...] = (
            "https://www.digital.go.jp/councils/ai-advisory-board",
            r"/councils/ai-advisory-board/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", r"(?!)", 3,
            ("デジタル庁",), record_style="paren"),  # 議事要旨の出席者欄の「(2) デジタル庁」＝開催する庁
+    # 日本成長戦略本部（閣僚）と日本成長戦略会議（首相が議長・有識者と閣僚）は同じ一覧ページ。記録は一覧にだけ載る。
+    # 会議は同じ回に議事録（逐語）と議事要旨の両方がある＝議事録のある回の議事要旨は検索の単位にしない（collect.py の superseded）
+    Source("seicho", "日本成長戦略会議", "内閣官房",
+           "https://www.cas.go.jp/jp/seisaku/nipponseichosenryaku/index.html",
+           r"/nipponseichosenryaku/kaigi/dai(\d+)/gijis(?:h)?idai\.html$",
+           r"/nipponseichosenryaku/kaigi/dai(\d+)/[^/]+\.pdf$", 3, dedupe_pages=True),
+    Source("seicho_honbu", "日本成長戦略本部", "内閣官房",
+           "https://www.cas.go.jp/jp/seisaku/nipponseichosenryaku/index.html",
+           r"/nipponseichosenryaku/honbu/dai(\d+)/gijis(?:h)?idai\.html$",
+           r"/nipponseichosenryaku/honbu/dai(\d+)/[^/]+\.pdf$", 3, dedupe_pages=True),
 )
 
 BY_ORG = {s.org: s for s in SOURCES}

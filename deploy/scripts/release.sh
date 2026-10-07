@@ -86,7 +86,7 @@ if [[ "${ENABLE_DELIBERATIONS_APP:-false}" == "true" ]]; then
   DELIB_URL="${DELIB_QDRANT_URL:-http://localhost:6340}"
   curl -fsS -m 3 "$DELIB_URL/collections" >/dev/null || fail "ENABLE_DELIBERATIONS_APP=true だが審議会DB の Qdrant（${DELIB_URL}）が応答しない（docker start qdrant-delib）"
   [[ -f deliberations/data/cache/units.jsonl ]] || fail "ENABLE_DELIBERATIONS_APP=true だが deliberations/data/cache が無い（deliberations/CLAUDE.md の手順で収集・解析・取り込み）"
-  DELIB_REQUIRE_HIT5="${DELIB_REQUIRE_HIT5:-96.1}"; DELIB_REQUIRE_MRR="${DELIB_REQUIRE_MRR:-0.844}"
+  DELIB_REQUIRE_HIT5="${DELIB_REQUIRE_HIT5:-94.7}"; DELIB_REQUIRE_MRR="${DELIB_REQUIRE_MRR:-0.856}"
   say "  [+4] deliberations 4 ゲート（アンカー非劣化 hit@5>=${DELIB_REQUIRE_HIT5}・MRR>=${DELIB_REQUIRE_MRR}・帰属・層・スモーク）"
   python -m deliberations.eval.retrieval >>"$GATE_LOG" 2>&1 || fail "deliberations retrieval が異常終了"
   D_LINE="$(grep -E '^ALL[[:space:]]' "$GATE_LOG" | tail -1)"

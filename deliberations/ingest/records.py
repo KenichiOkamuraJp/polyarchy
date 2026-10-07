@@ -42,6 +42,8 @@ VERBATIM_PAREN = re.compile(r"^[○〇]([^\s、。「」()]{1,40}\([^()]{2,40}\)
 VERBATIM_PAREN_LATIN = re.compile(r"^[○〇]([A-Za-z0-9][^、。「」()]{0,40}?\([^()]{2,40}\))(?:\s+(.*))?$")
 # 府省の名前だけの行（「○厚生労働省」＝本文は次の行から）
 VERBATIM_BODY = re.compile(r"^[○〇]([^\s、。「」()]{1,20}?(省|庁))$")
+# 「○長澤仁志氏」＝会議に招いた外部の説明者（名前だけの行・日本成長戦略会議）。区分は出席者欄で読む（attribution.py）
+VERBATIM_GUEST = re.compile(r"^[○〇]([^\s、。「」()]{2,12}氏)$")
 NARRATION = re.compile(r"^[○〇]\s*(.*)$")
 HEADING = re.compile(r"^【([^】]{1,40})】\s*(.*)$")
 BULLET = re.compile(r"^[・･]\s*(.*)$")
@@ -192,11 +194,12 @@ def parse(path: str, style: str = "") -> tuple[list[Unit], list[tuple[int, str]]
             # 名前の後に空白のある逐語＝会議の場の発言（書面の節はここで終わる）
             cur, ctx, written_section = new(m.group(1), "verbatim", p, m.group(2)), None, False
             continue
+        # 名前だけの行を先に見る（「○高市内閣総理大臣」を TIGHT が「高市内閣総理」＋本文「大臣」と切らないように）
+        if m := (VERBATIM_ALONE.match(s) or VERBATIM_GUEST.match(s)):
+            cur, ctx = new(m.group(1), "written" if written_section else "verbatim", p, ""), None
+            continue
         if m := VERBATIM_TIGHT.match(s):
             cur, ctx = new(m.group(1), "written" if written_section else "verbatim", p, m.group(3)), None
-            continue
-        if m := VERBATIM_ALONE.match(s):
-            cur, ctx = new(m.group(1), "written" if written_section else "verbatim", p, ""), None
             continue
         if m := HEADING.match(s):
             inner = m.group(1).replace("提出者:", "提出者：")
