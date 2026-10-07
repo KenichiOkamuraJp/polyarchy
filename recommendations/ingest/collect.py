@@ -990,6 +990,8 @@ def _title_with_subtitle(pdf_path: Path, title: str) -> str:
     return title
 
 
+# 系統を足したら recommendations/ingest/qdrant_ingest.py の ISSUER_OF_GOV_PREFIX にも足す（無いと取り込みが
+# 「issuer 判別不能」で止まる＝2026-10-07 に juten・dsgl で踏んだ）。
 GOV_SOURCES = {"cefp": gov_cefp_index, "kisei": gov_kisei_index,
                "zaiseishin": gov_zaiseishin_index,
                "dgk": gov_dgk_index, "aiplan": gov_aiplan_index,

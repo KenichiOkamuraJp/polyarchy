@@ -39,6 +39,7 @@ python -m deliberations.ops.bundle export          # 箱へ運ぶ束（Qdrant �
 
 - ★ **手元の Qdrant は政策主張DB の `qdrant-dev` と分ける**：`qdrant-dev` のデータは配布（release.sh）で S3 経由で箱へ同期される＝評価前の審議会DB のコレクションを混ぜない。手元は専用コンテナ `qdrant-delib`（`-p 6340:6333`・`deliberations/data/qdrant` をマウント・再起動ポリシーなし）。env は `DELIB_` を付ける（箱の deploy.env の `COLLECTION_NAME` を拾わない）。
 - ★ **`qdrant-delib` のマウント元は配布用のクローンに移してある**（RUNBOOK §5「配布用のクローンに審議会DB のデータと専用 Qdrant が要る」）＝開発用のフォルダで `qdrant_ingest` を既定のまま回すと、配布用の索引を書き換え、配布用の目録・語彙と食い違う（2026-10-06 に踏んだ）。開発側で取り込むときは `DELIB_COLLECTION=deliberations_dev` のように別名のコレクションへ入れ、ゲートも同じ env で回す。始める前に `docker inspect qdrant-delib` でマウント元を見る。
+- ★ **解析の結果は PyMuPDF の版で変わる**：版が違うと本文の改行の位置が変わり、`units.jsonl` が一致しない（2026-10-07：開発用の env が 1.27.2.3、ロックと配布用は 1.28.2 で 361 単位が違った）。開発用の env もロック（`deploy/requirements/lock-*.txt`）の版に合わせてから、解析と基準値の測定をする。照合は `units.jsonl` の sha256 で。
 - ★ **cas.go.jp は curl の UA に 404**（UA の文字列で弾く型）＝cas.go.jp だけブラウザの UA（`ingest/sources.py`）。JS チャレンジ・ログイン・レート制限は突破しない。
 - ★ **本文は NFKC で正規化**：PDF に「⼈⼯知能」のような康煕部首の字形が混じる（第 1 便で 55 本）。
 - ★ **一覧の HTML の癖**：記録は回のページに無く一覧にだけある・記録のリンクの `</a>` が閉じていない・表が `<h1>` より前・資料番号が前のセル。
