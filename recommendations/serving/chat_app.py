@@ -152,6 +152,8 @@ def _compact(chunks: list[Chunk]) -> str:
                             "本文から確認し、必ず明記すること")
         if c.same_doc_hits:
             r["same_doc_hits"] = c.same_doc_hits  # diversify 時のみ：同一文書の他ヒット数
+        if c.same_text_in:
+            r["same_text_in"] = c.same_text_in  # diversify 時のみ：同じ文面のためまとめた旧版
         results.append(r)
     return json.dumps({"count": len(chunks), "results": results}, ensure_ascii=False)
 

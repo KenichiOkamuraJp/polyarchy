@@ -167,7 +167,9 @@ def build_server(service):
                   語彙に当たらない指定は hint で語彙を返す。
           top_k : 返却件数（既定 5・上限 20。超過指定は 20 に制限し applied_filter に明示する）。
           diversify : 文書単位の重複抑制（既定 True）＝同一文書は最良チャンク 1 件だけ返し、残り枠を
-                  別文書に充てる（同一文書の他のヒット数は same_doc_hits）。特定文書の深掘り・原文精読で
+                  別文書に充てる（同一文書の他のヒット数は same_doc_hits）。あわせて、政府の同じ文書の版違い
+                  （AI事業者ガイドラインの各版など）で文面がほぼ同じ抜粋は最新の版の 1 件にまとめ、同じ文面の
+                  旧版のファイル名を same_text_in で返す（版で文面が違う抜粋は別々に返る）。特定文書の深掘り・原文精読で
                   同一文書の複数チャンクが欲しいときは False（関連度順そのまま）。
 
         返り値（dict）：
@@ -224,7 +226,8 @@ def build_server(service):
         if requested_k != top_k:
             parts.append(f"top_k={requested_k}→{top_k}に制限（上限{TOP_K_MAX}）")
         if diversify:
-            parts.append("重複抑制=文書単位（同一文書は最良チャンク1件）")
+            parts.append("重複抑制=文書単位（同一文書は最良チャンク1件）＋政府の同じ文書の版違いの同文は最新の版に"
+                         "まとめる（same_text_in）")
         parts.append("層=公開（固定）")
         applied = ", ".join(parts)
         log.info("検索応答: %d 件返却（層=公開固定）%s", len(results),

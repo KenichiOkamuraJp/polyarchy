@@ -13,7 +13,9 @@ Phase 10：本番検索を「薄く包む」共有サービス（retrieval-as-a-
 **境界フェイルクローズ**を二重に掛ける。したがって機密チャンクは、たとえコレクション内に
 存在しても、この境界の外へは物理的に出られない。
 """
-from dataclasses import dataclass
+import re
+import unicodedata
+from dataclasses import dataclass, field
 from typing import Optional
 
 from llama_index.core import Settings
@@ -36,6 +38,35 @@ from recommendations.core.rerankers import production_reranker_postprocessor
 # 外部境界で固定する層。config.DEFAULT_LAYERS（=("公開",)）と一致。ここを変数化しない
 # ＝MCP から機密層を要求する術がない（物理遮断）。
 PUBLIC_ONLY: tuple[str, ...] = DEFAULT_LAYERS
+
+
+# 文面の重複抑制（diversify 時・B32）：文字 5-gram の Jaccard 係数がこれ以上か、短いほうの 5-gram のこの割合以上が
+# 長いほうに含まれるなら同じ文面とみなす（版で抜粋の区切りがずれると Jaccard だけでは畳めない＝含有率も見る）
+NEAR_DUP_JACCARD = 0.8
+NEAR_DUP_CONTAIN = 0.9
+
+
+def _shingles(text: str, n: int = 5) -> set[str]:
+    t = re.sub(r"\s", "", unicodedata.normalize("NFKC", text))
+    return {t[i:i + n] for i in range(max(1, len(t) - n + 1))}
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    return len(a & b) / len(a | b) if a and b else 0.0
+
+
+def _series_of(file_name: str) -> Optional[str]:
+    """版の系列＝政府の同じ取得元の文書（gov_aigl_… の各版・gov_dsgl_… の各版など）。畳むのは同じ系列の中だけ。
+    経済団体の文書は系列を持たない（年次のダイジェストや分冊が表紙・前置きを共有する＝畳むと正解が消える）。"""
+    parts = file_name.split("_")
+    return "_".join(parts[:2]) if parts[0] == "gov" and len(parts) > 2 else None
+
+
+def _near_dup(a: set[str], b: set[str]) -> bool:
+    if not a or not b:
+        return False
+    inter = len(a & b)
+    return inter / len(a | b) >= NEAR_DUP_JACCARD or inter / min(len(a), len(b)) >= NEAR_DUP_CONTAIN
 
 
 @dataclass
@@ -61,6 +92,8 @@ class Chunk:
     text: str
     # diversify（文書単位の重複抑制）時のみ非0：候補プール内の同一文書の追加ヒット数。
     same_doc_hits: int = 0
+    # diversify 時のみ：この抜粋とほぼ同じ文面のため返さなかった別の文書（版違い等）の file_name。
+    same_text_in: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -80,6 +113,8 @@ class Chunk:
             "source_url": self.source_url,
             "text": self.text,
             "same_doc_hits": self.same_doc_hits,
+            # 同じ文面のため返さなかった別の文書（diversify 時・あるときだけ）
+            **({"same_text_in": self.same_text_in} if self.same_text_in else {}),
         }
 
 
@@ -191,16 +226,33 @@ class PolicySearchService:
         if self.reranker is not None:
             nodes = self.reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(query))
         same_doc_hits: dict[str, int] = {}
+        same_text_in: dict[str, list[str]] = {}
         if diversify:
             seen_files: set[str] = set()
-            picked = []
+            picked, shingles = [], []
             for nd in nodes:
                 fn = nd.node.metadata.get("file_name") or "不明"
                 if fn in seen_files:
                     same_doc_hits[fn] = same_doc_hits.get(fn, 0) + 1
                     continue
+                # 文面の重複抑制（B32）：先に採った同じ系列の版の抜粋とほぼ同じ文面は返さず、採った側に同じ文面の
+                # ある文書として添える。版で中身が違う抜粋は残る＝版を問う問は壊れない
+                sh = _shingles(nd.node.get_content() or "")
+                ser = _series_of(fn)
+                dup = next((i for i, (s, sr) in enumerate(shingles) if ser and sr == ser and _near_dup(sh, s)), None)
+                if dup is not None:
+                    kept = picked[dup].node.metadata.get("file_name") or "不明"
+                    seen_files.add(fn)  # 最良の抜粋が同文の文書は、2 番目以降の抜粋も出さない（旧版の別箇所の繰り上がりを防ぐ）
+                    if (_date_int_of(nd.node.metadata) or 0) > (_date_int_of(picked[dup].node.metadata) or 0):
+                        # 同じ文面なら最新の版を残す（位置は順位の高かったほうのまま）。旧版は添え書きへ移す
+                        picked[dup], shingles[dup] = nd, (sh, ser)
+                        same_text_in[fn] = same_text_in.pop(kept, []) + [kept]
+                    elif fn not in same_text_in.setdefault(kept, []):
+                        same_text_in[kept].append(fn)
+                    continue
                 seen_files.add(fn)
                 picked.append(nd)
+                shingles.append((sh, ser))
             nodes = picked[:k]
         else:
             nodes = nodes[:k]
@@ -236,6 +288,7 @@ class PolicySearchService:
                 source_url=m.get("source_url") or "",
                 text=text,
                 same_doc_hits=same_doc_hits.get(m.get("file_name") or "不明", 0),
+                same_text_in=same_text_in.get(m.get("file_name") or "不明", []),
             ))
         return out
 
