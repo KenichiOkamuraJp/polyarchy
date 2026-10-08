@@ -150,7 +150,7 @@ recommendations/                       政策主張DB（フォルダ名＝コー
 | 埋め込みモデル | `ruri_v3_310m_pfx`（本番・ローカル）| 格納/検索の本番埋め込み。境界検出のみ `text-embedding-3-small` |
 | LLM | `claude-sonnet-4-6` | 必要に応じて変更 |
 | チャンク戦略 | `semantic`（構造的分割）| Phase 2 比較で最良。実体は `recommendations/ingest/chunking.py` |
-| コレクション | `policy_claims_v7`（Qdrant・既定） | 本線＝約3,700文書/187k チャンク（2026-09 時点）。切り戻しは自動適用の退避と書き戻し（deploy/RUNBOOK_OPS.md §5）＝v6（80k）は B26 以降の評価問を満たせず切り戻し先ではない。Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃（v5 データは S3 と退避先に保管のみ） |
+| コレクション | `policy_claims_v7`（Qdrant・既定） | 本線＝約3,700文書/187k チャンク（2026-09 時点）。切り戻しは自動適用の退避と書き戻し（deploy/RUNBOOK_OPS.md §5）＝v6（80k）は B26 以降の評価問を満たせず切り戻し先ではない（v5・v6 のコレクションは 2026-10-09 に配布元から外した）。Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃（v5 データは S3 と退避先に保管のみ） |
 | 検索件数 | 5 | top-K |
 
 > チャンクの大きさ＝semantic 分割の後段で 1 チャンク最大 1,024 トークン（`ingest/chunking.py` の MAX_CHUNK_TOKENS）。返却時の本文は `text_chars`（既定 1,200 字）で切る。

@@ -9,7 +9,7 @@
 > S3/SSM/Cloudflare/IAM ロールは保全）。建て直しから箱も**本線 v7/Qdrant**（`COLLECTION_NAME=policy_claims_v7`・
 > `VECTOR_BACKEND=qdrant`＝terraform 既定）。bootstrap ⑥b が Qdrant（版・sha256 固定）を導入し qdrant.service(:6333) で常駐、
 > `data/qdrant` は S3 の data 同期で配布。切り戻しは Qdrant 内の v6（`RECOMMENDATIONS_COLLECTION_NAME`）＝（2026-10-09 注：v6 は今の評価問を満たさない＝
-> 現行の切り戻しは自動適用の退避と書き戻し〔RUNBOOK_OPS §5〕）
+> 現行の切り戻しは自動適用の退避と書き戻し〔RUNBOOK_OPS §5〕。v5・v6 のコレクションは配布元から 2026-10-09 に外した＝次の配布で S3・箱からも消える）
 > Chroma 経路はバッチ2 段4（2026-08-28）で全廃（S3 `data/chroma/` は v5 データ保管のみ）。
 > `deploy/FREEZE` は 2026-08-28 に解除（PoC 停止・箱破棄に伴い削除）。
 > stats（:8766）は**設置済**（2026-08-28・A1）。**2026-09-02 から両サービスとも個人認証（案 B・AuthKit）でログイン必須**（authless は 2026-08-28〜09-01 の暫定）。運用一式（health timer・CW Logs/アラーム・SNS・週次レポート）も稼働＝[`RUNBOOK_OPS.md`](RUNBOOK_OPS.md)。
@@ -323,7 +323,7 @@ aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/staging/
 - **S3**：fuelsync が毎時、サービスごとに固定のキー 1 本（`…/query_log/queries.jsonl`）へ上書きする保護コピー（箱の EBS が原本）。
   ライフサイクル（`terraform/storage.tf`）は**版の年齢**で数える＝versioning ON で毎時上書きされるので現行版は常に若く `expiration` は
   実質発火せず、効くのは**非現行になってからの日数**（`noncurrent_days`）。**通常運転で S3 に残る最長＝箱の 30 日＋非現行の 1 日＋ライフサイクルの
-  非同期の遅れ（AWS の処理で 1〜2 日）＝約 31〜32 日**（プライバシーポリシーの「30 日」と 1〜2 日ずれる＝文言か日数をそろえるかは運営者の判断）。
+  非同期の遅れ（AWS の処理で 1〜2 日）＝約 31〜32 日**＝プライバシーポリシー「3. 保存期間」はこの式どおりに書いている（2026-10-09 改定＝本体は 30 日・バックアップからはその後おおむね 2 日以内・停止・廃止時は写しも消す）。日数を変えたら同ページも直す。
   ★非現行の日数を箱と同じ 30 に「揃える」と最長約 60 日残る（2026-10-09 まではこの状態＝是正は terraform apply で反映）。
   ★**例外＝fuelsync が止まったとき**（箱の破棄・停止・サービスを無効にした・同期の失敗が続く）は現行版が更新されず、最後の上げ込みから
   `expiration`（30 日）で消える＝その中に最大 30 日前の記録がある＝最長約 60 日。**箱を破棄・停止するとき・サービスを無効にするときは、
