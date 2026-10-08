@@ -216,7 +216,7 @@ root_volume_id() {
 
 print_next_steps() {
   local iid; iid="$( ( cd "$TF_DIR" && terraform output -raw instance_id 2>/dev/null ) || true )"
-  log "── 次（README §5〜） ──"
+  log "── 次（初回構築のときの手順＝README §5〜。上の terraform の next_steps も同じ。既存の箱への小さな変更〔S3 のライフサイクル・アラーム・IAM 等〕の apply なら読み飛ばしてよい） ──"
   log "箱に入る:     aws ssm start-session --target ${iid:-<instance_id>}"
   log "bootstrap監視: sudo tail -f /var/log/polyarchy-bootstrap.log"
   log "回帰ゲート:   README §6（4種 PASS）→ Tunnel カットオーバー §7"

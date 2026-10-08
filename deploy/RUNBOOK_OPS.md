@@ -166,6 +166,7 @@ bash deploy/scripts/release.sh staging                     # 配る前の確認�
    その代わり、apply から配布の適用までの間は health アラームが ALARM になる（`treat_missing_data = breaching`＝サービスが立つまで値が来ない）＝**想定内**。通知は状態が変わったときだけ＝ALARM と OK の 1 通ずつで、適用の 3 分ほど後に OK に戻ることを確かめる。鳴る時間を短くするには、apply を配布（`release.sh`）の直前に回す。
    ぶつかってしまったら＝`deploy/scripts/lib.sh` の `TF_ARGS` と同じ `-var` を付けて `terraform import 'aws_cloudwatch_log_group.<svc>[0]' polyarchy/<svc>` で取り込んでから apply し直す（保持は CW agent 側も 30 日で一致・差分はタグだけ）。
    ★フラグが false のままでも「変更 2」（箱ロールの `data/companies/query_log/*` 書込先・S3 ライフサイクル `companies-query-log-retention-30d`）は出る＝コミット済みのコード由来で想定内。
+   apply の後に出る terraform の `next_steps`（秘密登録・upload・bootstrap の監視…）と「次（初回構築のときの手順…）」は**初回構築の手順**＝この手順のように既存の箱へ足す apply（ほかに S3 のライフサイクル・アラーム・IAM だけの変更も同じ）では読み飛ばす。確かめるのは plan の差分が期待どおりであることと、apply の後の plan が `No changes.` であること。
 6. **箱の deploy.env**＝★稼働中の箱は user_data を再実行しない＝`/etc/polyarchy/deploy.env` に同じ 2 行（`ENABLE_COMPANIES_APP`・`TUNNEL_HOST_COMPANIES`）を足す。
    SSM Session で編集してもよいが、`send-command` なら SSM のコマンド履歴に残る（監査線）。★`--parameters` はインライン JSON だと `$`・`\n`・`(` のエスケープで壊れる＝**ファイルに書いて `file://` で渡す**：
    ```bash
@@ -227,6 +228,11 @@ bash deploy/scripts/release.sh staging                     # 配る前の確認�
 - ゲートを回す python の依存＝箱のロック（`deploy/scripts/check_lock.py`＝開発側で基準値を測る前にも手で回せる）
 - 政策主張DB の BM25 語彙の `n_docs`＝`qdrant-dev` の点数（語彙と索引が同じ時点）
 - コードの範囲（`*/data/` の外）に未コミットの差分が無い（tar は HEAD から作る）
+
+この確認は**単体で先に回してよい**（読み取りだけ・何も配らない・`qdrant-dev` も止めない）＝配布用のクローンの root で
+`bash -c 'source deploy/env/<env>.env; REPO_DIR=$PWD; source deploy/scripts/release_preflight.sh; preflight'`。
+env ファイルを読ませるのは `release.sh` と同じ変数で走らせるため（変数を手で渡すと `ENABLE_DELIBERATIONS_APP` の書き忘れで `qdrant-delib` の確認が黙って抜ける）。
+`release.sh` と同じ ✓ の行が出て終了コード 0 なら、本番の ⓪ では止まらない＝索引の作り直し・ログインのし直し・`check_lock` の不一致を、ゲート（十数分）の前に片づけられる（2026-10-09 staging で運用側が実施）。
 
 **人が判断するもの**は 1 つだけ＝ログインからの経過時間（下）。手で確かめるなら `git log origin/main..HEAD --oneline`（push 前のコミットが無いか）。
 - ★ **AWS のログインが配布の途中で切れないようにする**：`release.sh` はゲート（十数分）の後に upload とマニフェストの書き込みをする。途中で有効期限が切れると upload とマニフェストの間で止まり得る（2026-09-27 staging＝release の直後に切れた）。判断は `sts` が通ることと、ログインしてからの経過時間で行う。★ `sts` は **`deploy/env/<env>.env` の `AWS_PROFILE` を `--profile` に指定して**確かめる（`release.sh` が使うのはこのプロファイル）＝素の `aws sts get-caller-identity` は default のプロファイルを見るので、手元に別系統の資格（default のログインと、アクセスキーのプロファイル）があると誤判定する（2026-10-02 staging＝default で確かめて「切れている」と判断したが、配布に要るプロファイルは生きていた。なお `AWS_PROFILE` がアクセスキーのプロファイルを指したシェルでは `aws login` が拒否される）。ログインし直すかどうかは、そのプロファイルについて判断する＝ログインから長く経っていればログインし直してから始める。`aws configure export-credentials` の `Expiration` は判断材料にならない（手元の短期資格が自動更新されるため、ログインし直した直後も含めて常に十数分先を示す。実際に効くのはその下のログインのセッションの期限で、これは画面から見えない）。配布の後の見張り（新しい捕捉ログの同期の 1 回目＋次の毎時のダッシュボード）は 1 時間を超える＝見張りに入る前にもう一度ログインし直す（2026-10-01 staging＝見張りの途中で切れた）。
