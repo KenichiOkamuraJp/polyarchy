@@ -181,6 +181,59 @@ def test_oidc_middleware_user_context():
     asyncio.run(run())
 
 
+
+def test_install_auth_single_hook():
+    """認証の装着点は access.install_auth の 1 か所：env 無し＝素通し・MCP_AUTH_ISSUER で案 B（PRM 配信）・
+    認証の env を読む .py は access.py だけ・systemd は待受アドレスを直書きしない（MCP_HTTP_HOST で渡す）。"""
+    import asyncio
+    import os
+    import re
+
+    from polyarchy_common.access import install_auth
+
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    async def call(app, path):
+        out = []
+
+        async def send(msg):
+            out.append(msg)
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await app({"type": "http", "path": path, "headers": []}, receive, send)
+        return out
+
+    keys = ("MCP_ACCESS_TEAM_DOMAIN", "MCP_ACCESS_AUD", "MCP_AUTH_ISSUER", "MCP_AUTH_AUD", "MCP_AUTH_RESOURCE_URL")
+    saved = {k: os.environ.pop(k, None) for k in keys}
+    try:
+        assert install_auth(inner, host="127.0.0.1", port=8765, path="/mcp") is inner  # env 無し＝素通し
+        os.environ["MCP_AUTH_ISSUER"] = "https://idp.example"
+        os.environ["MCP_AUTH_RESOURCE_URL"] = "https://stats.example.com/mcp-x"
+        app = install_auth(inner, host="127.0.0.1", port=8766, path="/mcp-x")
+        assert app is not inner
+        out = asyncio.run(call(app, "/.well-known/oauth-protected-resource"))
+        assert out[0]["status"] == 200 and json.loads(out[1]["body"])["resource"] == "https://stats.example.com/mcp-x"
+        assert asyncio.run(call(app, "/mcp-x"))[0]["status"] == 401  # トークン無し＝遮断（IdP へは問い合わせない）
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+    root = Path(__file__).resolve().parents[2]
+    readers = sorted(str(f.relative_to(root)) for d in ("polyarchy_common", "recommendations", "stats", "companies", "deliberations")
+                     for f in (root / d).rglob("*.py")
+                     if "tests" not in f.parts and re.search(r"MCP_(AUTH|ACCESS)_[A-Z_]+[\"']", f.read_text(encoding="utf-8")))
+    assert readers == ["polyarchy_common/access.py"], readers
+    for unit in sorted((root / "deploy" / "systemd").glob("polyarchy-*.service")):
+        for line in unit.read_text(encoding="utf-8").splitlines():
+            if line.startswith("ExecStart=") and " --http" in line:
+                assert "--host" not in line, f"{unit.name}: 待受アドレスは MCP_HTTP_HOST（deploy.env）で渡す"
+
 def test_httplog_and_healthz():
     """アクセスログ（1 行/リクエスト・user=- で落ちない）と /healthz（ok=200・ok=False/例外=503・他パス素通し）。"""
     import asyncio

@@ -1,5 +1,5 @@
 # Polyarchy 統計参照DB（stats）の MCP サーバ——recommendations とは別プロセス・別ホスト名（B6 案 B）。
-#   python -m stats.serving.mcp_server --http --host 127.0.0.1 --port 8766
+#   python -m stats.serving.mcp_server --http --port 8766
 # 層＝公開固定・fail-closed（該当なしは「ない」と返す）。モデル不要・軽量。127.0.0.1 バインドで直露出しない。
 # 設置は bootstrap ⑧（ENABLE_STATS_APP=true のとき）。入口は cloudflared ingress の stats.<domain> → :8766。
 [Unit]
@@ -13,13 +13,14 @@ User=polyarchy
 Group=polyarchy
 WorkingDirectory=/opt/polyarchy/polyarchy
 EnvironmentFile=-/etc/polyarchy/deploy.env
-# 秘密パス（MCP_HTTP_PATH=/mcp-<乱数>）＋ Access Managed OAuth（MCP_ACCESS_TEAM_DOMAIN/MCP_ACCESS_AUD）。
-# bootstrap が SSM stats_http_path / access_team_domain / access_aud_stats から生成（無ければ既定 /mcp・認証なし）。
+# 秘密パス（MCP_HTTP_PATH=/mcp-<乱数>）＋認証（MCP_AUTH_*＝案 B・外部 IdP）。
+# bootstrap が SSM stats_http_path / auth_aud_stats から生成（パスが無ければ既定 /mcp。公開ホストがあるのに認証が無ければ bootstrap が FAIL）。
 EnvironmentFile=-/etc/polyarchy/stats.env
 Environment=PYTHONPATH=/opt/polyarchy/polyarchy
 Environment=STATS_QUERY_LOG=/opt/polyarchy/polyarchy/stats/data/query_log/queries.jsonl
 # Environment=MCP_ALLOWED_HOSTS=stats.<domain>,127.0.0.1:8766
-ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m stats.serving.mcp_server --http --host 127.0.0.1 --port 8766
+# 待受アドレスは MCP_HTTP_HOST（deploy.env・無ければ 127.0.0.1＝直露出しない）。ポートは cloudflared ingress・health と対なのでここで固定。
+ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m stats.serving.mcp_server --http --port 8766
 Restart=always
 RestartSec=5
 StandardOutput=journal

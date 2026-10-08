@@ -5,7 +5,7 @@
 # 手順（ロードマップ§2.2）：
 #   ①OS準備 → ②Miniconda → ③env polyarchy(py3.12)+依存はロック（--require-hashes）＋本体 -e . --no-deps → ④fugashi辞書検証
 #   → ⑤HFモデル事前DL(EBS固定) → ⑥S3からデータ取得 → ⑦cloudflared導入+config
-#   → ⑧MCP 秘密パス＋Access 設定（SSM→env）→ ⑨web 秘密（staging のみ）→ ⑩systemd 設置（mcp/(web)/(stats)/(companies)/(deliberations)/fuelsync/logprune を enable。cloudflared はカットオーバー時に手動 start）
+#   → ⑧MCP 秘密パス＋認証（SSM→env・公開なのに認証なしは FAIL）→ ⑨web 秘密（staging のみ）→ ⑩systemd 設置（mcp/(web)/(stats)/(companies)/(deliberations)/fuelsync/logprune を enable。cloudflared はカットオーバー時に手動 start）
 # 秘密は .env で運ばず SSM Parameter Store から取る（仕様§3.3/§4.1）。ログは日本語。
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -237,43 +237,45 @@ fi
 # 公開URLに埋める「合言葉」。Claude のカスタムコネクタは Anthropic 経由で来るため送信元IPで
 # 組織を絞れない（deploy/PROD_MIGRATION.md §2.3 の★）。その補完として推測不可能なパスを使う。
 MCP_PATH="$(ssm_get mcp_http_path)"
-# Cloudflare Access Managed OAuth（案 A＝不採用・資産温存。現行は案 B＝docs/個人認証_案B設計.md）。
-#   SSM access_team_domain（例 xxxx.cloudflareaccess.com）＋ access_aud_<service>（Access アプリの AUD）が両方あると、
-#   そのサービスの env に MCP_ACCESS_TEAM_DOMAIN/MCP_ACCESS_AUD を書き、origin 側で Cf-Access-Jwt-Assertion を検証
-#   （polyarchy_common.mcp_http が自動装着・利用者 ID を捕捉ログに user_hash で残す）。無ければ従来どおり素の HTTP。
+# ── 認証の配線（この節の 2 関数だけ。サービスごとの呼び出しは write_service_env の 1 行）──────────
+# 案 B（現行）：SSM auth_issuer＋auth_aud_<svc> → そのサービスの env に MCP_AUTH_ISSUER/AUD/RESOURCE_URL
+#   （origin 側の装着は polyarchy_common.access.install_auth の 1 か所。resource URL は公開ホスト＋秘密パス）。
+# 案 A（不採用・資産温存）：SSM access_team_domain＋access_aud_<svc> → MCP_ACCESS_TEAM_DOMAIN/AUD。
+# ★利用者はログイン必須（ルート CLAUDE.md §3）：トンネルがあり公開ホストがあるサービスに認証が無ければ FAIL
+#   （自動適用では bootstrap の失敗＝その配布の切り戻し）。トンネルを張らない構成（公開しない）には掛からない。
 ACCESS_TEAM="$(ssm_get access_team_domain)"
-# 外部 IdP（個人認証・案 B＝docs/個人認証_案B設計.md）。SSM auth_issuer＋auth_aud_<service> が両方あると、
-# そのサービスの env に MCP_AUTH_ISSUER/MCP_AUTH_AUD/MCP_AUTH_RESOURCE_URL を書き、origin 側で
-# Bearer JWT 検証＋PRM 配信（polyarchy_common.mcp_http が自動装着）。resource URL は公開ホスト＋秘密パス。
 AUTH_ISSUER_SSM="$(ssm_get auth_issuer)"
-write_service_env() { # $1=env ファイル $2=秘密パス $3=Access AUD $4=IdP AUD（案 B）$5=公開ホスト → 内容があれば 600 で書く・無ければ削除
-  local f="$1" p="$2" aud="$3" idp_aud="${4:-}" pub_host="${5:-}"
-  if [[ -z "$p" && -z "$aud" && -z "$idp_aud" ]]; then rm -f "$f"; return 0; fi
-  umask 077
-  : > "$f"
-  [[ -n "$p" ]] && printf 'MCP_HTTP_PATH=%s\n' "$p" >> "$f"
+auth_env_lines() { # $1=サービス名（ログ用） $2=秘密パス $3=Access AUD $4=IdP AUD $5=公開ホスト → env の行を stdout・公開なのに認証なしは exit 1
+  local svc="$1" p="$2" aud="$3" idp_aud="$4" pub_host="$5" on=""
   if [[ -n "$aud" && -n "$ACCESS_TEAM" ]]; then
-    printf 'MCP_ACCESS_TEAM_DOMAIN=%s\nMCP_ACCESS_AUD=%s\n' "$ACCESS_TEAM" "$aud" >> "$f"
+    printf 'MCP_ACCESS_TEAM_DOMAIN=%s\nMCP_ACCESS_AUD=%s\n' "$ACCESS_TEAM" "$aud"
+    echo "[bootstrap] $svc: Access JWT 検証を有効化（team=${ACCESS_TEAM}）" >&2; on=1
   fi
   if [[ -n "$idp_aud" && -n "$AUTH_ISSUER_SSM" && -n "$pub_host" ]]; then
     printf 'MCP_AUTH_ISSUER=%s\nMCP_AUTH_AUD=%s\nMCP_AUTH_RESOURCE_URL=https://%s%s\n' \
-      "$AUTH_ISSUER_SSM" "$idp_aud" "$pub_host" "${p:-/mcp}" >> "$f"
+      "$AUTH_ISSUER_SSM" "$idp_aud" "$pub_host" "${p:-/mcp}"
+    echo "[bootstrap] $svc: IdP Bearer 検証を有効化（issuer=${AUTH_ISSUER_SSM}・案 B）" >&2; on=1
   fi
+  if [[ -z "$on" && -n "${TUNNEL_ID:-}" && -n "${TUNNEL_CRED:-}" && -n "$pub_host" ]]; then  # ⑦ で ingress を書いた条件と同じ
+    echo "[bootstrap] ✗ $svc は公開ホスト ${pub_host} に出るのに認証が無い（SSM auth_issuer／auth_aud_${svc} を確認）＝起動しない" >&2
+    return 1
+  fi
+}
+write_service_env() { # $1=サービス名 $2=env ファイル $3=秘密パス $4=Access AUD $5=IdP AUD $6=公開ホスト → 内容があれば 600 で書く・無ければ削除
+  local svc="$1" f="$2" p="$3" auth
+  auth="$(auth_env_lines "$svc" "$p" "$4" "${5:-}" "${6:-}")" || exit 1
+  if [[ -z "$p" && -z "$auth" ]]; then rm -f "$f"; return 0; fi
+  umask 077
+  : > "$f"
+  [[ -n "$p" ]] && printf 'MCP_HTTP_PATH=%s\n' "$p" >> "$f"
+  [[ -n "$auth" ]] && printf '%s\n' "$auth" >> "$f"
   chown "$SVC_USER:$SVC_USER" "$f"; chmod 600 "$f"; umask 022
 }
-MCP_AUD="$(ssm_get access_aud_mcp)"
-MCP_IDP_AUD="$(ssm_get auth_aud_mcp)"
-write_service_env /etc/polyarchy/mcp.env "$MCP_PATH" "$MCP_AUD" "$MCP_IDP_AUD" "${TUNNEL_HOST_MCP:-}"
+write_service_env mcp /etc/polyarchy/mcp.env "$MCP_PATH" "$(ssm_get access_aud_mcp)" "$(ssm_get auth_aud_mcp)" "${TUNNEL_HOST_MCP:-}"
 if [[ -n "$MCP_PATH" ]]; then
   echo "[bootstrap] MCP 秘密パスを SSM から設定（値はログに出さない）"
 else
   echo "[bootstrap] ⚠ SSM に mcp_http_path 未登録＝既定パス /mcp で起動（推測可能）" >&2
-fi
-if [[ -n "$MCP_AUD" && -n "$ACCESS_TEAM" ]]; then
-  echo "[bootstrap] recommendations(mcp): Access JWT 検証を有効化（team=${ACCESS_TEAM}）"
-fi
-if [[ -n "$MCP_IDP_AUD" && -n "$AUTH_ISSUER_SSM" ]]; then
-  echo "[bootstrap] recommendations(mcp): IdP Bearer 検証を有効化（issuer=${AUTH_ISSUER_SSM}・案 B）"
 fi
 
 # ── ⑨ 秘密（staging web のみ Anthropic）＝SSM → EnvironmentFile ─────────────────
@@ -313,18 +315,8 @@ else
   rm -f /etc/systemd/system/polyarchy-web.service  # prod は web ユニットを置かない
 fi
 if [[ "$ENABLE_STATS_APP" == "true" ]]; then
-  # stats の秘密パス（SSM stats_http_path・無ければ既定 /mcp）＋ Access Managed OAuth（SSM access_aud_stats）。
-  # recommendations の mcp.env とは別ファイル（write_service_env は上の⑧で定義）。
-  STATS_PATH="$(ssm_get stats_http_path)"
-  STATS_AUD="$(ssm_get access_aud_stats)"
-  STATS_IDP_AUD="$(ssm_get auth_aud_stats)"
-  write_service_env /etc/polyarchy/stats.env "$STATS_PATH" "$STATS_AUD" "$STATS_IDP_AUD" "${TUNNEL_HOST_STATS:-}"
-  if [[ -n "$STATS_AUD" && -n "$ACCESS_TEAM" ]]; then
-    echo "[bootstrap] stats: Access JWT 検証を有効化（team=${ACCESS_TEAM}）"
-  fi
-  if [[ -n "$STATS_IDP_AUD" && -n "$AUTH_ISSUER_SSM" ]]; then
-    echo "[bootstrap] stats: IdP Bearer 検証を有効化（issuer=${AUTH_ISSUER_SSM}・案 B）"
-  fi
+  # stats の秘密パス（SSM stats_http_path・無ければ既定 /mcp）＋認証（⑧の write_service_env）。mcp.env とは別ファイル。
+  write_service_env stats /etc/polyarchy/stats.env "$(ssm_get stats_http_path)" "$(ssm_get access_aud_stats)" "$(ssm_get auth_aud_stats)" "${TUNNEL_HOST_STATS:-}"
   # e-Stat appId（SSM estat_app_id・SecureString）→ /etc/polyarchy/estat.env（更新チェックの freshness が読む。値はログに出さない）。
   # 環境ごとに取得する（導入団体 prod は導入団体が取得した appId）。無ければファイルを消す＝e-Stat 系は検知対象外。
   ESTAT_ID="$(ssm_get estat_app_id)"
@@ -343,13 +335,7 @@ else
 fi
 if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
   # companies の秘密パス（SSM companies_http_path・無ければ既定 /mcp）＋認証（SSM auth_aud_companies＝案 B のスイッチ）。
-  COMPANIES_PATH="$(ssm_get companies_http_path)"
-  COMPANIES_AUD="$(ssm_get access_aud_companies)"
-  COMPANIES_IDP_AUD="$(ssm_get auth_aud_companies)"
-  write_service_env /etc/polyarchy/companies.env "$COMPANIES_PATH" "$COMPANIES_AUD" "$COMPANIES_IDP_AUD" "${TUNNEL_HOST_COMPANIES:-}"
-  if [[ -n "$COMPANIES_IDP_AUD" && -n "$AUTH_ISSUER_SSM" ]]; then
-    echo "[bootstrap] companies: IdP Bearer 検証を有効化（issuer=${AUTH_ISSUER_SSM}・案 B）"
-  fi
+  write_service_env companies /etc/polyarchy/companies.env "$(ssm_get companies_http_path)" "$(ssm_get access_aud_companies)" "$(ssm_get auth_aud_companies)" "${TUNNEL_HOST_COMPANIES:-}"
   mkdir -p "$REPO_DIR/companies/data/query_log"; chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/companies/data"
   install -m 644 "$UNIT_SRC/polyarchy-companies.service" /etc/systemd/system/polyarchy-companies.service
 else
@@ -357,13 +343,7 @@ else
 fi
 if [[ "$ENABLE_DELIBERATIONS_APP" == "true" ]]; then
   # deliberations の秘密パス（SSM deliberations_http_path・無ければ既定 /mcp）＋認証（SSM auth_aud_deliberations＝案 B のスイッチ）。
-  DELIB_PATH="$(ssm_get deliberations_http_path)"
-  DELIB_AUD="$(ssm_get access_aud_deliberations)"
-  DELIB_IDP_AUD="$(ssm_get auth_aud_deliberations)"
-  write_service_env /etc/polyarchy/deliberations.env "$DELIB_PATH" "$DELIB_AUD" "$DELIB_IDP_AUD" "${TUNNEL_HOST_DELIBERATIONS:-}"
-  if [[ -n "$DELIB_IDP_AUD" && -n "$AUTH_ISSUER_SSM" ]]; then
-    echo "[bootstrap] deliberations: IdP Bearer 検証を有効化（issuer=${AUTH_ISSUER_SSM}・案 B）"
-  fi
+  write_service_env deliberations /etc/polyarchy/deliberations.env "$(ssm_get deliberations_http_path)" "$(ssm_get access_aud_deliberations)" "$(ssm_get auth_aud_deliberations)" "${TUNNEL_HOST_DELIBERATIONS:-}"
   mkdir -p "$REPO_DIR/deliberations/data/query_log" "$REPO_DIR/deliberations/data/qdrant" "$REPO_DIR/deliberations/data/qdrant_snapshots"
   chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/deliberations/data"
   install -m 644 "$UNIT_SRC/qdrant-deliberations.service" /etc/systemd/system/qdrant-deliberations.service

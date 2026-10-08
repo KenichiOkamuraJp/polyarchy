@@ -15,8 +15,8 @@
 | `taxonomy` | `POLICY_TAGS`（分野タグ 21 分類）／`TAGS`（英字キー）／`is_valid_tag` | 各単位に 1〜3 個付与。**全サービス同じ語彙**＝「主張↔事実」の突き合わせ軸（コーパス連邦）。**語彙を各サービス側で複製しない**（英字キーで参照＝語彙に無いキーは起動時に KeyError） |
 | `logsetup` | `configure_quiet_logging()`／`get_logger(name)`／`guard_stdout_for_stdio()`／`quiet_stdout()` | MCP stdio では **stdout がプロトコル線**。起動時に `guard_stdout_for_stdio()` を最初に呼ぶ。ログは全て日本語で stderr |
 | `capture` | `append_record(path, record)`／`load_records(path)`／dedup | 実クエリの捕捉（評価の燃料）。レコード形と置き場所は各サービスが決める（各論参照）。**利用者キーは `user_hash`（メール sha256 先頭 16 桁・平文を残さない）を自動付与** |
-| `access` | `access_jwt_middleware`（案 A・Cloudflare Access）／`oidc_bearer_middleware`＋PRM（**案 B・外部 IdP**＝2026-09-02 から本線） | 直接は使わない（`mcp_http` が env を見て自動装着） |
-| `mcp_http` | `serve_streamable_http(mcp, host, port, path, tools_desc, health_check)` | HTTP 公開はこの 1 関数。env は全サービス同名。`mcp_http` が読むのは `MCP_AUTH_ISSUER/AUD/RESOURCE_URL`（案 B＝設定時は Bearer 検証＋PRM 配信・401 誘導）・`MCP_ACCESS_*`（案 A・温存）・`MCP_ALLOWED_HOSTS`。`MCP_HTTP_PATH`（秘密パス）は**各サービスの `mcp_server` 側が読んで path 引数に渡す**（bootstrap ⑧ が同じ env ファイルに書くため実務上は一体）。`GET /healthz` は認証不要で 200/503 |
+| `access` | `access_jwt_middleware`（案 A・Cloudflare Access）／`oidc_bearer_middleware`＋PRM（**案 B・外部 IdP**＝2026-09-02 から本線） | 直接は使わない。**認証の装着点は `install_auth` の 1 関数だけ**（`mcp_http` が呼ぶ・env を読むのもここだけ＝`test_common` が検査）。導入団体が自前の認証に替えるときはこの関数の中身を替える（約束は docstring） |
+| `mcp_http` | `serve_streamable_http(mcp, host, port, path, tools_desc, health_check)` | HTTP 公開はこの 1 関数。env は全サービス同名。`mcp_http` が読むのは `MCP_ALLOWED_HOSTS`、認証の env（`MCP_AUTH_*`＝案 B・`MCP_ACCESS_*`＝案 A）は `access.install_auth` が読む。待受アドレスは各 `mcp_server` が `MCP_HTTP_HOST`（既定 127.0.0.1・箱では deploy.env）から取る。`MCP_HTTP_PATH`（秘密パス）は**各サービスの `mcp_server` 側が読んで path 引数に渡す**（bootstrap ⑧ が同じ env ファイルに書くため実務上は一体）。`GET /healthz` は認証不要で 200/503 |
 | `httplog` | アクセスログ 1 行形式 | CloudWatch 設定と結合＝**形式変更は deploy と同時** |
 | `usage_report` | 週次利用レポート生成 | 数字のみ・検索語なし（運用設計 §4.2） |
 

@@ -256,8 +256,8 @@ def _health() -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--http", action="store_true")
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8767)
+    ap.add_argument("--host", default=os.environ.get("MCP_HTTP_HOST", "127.0.0.1"))
+    ap.add_argument("--port", type=int, default=int(os.environ.get("MCP_HTTP_PORT", "8767")))
     a = ap.parse_args()
     if a.http:
         from polyarchy_common.mcp_http import serve_streamable_http

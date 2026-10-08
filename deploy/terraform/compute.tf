@@ -39,6 +39,7 @@ locals {
     tunnel_host_companies     = var.tunnel_hostname_companies
     enable_deliberations_app  = var.enable_deliberations_app
     tunnel_host_deliberations = var.tunnel_hostname_deliberations
+    mcp_http_host             = var.mcp_http_host
     install_dir               = "/opt/polyarchy"
     hf_home                   = "/opt/polyarchy/models"
   })

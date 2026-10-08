@@ -25,13 +25,14 @@ Claude / ChatGPT / Claude Code
 Cloudflare エッジ（変更なし：レート制限＋秘密パス。IP 許可は使わない＝OAuth と両立しない実測）
   └─ Tunnel → 箱
 箱（origin）: polyarchy_common.mcp_http.serve_streamable_http
-  └─ oidc_bearer_middleware（polyarchy_common/access.py）
+  └─ install_auth（polyarchy_common/access.py・認証の装着点はこの 1 関数）
+     └─ oidc_bearer_middleware
      ＝IdP の JWKS で署名/iss/aud/期限を検証 → email/sub を contextvar へ
      → capture が user_hash（メール sha256 先頭 16 桁・メール無しトークンは sub 代替）を捕捉ログに自動付与
 stats(:8766) / recommendations(:8765) … コード変更なし（env だけで両サービスに装着＝共通化は構造で担保）
 ```
 
-### env 契約（サービス横断で同名・`mcp_http.py` docstring が正）
+### env 契約（サービス横断で同名・`access.install_auth` の docstring が正）
 
 | env | 意味 |
 |---|---|
@@ -42,8 +43,15 @@ stats(:8766) / recommendations(:8765) … コード変更なし（env だけで�
 deploy 側の一本道：`deploy/env/*.env` に `AUTH_ISSUER`・`AUTH_AUD_STATS`・`AUTH_AUD_MCP` →
 `deploy.sh <env> secrets` が SSM `auth_issuer`・`auth_aud_<svc>` に登録 → bootstrap ⑧が該当サービスの
 `/etc/polyarchy/<svc>.env` に `MCP_AUTH_*` を書く（resource URL は `TUNNEL_HOST_<SVC>`＋秘密パスから合成）。
-`AUTH_AUD_<SVC>` が**サービス毎の有効化スイッチ**（空なら従来どおり）。切り戻し＝SSM の `auth_aud_<svc>`
-削除 → bootstrap 再走行 → restart（案 A と同じ作法）。
+bootstrap 側の認証の行は `auth_env_lines` の 1 関数に集めてある（サービスごとの呼び出しは `write_service_env` の 1 行）。
+**公開する（トンネルがあり `TUNNEL_HOST_<SVC>` がある）サービスに認証が無ければ bootstrap ⑧ が FAIL する**＝
+自動適用ではその配布が切り戻る（利用者はログイン必須・ルート CLAUDE.md §3）。したがって公開中のサービスの
+`auth_aud_<svc>` を削除して「認証を外す」ことはできない（外すならそのサービスの公開ホストごと外す）。
+
+導入団体が自前の認証に替えるときの差し替え点は 2 か所＝origin の `access.install_auth`（ASGI を受けて ASGI を返す・
+利用者を識別するなら contextvar に `email`／`sub` を置く）と、bootstrap の `auth_env_lines`（その認証が要る env を書く）。
+トンネルを張らずに VPC 内から受ける構成は、待受アドレスを terraform var `mcp_http_host`（→ deploy.env の
+`MCP_HTTP_HOST`）で変え、入口の守りをセキュリティグループで別に持つ。
 
 ## 2. 作業リスト（全体）
 

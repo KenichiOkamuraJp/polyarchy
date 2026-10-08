@@ -71,6 +71,7 @@ load_env() {
     -var "tunnel_hostname_companies=${TUNNEL_HOST_COMPANIES:-}"
     -var "enable_deliberations_app=${ENABLE_DELIBERATIONS_APP:-false}"
     -var "tunnel_hostname_deliberations=${TUNNEL_HOST_DELIBERATIONS:-}"
+    -var "mcp_http_host=${MCP_HTTP_HOST:-127.0.0.1}"   # MCP 4 本の待受アドレス（deploy.env へ）。既定のまま使う
     # recommendations の検索構成（既定＝本線 v7/qdrant。切り戻しは Qdrant 内 v6 の COLLECTION_NAME 切替＝
     # Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃・vector_backend は qdrant のみ有効）。
     # ★シェルに export 済みの COLLECTION_NAME（ローカル運用）が混入しないよう env 側は RECOMMENDATIONS_ 接頭辞。

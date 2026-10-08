@@ -351,7 +351,6 @@ curl -sS https://recommendations.<導入団体ドメイン>/healthz   # 200（st
   （S3 バケットは中身があると destroy が失敗＝データは保全。完全削除は手動で空にしてから）。
 - **prod を触る前に保険**：`bash scripts/rollback.sh snapshot prod`（EBS スナップショット）。
 - **prod は staging とは別ドメイン/別アカウント**＝**prod の失敗は staging（開発者の検証環境）の稼働に影響しない**。
-  （staging 固有＝入口を Mac へ戻す `rollback.sh entry-to-mac` は prod には無関係。）
 
 ---
 

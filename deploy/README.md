@@ -48,7 +48,7 @@
 - **`PROD_MIGRATION.md`** … 導入団体 AWS 本番移行の**独立手順書**（アカウント作成→Cloudflare→deploy→go-live→ロールバック）。
 - **`env/*.env.example`** … 環境ごとの非秘密パラメータ（staging/prod の差はここだけ）。`cp` して使う。
 - **`scripts/deploy.sh`** … operator 手順を1本化（secrets→bucket→upload→apply）。`bash scripts/deploy.sh <env> [phase]`。
-- **`scripts/rollback.sh`** … ロールバック/現状復帰（status／entry-to-mac／entry-to-ec2／snapshot／destroy）。
+- **`scripts/rollback.sh`** … ロールバック/現状復帰（status／snapshot／destroy）。
 - **`scripts/cloudflare-guard.sh`** … 入口ガード（秘密パス＋レート制限。IP 許可はオプション＝公開 DB では `IP_ALLOWLIST=off`・§9.5）を Cloudflare に冪等適用。
 - **`scripts/prune_query_log.py`** … 捕捉ログの保持期間超過分を削除（30日・systemd タイマーから毎日・recommendations／stats／companies の 3 本）。
 - **`scripts/access-oauth.sh`** …（案 A 資産・**現行未使用**＝2026-09-02 案 B 採択）Cloudflare Access アプリ（Managed OAuth）の作成/確認（公式コネクタ化）。

@@ -1,5 +1,5 @@
 # Polyarchy 企業情報DB（companies）の MCP サーバ——recommendations／stats とは別プロセス・別ホスト名。
-#   python -m companies.serving.mcp_server --http --host 127.0.0.1 --port 8767
+#   python -m companies.serving.mcp_server --http --port 8767
 # 層＝公開固定・fail-closed（該当なしは「ない」と返す）。モデル不要・軽量・ランタイム秘密なし（EDINET の API キーは取込側だけ）。
 # 127.0.0.1 バインドで直露出しない。設置は bootstrap ⑩（ENABLE_COMPANIES_APP=true のとき）。
 # 入口は cloudflared ingress の companies.<domain> → :8767。
@@ -15,11 +15,12 @@ Group=polyarchy
 WorkingDirectory=/opt/polyarchy/polyarchy
 EnvironmentFile=-/etc/polyarchy/deploy.env
 # 秘密パス（MCP_HTTP_PATH=/mcp-<乱数>）＋認証（MCP_AUTH_*＝案 B・外部 IdP）。
-# bootstrap が SSM companies_http_path / auth_aud_companies から生成（無ければ既定 /mcp・認証なし）。
+# bootstrap が SSM companies_http_path / auth_aud_companies から生成（パスが無ければ既定 /mcp。公開ホストがあるのに認証が無ければ bootstrap が FAIL）。
 EnvironmentFile=-/etc/polyarchy/companies.env
 Environment=PYTHONPATH=/opt/polyarchy/polyarchy
 Environment=COMPANIES_QUERY_LOG=/opt/polyarchy/polyarchy/companies/data/query_log/queries.jsonl
-ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m companies.serving.mcp_server --http --host 127.0.0.1 --port 8767
+# 待受アドレスは MCP_HTTP_HOST（deploy.env・無ければ 127.0.0.1＝直露出しない）。ポートは cloudflared ingress・health と対なのでここで固定。
+ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m companies.serving.mcp_server --http --port 8767
 Restart=always
 RestartSec=5
 StandardOutput=journal

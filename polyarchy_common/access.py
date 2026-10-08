@@ -22,8 +22,8 @@ contextvar 境界に利用者を置く。併せて MCP 認可仕様の Protected
 を配り、401 に `WWW-Authenticate: Bearer resource_metadata=…` を付けて認可サーバを発見させる。
 
 HTTP で公開する全 MCP 入口（recommendations / stats / …）が同じ保険を掛ける（`mcp_http.serve_streamable_http`
-が env `MCP_ACCESS_TEAM_DOMAIN` / `MCP_ACCESS_AUD`（案 A）・`MCP_AUTH_ISSUER` / `MCP_AUTH_AUD` /
-`MCP_AUTH_RESOURCE_URL`（案 B）を見て自動で装着する）。
+が末尾の `install_auth` を呼び、そこが env `MCP_ACCESS_TEAM_DOMAIN` / `MCP_ACCESS_AUD`（案 A）・`MCP_AUTH_ISSUER` /
+`MCP_AUTH_AUD` / `MCP_AUTH_RESOURCE_URL`（案 B）を見て装着する＝認証の装着点はこの 1 関数だけ）。
 """
 import contextvars
 import hashlib
@@ -208,3 +208,37 @@ def oidc_bearer_middleware(app, issuer: str, aud: Optional[str], protect_path: s
             _current_user.reset(tok)
 
     return middleware
+
+
+# ── 認証の装着点（HTTP で公開する全 MCP 入口が通る唯一の場所）──────────────────
+
+def install_auth(app, *, host: str, port: int, path: str, logger_name: str = "polyarchy.mcp"):
+    """MCP アプリ（ASGI）に認証を装着して返す。`mcp_http.serve_streamable_http` がここだけを呼ぶ。
+
+    env を見て装着する（サービス横断で同名）：
+    - `MCP_ACCESS_TEAM_DOMAIN`＋`MCP_ACCESS_AUD` … 案 A（Cloudflare Access JWT・温存）
+    - `MCP_AUTH_ISSUER`（＋`MCP_AUTH_AUD`・`MCP_AUTH_RESOURCE_URL`）… 案 B（外部 IdP の Bearer JWT＋PRM）
+    どちらも無ければ素通し（ローカルの stdio 代わり・開発用）。**公開する箱で認証が無い構成は
+    bootstrap ⑧ が FAIL にする**（公開ホストがあるのに `auth_aud_<svc>` が無い＝配布を止める）。
+
+    差し替えの約束（導入団体が自前の認証に替えるときは、この関数の中身だけを替える）：
+    - ASGI アプリを受け取り ASGI アプリを返す。`path` 配下を守り、`/healthz` はこの外側（mcp_http が最外に置く）。
+    - 利用者を識別するなら `_current_user` に `{"email", "sub"}` を置く（捕捉ログ・アクセスログの
+      `user_hash` はそこから立つ。置かなければ `user_hash` が付かないだけで、動作は変わらない）。
+    """
+    import os
+
+    log = get_logger(logger_name)
+    team = os.environ.get("MCP_ACCESS_TEAM_DOMAIN")  # 例 xxxx.cloudflareaccess.com
+    aud = os.environ.get("MCP_ACCESS_AUD")           # Access アプリの Application Audience(AUD) タグ
+    if team and aud:
+        app = access_jwt_middleware(app, team, aud, path, logger_name)
+        log.info("Access JWT 検証=有効（team=%s・Cf-Access-Jwt-Assertion 必須の多層防御）", team)
+    issuer = os.environ.get("MCP_AUTH_ISSUER")       # 例 https://xxxx.authkit.app（トークンの iss と完全一致）
+    if issuer:
+        resource = os.environ.get("MCP_AUTH_RESOURCE_URL") or f"http://{host}:{port}{path}"
+        app = oidc_bearer_middleware(app, issuer, os.environ.get("MCP_AUTH_AUD"), path, resource, logger_name)
+        log.info("IdP Bearer 検証=有効（issuer=%s・resource=%s・案 B 個人認証）", issuer, resource)
+    if not (team and aud) and not issuer:
+        log.info("認証=未装着（env 未設定＝ローカル開発の素 HTTP。公開する箱では bootstrap ⑧ が止める）")
+    return app

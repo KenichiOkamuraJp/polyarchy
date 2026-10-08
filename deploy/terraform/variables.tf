@@ -106,6 +106,12 @@ variable "tunnel_hostname_deliberations" {
   default     = ""
 }
 
+variable "mcp_http_host" {
+  description = "MCP サーバ 4 本の待受アドレス（deploy.env の MCP_HTTP_HOST）。既定 127.0.0.1＝トンネル経由だけで直露出しない。トンネルを使わず VPC 内から受ける構成でだけ変える（そのときは入口の守りをセキュリティグループで別に持つ）。"
+  type        = string
+  default     = "127.0.0.1"
+}
+
 variable "tunnel_hostname_web" {
   description = "Web(chat_app) を出す公開ホスト名。enable_web_app=false の prod では未使用。"
   type        = string

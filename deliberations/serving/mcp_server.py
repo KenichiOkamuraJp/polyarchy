@@ -120,8 +120,8 @@ def list_meeting(org: str, session_no: int) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--http", action="store_true")
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8768)
+    ap.add_argument("--host", default=os.environ.get("MCP_HTTP_HOST", "127.0.0.1"))
+    ap.add_argument("--port", type=int, default=int(os.environ.get("MCP_HTTP_PORT", "8768")))
     args = ap.parse_args()
     configure_quiet_logging()
     if args.http:
