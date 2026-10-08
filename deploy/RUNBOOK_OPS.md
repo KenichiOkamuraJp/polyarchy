@@ -276,6 +276,8 @@ bash deploy/scripts/release.sh <staging|prod>
 データ版が released/applied 一致・APPLIED・smoke PASS になっていること。ログで確定するなら CW Logs `polyarchy/dataapply` の
 「✅ APPLIED:」の行（smoke 3 本の PASS の直後に出る＝この版から。★それより前の版の箱では完了の行が更新チェックの終了後まで出ない＝
 smoke の PASS が最後の行のまま止まって見える。そのときはダッシュボード②〔毎時 05 分前後に更新〕を待つ）。
+CW Logs で適用の終わりを待つときの語は「✅ APPLIED」か「切り戻し完了」（★「rollback」で待たない＝退避の段の
+`rsync → /opt/polyarchy/rollback` の行で早く止まる。「ROLLED_BACK」はマークにだけ書かれログには出ない＝2026-10-08 の B33 配布で運用側が指摘）。
 ダッシュボードは APPLIED の後の更新チェックの最後（数分後＝CW Logs の「ダッシュボード更新済」の行）と毎時 05 分に生成される。
 版を見るときは冒頭の「生成」の時刻（JST）が APPLIED より後であることを先に確かめる（それより前の生成なら古い版が出ていて正しい）。
 
