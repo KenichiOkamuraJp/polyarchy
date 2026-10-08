@@ -75,7 +75,7 @@ def _layer_gate_selftest(embed_model, top_k: int) -> bool:
     ok = True
     try:
         # (1) 既定（公開のみ）→ 機密は絶対に出ない。
-        r = build_hybrid_retriever(name, embed_model, 10, 10, 10, SearchFilter())
+        r = build_hybrid_retriever(name, embed_model, 10, 10, 10, SearchFilter(), allow_inmemory_bm25=True)
         pub_files = [source_name(n) for n in r.retrieve(q)]
         leak = "sec.txt" in pub_files
         print(f"  [層ゲート] 既定(公開のみ) 取得={pub_files} 機密混入={'あり!!' if leak else 'なし'}")
@@ -97,8 +97,9 @@ def run_filter_eval(top_k: int, dump_path: Path | None = None) -> None:
 
     eval_filter.json の各設問に filter を適用し、keep（絞っても正解が top_k に残る）/
     drop（フィルタで正解が除外される）を検証する。測定経路は本番経路＝
-    `PolicySearchService.search(diversify=True)`（MCP／chat_app の既定と同一）。
+    `PolicySearchService.search(diversify=True)`（MCP の既定と同一）。
     加えて合成データで層ゲートを自己検証する。既存 78問（無条件検索前提）とは別ハーネス。
+    合否は終了コード＝全問 PASS かつ層ゲート PASS でなければ sys.exit(1)（release.sh のゲート）。
     dump_path を渡すと、各設問の上位 k 件 {設問ID: [file_name…]} を JSON に書く（判定は不変）。
     """
     if not FILTER_EVAL_PATH.exists():
@@ -149,3 +150,6 @@ def run_filter_eval(top_k: int, dump_path: Path | None = None) -> None:
     print(f"総合: フィルタ {passed}/{len(fset)} + 層ゲート {'PASS' if gate_ok else 'FAIL'}")
     if dump_path:
         dump_topk(topk, dump_path)
+    # 合否は終了コード（release.sh は出力の文字列を見ない）＝全問 PASS かつ層ゲート PASS のときだけ 0。
+    if passed != len(fset) or not gate_ok:
+        sys.exit(1)

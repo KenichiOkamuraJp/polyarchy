@@ -15,13 +15,13 @@ dependencies = [
 [project.optional-dependencies]
 # ★配信されるサーバ（recommendations/serving/mcp_server.py・stats/serving/mcp_server.py）は生成 AI の API を呼ばない。
 #   下の anthropic／llms-anthropic／embeddings-openai／streamlit は、取込時の補助（チャンク境界検出・分野タグ判定）、
-#   回答まで含む評価（eval/full.py）、廃止済みの参照用 Web UI（serving/app.py・chat_app.py）だけが使う。
+#   回答まで含む評価（eval/full.py）だけが使う（参照用 Web UI は 2026-10-09 にコード削除＝streamlit は次のロック再生成で外す）。
 #   1 つの環境に全部入れる構成のため extra は分けていない（分けるとロックの再生成が要る＝deploy/RUNBOOK_OPS.md §7）。
 recommendations = [
     "llama-index>=0.11.0",
     "llama-index-readers-file>=0.2.0",
     "llama-index-embeddings-openai>=0.2.0",       # 取込時のみ（ingest/chunking.py のチャンク境界検出）。検索の埋め込みはローカルモデル
-    "llama-index-embeddings-huggingface>=0.3.0",  # Phase 3: 日本語特化/多言語のローカル埋め込み比較用
+    "llama-index-embeddings-huggingface>=0.3.0",  # 本番の埋め込み（ruri）の読み込み（polyarchy_retrieval.models.hf_embedding）
     "llama-index-llms-anthropic>=0.3.0",          # 回答まで含む評価（eval/full.py）と旧 CLI のみ。サーバは使わない
     "pymupdf>=1.24.0",
     "python-dotenv>=1.0.0",
@@ -29,16 +29,16 @@ recommendations = [
     "rank-bm25>=0.2.2",              # Phase 5: ハイブリッド検索の BM25 語彙スコア
     "fugashi>=1.3.0",               # Phase 5: 日本語形態素（BM25/リランカーの MeCab トークナイズ）
     "unidic-lite>=1.0.8",           # Phase 5: fugashi 用の軽量辞書
-    "streamlit>=1.40",              # Phase 8: 参照用 Web UI（app.py / chat_app.py＝2026-09-02 廃止・コードは残置）
+    "streamlit>=1.40",              # Phase 8: 参照用 Web UI（2026-09-02 廃止・2026-10-09 コード削除）＝次のロック再生成（lock_deps.sh）で外す
     "qdrant-client>=1.12.0",        # Phase B: ベクトルDB（VECTOR_BACKEND=qdrant・既定）
-    "anthropic>=0.40",              # 取込時の分野タグ判定（ingest/policy_tagger.py）と廃止済み chat_app.py。サーバは使わない
+    "anthropic>=0.40",              # 取込時の分野タグ判定（ingest/policy_tagger.py）。サーバは使わない
     "requests>=2.31",               # recommendations/ingest/collect.py（収集）
     "beautifulsoup4>=4.12",         # recommendations/ingest/collect.py（HTML 本文抽出）
 ]
 stats = [
     "openpyxl>=3.1",                # ESRI 国民経済計算など xlsx 原典の取込（取込時のみ）
     "xlrd>=2.0",                    # 旧基準（68SNA/93SNA）年次推計の .xls 原典の取込（取込時のみ）
-    "pymupdf>=1.24.0",              # 経団連 妥結 PDF（stats/ingest/pdf_shunto・現在は guide＝通常は未使用）
+    "pymupdf>=1.24.0",              # PDF 原典の取込（stats/ingest の cao_mitoshi・pdf_hakusho・pdf_shunto 等＝取込時のみ）
 ]
 # companies＝取込（作業用 PC）だけが lxml を使う。配信（companies/serving・core）は共通の依存だけで動く＝箱のロックには入れない。
 companies = [

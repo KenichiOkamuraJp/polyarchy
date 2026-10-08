@@ -1,7 +1,7 @@
 """
-Phase 3：埋め込みモデルの定義（レジストリ）。
+埋め込みモデルの定義（レジストリ）と本番の解決（production_embed_model＝config.PRODUCTION_EMBEDDING＝ruri_v3_310m_pfx）。
 
-比較の変数を「検索に使う埋め込みモデル」だけに絞る。
+もとは Phase 3 の比較の器：比較の変数を「検索に使う埋め込みモデル」だけに絞る。
   - チャンク分割は全モデル共通（config.DEFAULT_STRATEGY="semantic"）。
     しかも semantic の文境界は breakpoint 用の**参照埋め込み**（chunking._semantic が
     使う config.EMBEDDING_MODEL）で決まるため、比較対象モデルを変えても
@@ -16,7 +16,7 @@ Phase 3：埋め込みモデルの定義（レジストリ）。
 実際に使うモデルの分だけ初期化するため。
 
 ローカル HF のモデル（ruri ほか）の登録と読み込みは共有ライブラリ `polyarchy_retrieval.models`
-（2026-10-03 に切り出し＝モデルの版の固定を 1 箇所に）。本モジュールは OpenAI（API 鍵＝本コーパスの config）
+（2026-10-03 に切り出し＝本番の重みの版〔commit〕の固定も同所）。本モジュールは OpenAI（API 鍵＝本コーパスの config）
 の登録と、本番のキー（config.PRODUCTION_EMBEDDING）の解決を持つ。
 """
 from polyarchy_retrieval.models import HF_EMBEDDING_MODELS
@@ -35,15 +35,12 @@ def _openai(model_name: str):
 # キーはそのままコレクション名の一部（policy_docs_emb_<key>）になるので簡潔に。
 EMBEDDING_MODELS: dict[str, callable] = {
     # --- OpenAI（API・追加依存なし） ---
-    "openai_small": _openai("text-embedding-3-small"),  # 現行本番。1536次元・安価
+    "openai_small": _openai("text-embedding-3-small"),  # Phase 3 までの本番（現行は ruri）。1536次元・安価
     "openai_large": _openai("text-embedding-3-large"),  # 3072次元・高精度・高料金
 
     # --- 日本語特化 / 多言語（ローカル・要 llama-index-embeddings-huggingface）＝共有ライブラリの登録 ---
     **HF_EMBEDDING_MODELS,
 }
-
-# 追加依存(HuggingFace)なしで即実行できるモデル。既定の比較対象。
-OPENAI_MODELS = ["openai_small", "openai_large"]
 
 
 def production_embed_model():

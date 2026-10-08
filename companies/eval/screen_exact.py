@@ -84,10 +84,18 @@ def _key(c: dict) -> str:
     return c.get("metric") or c.get("expr")
 
 
+# 横断の問の expect が使えるキー（ここに無いキーは FAIL＝書き間違いの検査が黙って効かないのを防ぐ・2026-10-09）
+QUERY_EXPECT_KEYS = {"reason", "rows_satisfy", "no_manufacturing", "industries_only", "top_line_items_only", "note_includes", "ratio_note",
+                     "not_ingested_include", "values_verbatim", "companies_include", "max_rows", "sorted", "excluded_include",
+                     "excluded_count_min", "judged_by_statement_min", "unavailable_include", "allow_empty"}
+
+
 def check_query(q: dict, sc) -> str | None:
+    e = q["expect"]
+    if unknown := sorted(set(e) - QUERY_EXPECT_KEYS):
+        return f"expect に知らないキー {unknown}（判定器が読まない＝検査が黙って効かない）"
     kw = {k: q[k] for k in ("order_by", "order", "industries", "manufacturing", "basis", "period_from", "period_to", "limit", "as_of") if k in q}
     r = sc(q["conditions"], **kw)
-    e = q["expect"]
     if "reason" in e:
         if r.get("found") is not False or r.get("reason") != e["reason"]:
             return f"受付の誤りにならない: {r.get('reason')}（期待 {e['reason']}）"
@@ -108,8 +116,10 @@ def check_query(q: dict, sc) -> str | None:
         return "業種の絞り込みの外の会社が入った"
     if "top_line_items_only" in e and any(row.get("top_line_item") not in e["top_line_items_only"] for row in rows):
         return f"最上段の収益の項目が期待と違う: {sorted({row.get('top_line_item') for row in rows})}"
-    if "note_includes" in e and e["note_includes"] not in r.get("note", ""):
-        return f"返り値の note に「{e['note_includes']}」が無い"
+    # note_includes は語の配列（trend_exact と同じ形）。文字列 1 つも [文字列] として受ける＝文字列を 1 文字ずつ照合しない
+    for w in ([e["note_includes"]] if isinstance(e.get("note_includes"), str) else e.get("note_includes", [])):
+        if w not in r.get("note", ""):
+            return f"返り値の note に「{w}」が無い"
     if "ratio_note" in e and bool(r.get("ratio_note")) != e["ratio_note"]:
         return f"比率の形の案内（ratio_note）が{'無い' if e['ratio_note'] else '付いている（比率の条件が無い問）'}"
     for k in e.get("not_ingested_include", []):
@@ -172,6 +182,8 @@ def main() -> int:
                 err = f"例外: {ex!r}"[:300]
             if err:
                 fails.append((q["id"], err))
+    if not all([pos, neg, qs]):  # 問が 0 件で PASS にしない（作り直しで空になったファイルを見逃さない・2026-10-09）
+        fails.append(("eval", "読み込んだ問が 0 件のファイルがある（評価ファイルが空・読めない）"))
     for i, err in fails[:40]:
         print(f"  FAIL {i}: {err}")
     print(f"{'PASS' if not fails else 'FAIL'}: 横断検索 正例 {len(pos)}・負例 {len(neg)}・横断の問 {len(qs)}・失敗 {len(fails)}")

@@ -1,8 +1,9 @@
 """第 1e 便（時系列の横断検索）の評価問の素材づくり（実装より先に立てる＝docs/第1e便_計画.md §3）。
 
   python -m companies.eval.make_trend_candidates
-出力：companies/data/eval/trend.jsonl（系列と集約の正例）・trend_fail_closed.jsonl（会社ごとの除外）。**上書きする**
-＝人手の問（横断の問・受付の誤り）は trend_queries.jsonl に置く（本ファイルは触らない）。
+出力：companies/data/eval/trend.jsonl（系列と集約の正例）・trend_fail_closed.jsonl（会社ごとの除外）・trend_lookup.jsonl（1 社の年ごと）。**上書きする**
+＝人手の問（横断の問・受付の誤り）は trend_queries.jsonl、人手の負例は trend_manual_fail_closed.jsonl、人手の 1 社の
+年ごとの問は trend_lookup_manual.jsonl に置く（本ファイルは触らない＝2026-10-09 まで trend_lookup.jsonl に人手の 2 問があり作り直すと消えた）。
 
 期待値の取り方＝式エンジン（core/trend.py）とは別の経路：
 - 各年の値＝その会社の**全部の書類**の公式 CSV（type=5）と自前のパーサの 2 経路が一致した点だけを集め、

@@ -381,6 +381,8 @@ def build_server(service):
             parts.append(f"per_org={requested_per_org}→{per_org}に制限（上限{SWEEP_PER_ORG_MAX}）")
         else:
             parts.append(f"per_org={per_org}")
+        # covered の実態を応答内で開示（関連度の閾値は掛けていない＝絞り込みの範囲で 1 件でも返れば True）。
+        parts.append("covered=絞り込みの範囲で 1 件以上返った（関連の強さの判定ではない）")
         if scan is not None:
             # M1：earliest_date の実態を応答内で開示（フィールド名が「最古」を名乗る罠の緩和）。
             parts.append("earliest_date=per_org 件中の最古（コーパス内最古の保証なし）")
@@ -481,13 +483,10 @@ def main() -> None:
 def main_http(host: str = "127.0.0.1", port: int = 8765, path: str = "/mcp") -> None:
     """Streamable HTTP で待ち受ける（リモート公開用・stdio とは別モード・Phase 13+）。
 
-    Cloudflare Tunnel 経由で `mcp.<ドメイン>` に出し、**Cloudflare Access の Managed OAuth**
-    で認証する構成の"原点"。既定は **127.0.0.1 バインド**＝ローカル/トンネル経由のみ到達可
-    （直接インターネットには晒さない）。ツールは stdio と同一＝**層は公開固定＋フェイルクローズ**
-    のまま（機密は物理遮断）。HTTP は stdout をプロトコルに使わないので stdio 保護は不要。
-
-    ※認証（Cf-Access-Jwt-Assertion 検証）は Cloudflare Access 設定後に追加する多層防御（Phase 2）。
-      一次ゲートは Cloudflare Access のエッジ遮断（未認証は origin に届かない）。
+    Cloudflare Tunnel 経由で `recommendations.<ドメイン>` に出す。認証は `polyarchy_common.mcp_http` が末尾で
+    `access.install_auth` を装着する（現行＝外部 IdP の Bearer 検証・利用者はログイン必須）。既定は
+    **127.0.0.1 バインド**＝ローカル/トンネル経由のみ到達可（直接インターネットには晒さない）。ツールは stdio と同一＝
+    **層は公開固定＋フェイルクローズ**のまま（機密は物理遮断）。HTTP は stdout をプロトコルに使わないので stdio 保護は不要。
     """
     from recommendations.core.search_api import PolicySearchService
 

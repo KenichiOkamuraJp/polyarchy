@@ -19,7 +19,7 @@
 | CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・5xx>5/5分・401>30/5分・**dataapply-rollback**（自動適用の切り戻し＝§5） |
 | CW Logs `polyarchy/mcp`・`polyarchy/stats` | httplog（時刻・パス・status・ms・user_hash・cf-ray）。保持 30 日 |
 | CW Logs `polyarchy/dataapply` | 自動適用の全出力（退避→反映→smoke→判定/切り戻し）＝データ更新の監査線（監査ガイド §4b）。保持 30 日 |
-| 箱内のログファイル | `/var/log/polyarchy/*.log`（rsyslog）は logrotate 週次×4 世代（約 5 週）。捕捉ログ本体（query_log）は 30 日 prune |
+| 箱内のログファイル | `/var/log/polyarchy/*.log`（rsyslog）は logrotate 日次×30 世代（30 日）・journal は `MaxRetentionSec=30day`（2026-10-09 の版の配布から＝bootstrap の変更はその配布で効く。それまでは週次×4 で約 5 週・journal は期限なし）。捕捉ログ本体（query_log）は 30 日 prune＝保持の正典は deploy/README「捕捉ログの保持」 |
 | Cloudflare Tunnel Health 通知 | ダッシュボードで ON にする（無料・トンネル断） |
 
 ## 1. 症状 → 確認 → 復旧
@@ -45,8 +45,10 @@ journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep -E " 50[0-9] "
 - 案 B の照合（三点一致）：SSM `auth_issuer`／`auth_aud_<svc>` と WorkOS の Resource indicator と実 URL（ホスト＋秘密パス）が一致しているか。壊れていたら SSM を直して箱で `bootstrap.sh` 再走行 → restart。issuer 変更（テナント差し替え）時は利用者は再ログインになる。
 - （旧・案 A の照合＝`access-oauth.sh status` は Access 併用時のみ・現行は未使用）。
 
-### アラーム「dataapply-rollback」（自動適用が切り戻された）
-- **可用性は落ちていない**（旧版で稼働中）。リリースが不採用になった事実の通知＝§5「切り戻し後」の手順へ。急がない。
+### アラーム「dataapply-rollback」（自動適用が切り戻された・または退避段で中止した）
+- **可用性は落ちていない**（旧版で稼働中）。dataapply=0 は 2 つの場合に出る＝(a) 反映後の検証（smoke・稼働中の /healthz）が FAIL で
+  自動切り戻し（ダッシュボード②が ROLLED_BACK）(b) 止める前の退避段で中止（ディスク・S3 権限＝マークは書かれず前回のマークのまま・15 分後に再試行）。
+  見分けは CW Logs `polyarchy/dataapply` の「切り戻し完了」か「①退避段で失敗」の行。(a) は §5「切り戻し後」の手順へ・(b) は原因（ディスク・権限）を直す。急がない。
 - 例外＝ダッシュボード②の「切り戻し後 smoke」が FAILED のとき（旧版でも壊れている）→ 上の health の手順・§3 の S3 復元。
 
 ### アラーム「disk > 80%」
@@ -117,6 +119,7 @@ sudo systemctl start qdrant polyarchy-mcp
 （新着の実タイトルは箱の `recommendations/data/cache/update_check.json`）。以下は検知後の**取込の実行**手順。
 
 - ★ **「変化 N 件」は日次の差分**（前回の確認からの Last-Modified／ETag 等の変化）＝取り込まないまま翌日を迎えると数えられなくなる。手元の `freshness` も実行のたびに状態を上書きする（溜まっている分は差分では拾えない）。**溜まっている分は「取込待ち」で見る**＝検知した日を状態に残し、その日以降にその dataset が取り込まれる（値の `retrieved_at` が追いつく）まで消えない。`refresh`（`--dataset` なし）は「変化」と「取込待ち」の両方を取り込む。収録と取得元を直接比べる型（QE・政府経済見通し・総務省の次版・国際機関の最新年）は差分ではないので、もともと溜まっても消えない。
+- ★ **2026-10-09 の版を配った直後の 1 回だけ、`eurostat:eu`・`cao:sna_activity` が「変化」になる**（確認する対象を足した＝Eurostat は全 dataset・SNA 経済活動別は年版のシートの Excel も＝signal の形が変わった）。取得元が実際に変わったのではない＝その dataset を取り込めば「取込待ち」も消える（Eurostat は差分型＝取り込むまで残る）。freshness の失敗の数え方も変わった＝中小企業白書（`pdf_hakusho_sme`）は「対象外」（理由つき・失敗に数えない）＝変化の無い日は rc=0（それまでは常に ⚠ rc=2）。
   - 取込待ちが始まるのは、この仕組みが入った版（2026-10-06）を配布した後に検知したものから＝それ以前に見逃した分は出ない。初回は手元で `python -m stats.ops.refresh --dataset <コード名>` を名指しで（今回の 12 件と同じ）。
   - 取得元のファイルが中身の同じまま置き直された（Last-Modified だけ変わった）ときも取込待ちになる＝再取込すれば消える（差分なしで終わる）。
 
@@ -135,7 +138,7 @@ curl -sS -o companies/data/cache/codelist/Edinetcode.zip https://disclosure2dl.e
   && unzip -o -q companies/data/cache/codelist/Edinetcode.zip -d companies/data/cache/codelist/ && python -m companies.ops.build_industries   # 業種（EDINET コードリスト）＝新しい会社が入ったら必須（無いと exact_match の業種の判定が FAIL）
 python -m companies.ops.population_report | head -40      # 棚卸し＝「語彙に無い標準要素」「最上段の収益が見当たらない会社」が増えていないか
 python -m companies.eval.exact_match && python -m companies.eval.find_quality && python -m companies.eval.test_core   # 既存の問は書類を固定して引く＝新しい書類で動かない
-bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_APP=true の env ならゲート 13 本→配布→自動適用
+bash deploy/scripts/release.sh staging                     # 配る前の確認→全ゲート（一覧はルート README「品質の担保」）→配布→自動適用
 ```
 - 6 月（3 月決算の提出集中期）は約 2,400 書類＝約 2 時間。他の月は数十〜数百。
 - ★上流の運営者（開発と運用を 1 人が兼ねる）は、取込を開発用フォルダで行い、値の置き場だけを配布用のクローンへ写してから release する（`data/` は git 外＝pull では届かない）：`rsync -rlp --checksum --delete <開発>/companies/data/store/ <クローン>/companies/data/store/`（中身で比べ、時刻は写さない＝中身の同じファイルの時刻が変わらず、`release.sh` の S3 同期〔サイズと時刻で比べる〕が変わったファイルだけを送る。`-a` だと中身が同じでも時刻が開発側に揃い、置き場の全体〔数百 MB〕を送り直す。`-a --checksum` でも時刻は揃えられる）。★写す前の dry-run（`--dry-run --itemize-changes`）の判定は**転送（`>f`・`cd`）と削除（`*deleting`）の行が 0 件**で見る＝時刻を写さないので、一度写したファイルは中身が同じでも毎回 `.f..T....`（時刻だけの差）の行として出る（転送はされない・`-t` を足して消さない＝上の理由で時刻は写さない）。★`eval/` は git 追跡＝写さない（先に置くと `git pull` が上書きを拒む）。原本の zip（cache/）も写さない。
@@ -186,7 +189,7 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
      bash deploy/scripts/cloudflare-guard.sh apply
      bash deploy/scripts/cloudflare-guard.sh status   # レート制限の式に stats/recommendations が残っていること
      ```
-8. **配布**＝配布用のクローンで `release.sh <env>`（ゲート 13 本）→ 自動適用が `bootstrap` 再走行で ⑥ データ同期・⑧ companies.env・⑩ ユニット設置・ingress 追記まで行い、**ingress が変わったので cloudflared も再起動する**（2026-09-22〜・数秒の断＝stats/recommendations も一瞬切れる。config が変わらない通常のデータ更新では再起動しない）→ ダッシュボードで版一致・①に `polyarchy-companies` active と `:8767` ok・②に companies 収録 N 社（ダッシュボードは `ENABLE_COMPANIES_APP=true` の箱だけ companies の行を出す）。公開側の入口まで含めて見るときは `https://companies.<domain>/healthz` が 200 も補助に。
+8. **配布**＝配布用のクローンで `release.sh <env>`（全ゲート）→ 自動適用が `bootstrap` 再走行で ⑥ データ同期・⑧ companies.env・⑩ ユニット設置・ingress 追記まで行い、**ingress が変わったので cloudflared も再起動する**（2026-09-22〜・数秒の断＝stats/recommendations も一瞬切れる。config が変わらない通常のデータ更新では再起動しない）→ ダッシュボードで版一致・①に `polyarchy-companies` active と `:8767` ok・②に companies 収録 N 社（ダッシュボードは `ENABLE_COMPANIES_APP=true` の箱だけ companies の行を出す）。公開側の入口まで含めて見るときは `https://companies.<domain>/healthz` が 200 も補助に。
    ★それ以前の版の箱、または bootstrap を手で再走行したときは cloudflared が旧 ingress のまま＝公開側は 404（トンネルの catch-all）が続く。`send-command` で `logger -t polyarchy-dataapply '[manual] restart cloudflared'; systemctl restart cloudflared` を流してから healthz を確認する。
 9. **接続確認**＝claude.ai／Claude Code／ChatGPT の 3 経路（PROD_MIGRATION §2.5 と同じ）。公開ページ `companies.html` はこの後に Pages へ（先に出すと案内だけが先行する）。
 
@@ -204,9 +207,10 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
 
 ### 配布用のクローンを開発用と分ける（推奨・2026-09-19）
 
-`release.sh` が箱へ送るコードは **git の中身ではなく、作業フォルダをそのまま固めた tar** である（`upload_to_s3.sh`）。
-開発しているフォルダから配布すると、コミットしていない変更や作業中のファイルも箱に入る。配布は**リポジトリをクローンした別フォルダ**から行う
-＝箱に入るものが、リポジトリのコミットと必ず一致する（`VERSION` の刻印にも `-dirty` が付かない）。1 人で開発と運用を兼ねる場合も、フォルダを分ける。
+`release.sh` が箱へ送るコードは **git の追跡ファイルだけ（`git archive HEAD`）**（2026-10-09〜・`upload_to_s3.sh`。それまでは作業フォルダを
+除外リストで固めた tar＝未コミットの変更や作業中のファイルも箱に入った）。コードの範囲に未コミットの差分があれば配る前の確認で止まる
+（測ったコードと配るコードを揃える）。データ（`*/data/`）は tar に入らず S3 経由。配布は**リポジトリをクローンした別フォルダ**から行う
+＝ゲートが測る索引（`qdrant-dev` のマウント元）と配る索引を同じフォルダにする。1 人で開発と運用を兼ねる場合も、フォルダを分ける。
 
 | | 開発用のフォルダ | 配布用のクローン |
 |---|---|---|
@@ -215,13 +219,16 @@ bash deploy/scripts/release.sh staging                     # ENABLE_COMPANIES_AP
 | git 外で置くもの | ゲート用のデータの写し（任意） | `deploy/env/<env>.env`・`recommendations/.env`・`stats/.env`・データの原本（`recommendations/data/{pdfs,bm25,qdrant}`・`stats/data/{values,cache}`）・terraform state（terraform を触るとき） |
 | Python 環境 | 任意 | 下表のとおりロックから作る（環境は配布用のクローンを指す editable install にする） |
 
-配布の前に確認する 4 点：
-```bash
-git status --short && git log origin/main..HEAD --oneline      # どちらも空＝リポジトリのコミットと一致
-docker inspect qdrant-dev --format '{{json .HostConfig.Binds}}'  # マウント元が「配布用のクローン」の recommendations/data/qdrant であること
-curl -s localhost:6333/collections/policy_claims_v7 | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['points_count'])"
-aws sts get-caller-identity --profile "$(sed -n 's/^AWS_PROFILE=\([^ #]*\).*/\1/p' deploy/env/<env>.env)"   # release.sh が使うプロファイルで AWS のログインが生きていること
-```
+配布の前の確認は **`release.sh` が最初に機械で行う**（`deploy/scripts/release_preflight.sh`・2026-10-09〜。1 つでも外れたら何も配らない）：
+- `qdrant-dev`（審議会DB 有効時は `qdrant-delib` も）のマウント元＝このフォルダの `*/data/qdrant`（測る索引＝配る索引）
+- `deploy/env/<env>.env` の `AWS_PROFILE` で `aws sts get-caller-identity` が通る
+- `COLLECTION_NAME`＝env ファイルの `RECOMMENDATIONS_COLLECTION_NAME`（シェルに別の値があれば中止）・`DELIB_COLLECTION` は未設定か `deliberations_v1`
+- 検索の調整値（`RERANK_RETRIEVE_K`・`HYBRID_KV` 等＝recommendations／deliberations の config が読む名前）がシェルに export されていない
+- ゲートを回す python の依存＝箱のロック（`deploy/scripts/check_lock.py`＝開発側で基準値を測る前にも手で回せる）
+- 政策主張DB の BM25 語彙の `n_docs`＝`qdrant-dev` の点数（語彙と索引が同じ時点）
+- コードの範囲（`*/data/` の外）に未コミットの差分が無い（tar は HEAD から作る）
+
+**人が判断するもの**は 1 つだけ＝ログインからの経過時間（下）。手で確かめるなら `git log origin/main..HEAD --oneline`（push 前のコミットが無いか）。
 - ★ **AWS のログインが配布の途中で切れないようにする**：`release.sh` はゲート（十数分）の後に upload とマニフェストの書き込みをする。途中で有効期限が切れると upload とマニフェストの間で止まり得る（2026-09-27 staging＝release の直後に切れた）。判断は `sts` が通ることと、ログインしてからの経過時間で行う。★ `sts` は **`deploy/env/<env>.env` の `AWS_PROFILE` を `--profile` に指定して**確かめる（`release.sh` が使うのはこのプロファイル）＝素の `aws sts get-caller-identity` は default のプロファイルを見るので、手元に別系統の資格（default のログインと、アクセスキーのプロファイル）があると誤判定する（2026-10-02 staging＝default で確かめて「切れている」と判断したが、配布に要るプロファイルは生きていた。なお `AWS_PROFILE` がアクセスキーのプロファイルを指したシェルでは `aws login` が拒否される）。ログインし直すかどうかは、そのプロファイルについて判断する＝ログインから長く経っていればログインし直してから始める。`aws configure export-credentials` の `Expiration` は判断材料にならない（手元の短期資格が自動更新されるため、ログインし直した直後も含めて常に十数分先を示す。実際に効くのはその下のログインのセッションの期限で、これは画面から見えない）。配布の後の見張り（新しい捕捉ログの同期の 1 回目＋次の毎時のダッシュボード）は 1 時間を超える＝見張りに入る前にもう一度ログインし直す（2026-10-01 staging＝見張りの途中で切れた）。
 - 配布のたびに qdrant のファイル（約 100MB）が送り直しになる＝`qdrant-dev` の停止・再開でファイルの時刻が変わるため。索引を変えていなくても起きる＝害はない（S3 の同期はサイズと時刻で比べる）。
 - 配布の後の確認＝ダッシュボードは APPLIED の直後に再生成して S3 へ上げる（2026-09-27 の版から。それより前の版の箱では次の毎時 05 分）。捕捉ログは箱から S3 へ 1 時間ごとの同期（`OnUnitActiveSec=1h`＝前の実行から 1 時間・**時刻は固定でない**＝箱の再起動・再設置でずれる。変化が無い時間は上げない＝最後の更新時刻が古く見えても止まってはいない）＝当日の問は最大 1 時間ほどで S3 の `query_log/` に見える。同期の結果と最終成功の時刻はダッシュボード①の「捕捉ログの S3 同期」（サービスごと・失敗は赤）で見る（2026-10-01 の版から＝それより前の箱では companies／stats の同期の失敗は無視され、運用側から見えなかった）。メモリはダッシュボード①（サービスごとの現在と起動からの最大・箱全体）＝箱を手で触らずに配布の後の山を確かめる。APPLIED の直後のダッシュボードの「提言の新着チェック」は、S3 に残った古い写しが箱の値を上書きして古い値を出すことがあった（数分後の更新チェックで戻る・2026-10-02 に upload と bootstrap の同期で `cache/` を除外＝bootstrap.sh は自動適用が展開した新しい tar の版で走る＝その配布から効く・S3 の `data/cache/` に残った古い写しは運用側で消す）。コネクタでの確認の前の Reconnect（Claude Code の `/mcp`）は、**ツールが増減したとき・ツールやサーバの説明が変わったときだけ**要る＝返り値だけの変更は Reconnect なしで新しい振る舞いが返る（ChatGPT のコネクタの作り直しも同じ条件）。
@@ -264,14 +271,16 @@ python -m recommendations.ingest.policy_tagger
 bash deploy/scripts/release.sh <staging|prod>
 ```
 
-**release.sh がやること**＝ゲート 9 本（recommendations 4＝retrieval アンカー非劣化・filter 全問・多段・smoke（基準値はルート README「品質の担保」）／stats 4＝smoke・exact_match・test_core・find_quality／共通テスト 1）＋ env が `ENABLE_COMPANIES_APP=true` なら companies 4（smoke・exact_match・test_core・find_quality）＝13 本（出力は `[10-13/13]` まで）を実行し**全 PASS のときだけ** upload → 最後に S3 `release/data.json`
-（リリースマニフェスト＝出荷時のゲート数値入り）を書く。**1 つでも FAIL なら S3 に何も置かれない**。
+**release.sh がやること**＝配る前の確認（上の「配布用のクローン」）→ 全ゲート（一覧と基準はルート README「品質の担保」＝ここに本数を写さない。
+アンカーは ALL 行の数値と基準値・それ以外の合否は終了コード）を実行し**全 PASS のときだけ** upload → 最後に S3 `release/data.json`
+（リリースマニフェスト＝出荷時のゲート数値と測った構成入り）を書く。**1 つでも FAIL なら S3 に何も置かれない**。
 配布の結果の確認は `release.sh` の出力に頼らなくてよい＝ゲートの結果は `release/data.json` の `code_version` と `gates`（全 PASS のときだけ書かれる）、
 箱への反映は下のダッシュボード②で足りる（AI のセッションでは配布の出力の読み取りが権限の判定で拒否されることがある＝2026-10-04。S3 の読み取りは通る）。
 
 **箱側の反映は自動**＝`polyarchy-dataapply.timer`（15 分毎）がマニフェストの変化を検知し、
 退避（rsync）→ サービス停止 → **コード tar 再展開**（2026-09-03〜＝コード変更もこの経路で自動反映・tar 再展開の手作業は廃止）
-→ qdrant ミラー同期 → bootstrap（データ差分 sync・依存再解決）→ 再起動 → 箱上 smoke → ダッシュボード、まで
+→ qdrant ミラー同期 → bootstrap（データ差分 sync・依存再解決）→ 再起動 → 箱上 smoke＋稼働中の各サービスの /healthz（unit・env・認証の
+配線を通るのはこちら・2026-10-09〜）→ ダッシュボード、まで
 無人で行う（全工程 journal→CW Logs `polyarchy/dataapply`・**人手の箱操作ゼロ**）。反映確認＝ダッシュボード②の
 データ版が released/applied 一致・APPLIED・smoke PASS になっていること。ログで確定するなら CW Logs `polyarchy/dataapply` の
 「✅ APPLIED:」の行（smoke 3 本の PASS の直後に出る＝この版から。★それより前の版の箱では完了の行が更新チェックの終了後まで出ない＝
@@ -281,11 +290,13 @@ CW Logs で適用の終わりを待つときの語は「✅ APPLIED」か「切�
 ダッシュボードは APPLIED の後の更新チェックの最後（数分後＝CW Logs の「ダッシュボード更新済」の行）と毎時 05 分に生成される。
 版を見るときは冒頭の「生成」の時刻（JST）が APPLIED より後であることを先に確かめる（それより前の生成なら古い版が出ていて正しい）。
 
-**smoke FAIL 時は自動切り戻し**（2026-09-03・B15 論点1＝運用者ロール移譲の前提 (2)）＝停止 → 退避したデータを
+**smoke（または /healthz）FAIL 時は自動切り戻し**（2026-09-03・B15 論点1＝運用者ロール移譲の前提 (2)）＝停止 → 退避したデータを
 書き戻し（qdrant はミラー）→ 前回の code tar を再展開＋pip → 再起動 → smoke 再実行 → マーク status=ROLLED_BACK →
 メトリクス dataapply=0 → アラーム `dataapply-rollback` → メール。**不採用のマニフェストは再試行しない**（15 分毎の
 再適用ループを防ぐ）。qdrant が起動しない・bootstrap が落ちる等、反映途中の失敗も同じ経路で戻る。
-退避先＝箱の `/opt/polyarchy/rollback/`（データ）と `/opt/polyarchy/releases/{current,prev}.tar.gz`（コード）。
+退避先＝箱の `/opt/polyarchy/rollback/`（データ）と `/opt/polyarchy/releases/{current,prev}.tar.gz`（コード）。新しい箱は user_data が最初の
+tar を `current` に置く（2026-10-09〜・それまでの箱は最初の適用でコードを戻せなかった＝既存の箱は 1 回目の APPLIED で `current` ができている）。
+★自動適用のスクリプト（`apply_data_update.sh`）の変更は**次の次の配布から効く**（ルート CLAUDE.md §5）＝確かめは staging で演習フラグを使い 2 回目の配布で。
 **リリース中は health アラームが ALARM→OK と 1 往復する（想定内）**＝停止→bootstrap→再起動が 3 分を超えるため
 （2026-09-03 実測：2 回とも ALARM→OK）。dataapply の直後（CW Logs `polyarchy/dataapply` に同時刻の適用がある）なら正常。
 それ以外の時刻の ALARM は §1 の手順へ。退避段（①・サービス無停止）で失敗したときも dataapply=0 を送る＝同じアラームで気づく。
@@ -348,10 +359,11 @@ python deploy/scripts/lock_mac_variant.py                     # → /tmp/lock-ma
 P=$HOME/miniconda3/envs/polyarchy-lock/bin            # 自分の conda の envs パスに読み替え
 $P/pip install --require-hashes -r /tmp/lock-mac.txt
 $P/pip install --no-deps --no-build-isolation -e .
-# ③ ゲート 9 本（companies 有効時は 13 本）＋配布＝release.sh を「PATH の python をロック env に向けて」回す。数値が README「品質の担保」と一致することが採否の基準。
+# ③ 全ゲート＋配布＝release.sh を「PATH の python をロック env に向けて」回す（ロックとの一致は release.sh の配る前の確認が照合する）。数値が README「品質の担保」と一致することが採否の基準。
 #    依存を上げて数値が動いたら**上げずに現行版で固定**（目的は固定であって更新ではない）
 PATH=$P:$PATH bash deploy/scripts/release.sh staging
 ```
 - 変更は PR（ロック 2 本＋pyproject）でレビュー＝ゲート全 PASS が採否（CI 化 §2.5 で自動化）。箱は release.sh → 自動適用でロックどおりに入れ替わる。
 - 切り戻し（apply の自動 fail-back）も前回 tar のロックで再解決する。ロック導入前（2026-09-04 以前）の tar へ戻る場合だけ下限指定の解決になる。
-- 出所の固定は Qdrant バイナリ（bootstrap ⑥b の sha256）と同じ思想。モデルの重み（HF）は未固定＝残タスク B17 (3)。
+- 出所の固定は Qdrant バイナリ（bootstrap ⑥b の sha256）と同じ思想。モデルの重み（HF）は commit を固定済み（`polyarchy_retrieval/models.py` の `PINNED_REVISIONS`・
+  読み込みと事前 DL の両方・2026-10-09）。重みを配布物に含める／箱を HF に接続させない（オフライン化）は未着手＝残タスク B17 (3)。

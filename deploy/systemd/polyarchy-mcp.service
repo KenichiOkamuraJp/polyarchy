@@ -22,10 +22,10 @@ Environment=PYTHONPATH=/opt/polyarchy/polyarchy
 Environment=HF_HOME=/opt/polyarchy/models
 # COLLECTION_NAME / VECTOR_BACKEND は deploy.env（terraform var collection_name / vector_backend）から。ここに固定値を書かない。
 Environment=POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/recommendations/data/query_log/queries.jsonl
-# HF ノイズ抑制。事前DL でモデル重みはキャッシュ済（初回DL不要）だが、ruri(SentenceTransformer)
-# のロードは transformers/sentence-transformers 5.x で完全オフラインだと config 解決に失敗するため
-# HF_HUB_OFFLINE は付けない（重みはキャッシュ利用・小さな config は HF へ・箱は egress あり＝Mac PoC 同挙動）。
-# ※ egress が塞がれた環境向けにオフライン固定したい場合は Phase B で local snapshot パス直指定に切替。
+# HF_HUB_OFFLINE は付けない（箱でオフライン化できるかは未実測）。旧い理由「ruri は完全オフラインだと config 解決に
+# 失敗する」の原因は llama_index が HF_HOME でない自前のキャッシュを見ていたこと＝7038ef4 で解消済み（手元では
+# HF_HUB_OFFLINE=1 で読める・2026-10-09）。重みの版（commit）は polyarchy_retrieval/models.py の PINNED_REVISIONS で
+# 固定済み＝読み込み・事前DL とも同じ commit を使う（上流の main が動いても重みは変わらない）。
 Environment=TOKENIZERS_PARALLELISM=false
 # transport_security は既定 off（トンネル前提・421 回避・§33.5）。ホスト限定するなら↓を設定。
 # Environment=MCP_ALLOWED_HOSTS=recommendations.<domain>,127.0.0.1:8765

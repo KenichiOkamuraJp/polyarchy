@@ -7,7 +7,13 @@ Phase 10：多段検索 vs 一発QA を Phase 9 の新型メトリクスで数�
 
 比較：
   ・一発QA   = `PolicySearchService.search(q)` 単発（＝本番の一問一答・Phase 9 ベースライン）。
-  ・多段検索 = `MultiStageSearcher`（団体ごとに叩いて合流／全社走査→argmin・決定）。
+  ・多段検索 = `MultiStageSearcher`（団体ごとに叩いて合流／全社走査→argmin・決定）。答え可能の 3 問は本番の入口
+    `orchestrate`（MCP の sweep(mode=auto) と同じ戦略選択）で測る。
+
+合否（終了コード＝release.sh のゲート）：網羅 pass が全問・集約棄却が全問・答え可能の hit@5 が全問のときだけ 0。
+★集約棄却 12/12 は「判定の方針」の回帰テスト（covered＝絞り込みの範囲で 1 件以上返った＝関連度の閾値は無い。
+  名指しの無い棄却問は全団体が covered になり得て、検索の中身に左右されにくい）。検索の質はアンカーと網羅で測る。
+  score_floor を評価問に合わせて校正しない（固定の評価問への過適合＝ルート CLAUDE.md §3）。
 
 採点ロジックは recommendations/eval/eval.py と同一（org_of・breadth・min_coverage）。全てローカル検索＝クレジット0。
 生成側の棄却（205/206 の断定→棄却化）は本ハーネスでは測れないため、多段検索が"棄却を根拠づける
@@ -30,6 +36,7 @@ configure_quiet_logging()
 log = get_logger("polyarchy.mseval")
 
 EVAL_PATH = DATA_DIR / "eval" / "eval_set.json"
+SWEEP_PER_ORG = 3   # sweep_policy_docs の per_org の既定（recommendations/serving/mcp_server.py）＝ゲートは本番と同じ件数で測る
 
 
 def _breadth(files: list[str], exp_orgs: set[str]) -> int:
@@ -91,7 +98,7 @@ def run() -> None:
         distinct = sorted(set(one_orgs))
         if len(distinct) == 1:
             one_single_org += 1
-        scan = ms.aggregation_scan(q["question"])
+        scan = ms.aggregation_scan(q["question"], per_org=SWEEP_PER_ORG)   # 本番の sweep と同じ件数で走査（2026-10-09）
         dec = scan["decision"]
         if dec == "abstain":
             ms_abstain += 1
@@ -113,8 +120,8 @@ def run() -> None:
     for q in agg_answer:
         tgt = set(expected_sources(q))
         one_files = [c.file_name for c in svc.search(q["question"], top_k=top_k)]
-        # 名指し設問（"経団連の資料は…"）は smart_search が targeted に倒す（fan-out ではない）。
-        ms_files = [c.file_name for c in ms.smart_search(q["question"], top_k=top_k)]
+        # 名指し設問（"経団連の資料は…"）は orchestrate が targeted に倒す（fan-out ではない）＝本番の sweep(mode=auto) と同じ経路。
+        ms_files = [c.file_name for c in ms.orchestrate(q["question"], top_k=top_k).chunks]
         oh, mh = bool(tgt & set(one_files)), bool(tgt & set(ms_files))
         one_hit += oh; ms_hit += mh
         named = ""
@@ -136,6 +143,11 @@ def run() -> None:
     print(f"・集約棄却: 多段は横断走査で {ms_abstain}/{na} 設問の棄却を根拠づけ、205/206 の断定を是正")
     print(f"・答え可能: hit@5 {one_hit}/{nans} → {ms_hit}/{nans}（非劣化）")
     print("※ 生成側の棄却率（10/12→改善）の直接実証は multistage_agent_demo.py（LLM・任意）で。")
+    ok = ms_pass == n and ms_abstain == na and ms_hit == nans
+    print(f"総合: {'PASS' if ok else 'FAIL'}（網羅 {ms_pass}/{n}・集約棄却 {ms_abstain}/{na}・答え可能 {ms_hit}/{nans}"
+          "＝全問一致で PASS。集約棄却は判定方針の回帰テスト＝covered は絞り込みの範囲で 1 件以上返ったの意）")
+    if not ok:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

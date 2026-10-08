@@ -187,11 +187,22 @@ def _name(c: dict) -> str:
     return f"{c['aggregate']}:{c.get('metric') or c.get('expr')}"
 
 
+# 横断の問の expect が使えるキー（ここに無いキーは FAIL＝書き間違いの検査が黙って効かないのを防ぐ・2026-10-09）
+QUERY_EXPECT_KEYS = {"allow_empty", "compact", "companies_exclude", "companies_include", "companies_only", "comparable_note_includes",
+                     "detail", "excluded_companies_comparable", "excluded_include", "excluded_note_includes", "inputs_terms", "max_kb",
+                     "max_rows", "no_manufacturing", "note_includes", "ratio_note_excludes", "ratio_note_includes", "reason", "recompute",
+                     "same_span", "sorted", "unavailable_include"}
+
+
 def check_query(q: dict, st) -> str | None:
     kw = {k: q[k] for k in ("order_by", "order", "industries", "manufacturing", "basis", "period_from", "period_to", "limit", "as_of",
                              "companies", "detail") if k in q}
-    r = st(q["conditions"], **kw)
     e = q["expect"]
+    if unknown := sorted(set(e) - QUERY_EXPECT_KEYS):
+        return f"expect に知らないキー {unknown}（判定器が読まない＝検査が黙って効かない）"
+    if isinstance(e.get("note_includes"), str):
+        return "note_includes は語の配列で書く（文字列は 1 文字ずつ照合され、ほぼ必ず通る）"
+    r = st(q["conditions"], **kw)
     if "max_kb" in e:  # 返り値は利用側のモデルの文脈に入る＝大きさに上限（2026-10-01）
         kb = len(json.dumps(r, ensure_ascii=False).encode()) / 1000
         if kb > e["max_kb"]:
@@ -349,8 +360,9 @@ def check_lookup(q: dict, fns) -> str | None:
 
 
 def main() -> int:
-    pos, neg, qs = _load("trend.jsonl"), _load("trend_fail_closed.jsonl"), _load("trend_queries.jsonl")
-    lk = _load("trend_lookup.jsonl")  # 段③（1 社の区分・地域別の年ごとの並び）
+    # 人手の問は make_trend_candidates が上書きしないファイルに置く（*_manual＝2026-10-09。trend_lookup に人手の 2 問があり、作り直すと消えた）
+    pos, neg, qs = _load("trend.jsonl"), _load("trend_fail_closed.jsonl") + _load("trend_manual_fail_closed.jsonl"), _load("trend_queries.jsonl")
+    lk = _load("trend_lookup.jsonl") + _load("trend_lookup_manual.jsonl")  # 段③（1 社の区分・地域別の年ごとの並び）
     try:
         from companies.core.trend import screen_trend, trend_company
     except ImportError:
@@ -368,6 +380,15 @@ def main() -> int:
                 err = f"例外: {ex!r}"[:300]
             if err:
                 fails.append((q["id"], err))
+    if not all([pos, neg, qs, lk]):  # 問が 0 件で PASS にしない（作り直しで空になったファイルを見逃さない・2026-10-09）
+        fails.append(("eval", "読み込んだ問が 0 件のファイルがある（評価ファイルが空・読めない）"))
+    # 順序依存の固定（2026-10-09）：同じプロセスで時系列（上の問）の後に横断検索を呼んでも、時系列だけの除外の理由が紛れない
+    # （海外売上比率の欄の結果のキャッシュの鍵に時系列かどうかが無く、regions_not_in_document が横断検索に出ていた）
+    from companies.core.screen import screen_companies
+    r = screen_companies([{"metric": "overseas_sales_ratio"}], order_by="overseas_sales_ratio", as_of="2026-09-30", limit=3)
+    leaked = sorted({k for d in (r.get("excluded") or {}).values() for k in d if k == "regions_not_in_document"})
+    if leaked:
+        fails.append(("order", f"時系列の後の横断検索に時系列の除外の理由が紛れた: {leaked}"))
     for i, err in fails[:40]:
         print(f"  FAIL {i}: {err}")
     print(f"{'PASS' if not fails else 'FAIL'}: 時系列の横断検索 正例 {len(pos)}・負例 {len(neg)}・横断の問 {len(qs)}・区分と地域別の年ごと {len(lk)}・失敗 {len(fails)}")

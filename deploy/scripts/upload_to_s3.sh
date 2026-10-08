@@ -8,7 +8,7 @@
 #     bash deploy/scripts/upload_to_s3.sh
 #   （BUCKET は `terraform output -raw s3_bucket` で取得可）
 #
-# ★秘密は運ばない：tar から .env を除外。データにも秘密は無い（公開データ＋捕捉ログ）。
+# ★秘密は運ばない：tar は git の追跡ファイルだけ（.env は追跡外）。データにも秘密は無い（公開データ＋捕捉ログ）。
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -22,54 +22,30 @@ CODE_KEY="${CODE_KEY:-code/polyarchy.tar.gz}"
 # tar のトップ名は箱側の展開先（INSTALL_DIR/polyarchy）に合わせて固定で polyarchy/ とする。
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"  # リポジトリ root
 APP_BASENAME="polyarchy"                                        # tar 内トップ名（箱の展開先名）
-STAGE_DIR="$(mktemp -d -t polyarchy-stage.XXXXXX)"
-ln -s "$REPO_DIR" "$STAGE_DIR/$APP_BASENAME"
-PARENT_DIR="$STAGE_DIR"
 
 AWS=(aws)
 [[ -n "$PROFILE" ]] && AWS+=(--profile "$PROFILE")
 
-# コード版の刻印（箱には .git が無いため tar に VERSION を同梱＝ops_dashboard が表示する）
-git -C "$REPO_DIR" describe --tags --always --dirty 2>/dev/null > "$REPO_DIR/VERSION" || echo unknown > "$REPO_DIR/VERSION"
-date -Iseconds >> "$REPO_DIR/VERSION"
-echo "[upload] コードを tar 化（.env/data/__pycache__/scratchpad/社内ノート/egg-info を除外）"
-TARBALL="$(mktemp -t polyarchy.XXXXXX.tar.gz)"
-# --no-xattrs/--no-mac-metadata＝macOS の拡張属性（com.apple.provenance 等）を tar に入れない（箱の GNU tar が警告を大量に出す・2026-09-03）
-tar --no-xattrs --no-mac-metadata -czf "$TARBALL" -C "$PARENT_DIR" \
-  --exclude='*.env' \
-  --exclude='*.env.*' \
-  --exclude="$APP_BASENAME/*/data" \
-  --exclude="$APP_BASENAME/*/scratchpad" \
-  --exclude="$APP_BASENAME/*/notebooks" \
-  --exclude="$APP_BASENAME/.git" \
-  --exclude="$APP_BASENAME/.claude" \
-  --exclude='*/社内ノート' \
-  --exclude='*/ops/dashboard' \
-  --exclude='*/ops/usage' \
-  --exclude='*/ops/triage' \
-  --exclude='*/work_history' \
-  --exclude='*/__pycache__' \
-  --exclude='*.pyc' \
-  --exclude='*.egg-info' \
-  --exclude='.DS_Store' \
-  --exclude='.git' \
-  --exclude='*/.terraform' \
-  --exclude='*.tfstate' \
-  --exclude='*.tfstate.*' \
-  --exclude='.terraform.lock.hcl' \
-  -h "$APP_BASENAME"
-rm -rf "$STAGE_DIR"
-# ↑ `terraform init` が deploy/terraform/.terraform に AWS プロバイダ(~648MB)を落とすため、これを
-#   除外しないと code tar に混入して肥大化する（tar は .gitignore を読まない）。state/lock も箱には不要。
-#   `*/.terraform` はどの階層の .terraform ディレクトリも除外（将来 init 位置が変わっても安全）。
-# ★`*/ops/usage` は箱が恒久蓄積する weekly.jsonl の置き場（手元版で上書きすると系列が途切れる）・`*/ops/triage` は手元の草稿。
-# ★`*/ops/dashboard` は箱の適用マーク（applied_data_release.json）の置き場＝手元の生成物で上書きしない（apply が tar を再展開するため）。
-# ★`*.env.*`＝env の控え（`staging.env.bak-<日付>` 等）も箱へ運ばない（`*.env` だけでは当たらなかった・2026-10-04 staging）。
-#   `*.env.example` も外れるが箱では使わない（手元の deploy.sh が読むだけ）。
-# ★`*/社内ノート` は git 管理外の社内向け開発ノート（引き継ぎ/ロードマップ/設計メモ）。
-#   .gitignore の「社内ノート/」と対で維持する＝tar は .gitignore を読まないため、ここに書かないと
-#   `deploy.sh prod all` で導入団体 AWS へ社内ノートが転写される。新規ノートは社内ノート/ 配下に
-#   置けば自動で除外される（どの階層でも一致）。
+# ★code tar は git の追跡ファイルだけから作る（git archive HEAD＝コミットした版そのもの・2026-10-09）。
+#   旧方式（作業フォルダを除外リストで固める）は、.gitignore を読まないため私的なもの・巨大なもの・箱の状態の
+#   置き場（社内ノート・.terraform・env の控え・ops/dashboard 等）を事故のたびに除外へ足していた＝追跡していない
+#   ものは原理的に入らない形にする。未コミットのコードは配らない（release.sh の配る前の確認が、コードの範囲の
+#   未コミットの差分で止める＝測ったコードと配るコードを揃える）。
+#   除外＝*/data（データは S3 経由）・env のひな型（箱では使わない＝手元の deploy.sh が読むだけ）。
+#   .gitattributes の export-ignore は使わない（公開リポの GitHub のソース zip からも消えてしまう）。
+VDIR="$(mktemp -d -t polyarchy-version.XXXXXX)"
+# コード版の刻印（箱には .git が無いため tar に VERSION を同梱＝ops_dashboard が表示する）。tar＝HEAD なので --dirty は付けない
+git -C "$REPO_DIR" describe --tags --always 2>/dev/null > "$VDIR/VERSION" || echo unknown > "$VDIR/VERSION"
+date -Iseconds >> "$VDIR/VERSION"
+echo "[upload] コードを tar 化（git archive HEAD＝追跡ファイルだけ・*/data と env のひな型を除く）"
+TARBALL="$(mktemp -t polyarchy.XXXXXX)"   # 形式は --format で指定（拡張子に依らない）
+git -C "$REPO_DIR" archive --format=tar.gz --prefix="$APP_BASENAME/" --add-file="$VDIR/VERSION" -o "$TARBALL" HEAD -- . \
+  ':(exclude,glob)**/data/**' ':(exclude,glob)**/*.env.example'
+rm -rf "$VDIR"
+# 未コミットのコードは tar に入らない（HEAD を配る）＝release.sh は配る前の確認で止まるが、deploy.sh <env> upload 等の直接の呼び出しは止まらない＝告げる
+if [[ -n "$(git -C "$REPO_DIR" status --porcelain -- . ':(exclude)*/data/*' ':(exclude)VERSION')" ]]; then
+  echo "[upload] ★コードの範囲に未コミットの差分がある＝tar には入らない（HEAD を配る）。配るならコミットしてから" >&2
+fi
 
 echo "[upload] tar → s3://$BUCKET/$CODE_KEY"
 "${AWS[@]}" s3 cp "$TARBALL" "s3://$BUCKET/$CODE_KEY" --region "$REGION"
@@ -86,8 +62,8 @@ echo "[upload] データ同期 → s3://$BUCKET/$DATA_PREFIX/ （Qdrant/BM25語�
 # 大物＝pdfs(2.0G)/qdrant(2.0G)。バックアップ .bak と eval/results は除外して転送を軽く。
 # ローカル data/chroma はバッチ2 段4（2026-08-28）で退避済＝S3 の data/chroma/（v5 保管）は
 # --delete を使わないため残る（消さない＝v5 データの最終保管場所）。
-# ★query_log は運ばない：S3 の data/query_log/ は空が正（捕捉ログは 30 日で消す約束）＝ローカル捕捉分で
-#   復活させない。箱は自前の捕捉を data/query_log/ に書く（親 dir は書込時に自動作成・polyarchy_common.capture）。
+# ★query_log は運ばない：S3 の data/query_log/ は箱の fuelsync が書く保護コピーの置き場＝手元の捕捉分で
+#   上書き・混入させない。箱は自前の捕捉を data/query_log/ に書く（親 dir は書込時に自動作成・polyarchy_common.capture）。
 # ★qdrant ストレージは S3 側も「ミラー」（--delete）＝ローカルで消えた旧 WAL セグメントを S3 に残さない。
 #   追記型で残すと新旧世代が混在し、箱側で "missing wal segments" の起動不能になる（2026-09-03 実測）。
 #   qdrant ディレクトリに捕捉ログ等の温存対象は無い＝--delete して安全。

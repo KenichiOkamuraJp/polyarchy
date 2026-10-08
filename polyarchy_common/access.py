@@ -1,29 +1,24 @@
 """
-Cloudflare Access の `Cf-Access-Jwt-Assertion` を検証する純 ASGI ミドルウェア（多層防御）＋**利用者 ID の取り出し**。
+HTTP の MCP 入口の認証（純 ASGI ミドルウェア）＋**利用者 ID の取り出し**。装着点は `install_auth` の 1 関数だけ。
 
-一次ゲートは Cloudflare Access のエッジ遮断（未認証は origin に届かない）。これはその保険＝
-「Access を経由していないリクエスト（トンネル直叩き等）を origin 側で弾く」。検証は Cloudflare
-Access 標準：RS256／JWKS=`https://<team>/cdn-cgi/access/certs`／`aud`=AccessアプリのAUDタグ／
-`iss`=`https://<team>`。lifespan 等 http 以外と保護対象外パスは素通し。
-
-■ 公式コネクタ化（Access **Managed OAuth**・2026-08 設計）での役割
-Claude は Access が発行する OAuth トークンで接続し、Cloudflare がそれを利用者の識別に解決して
-`Cf-Access-Jwt-Assertion`（`email`・`sub` を含む JWT）を origin に転送する。本ミドルウェアはその JWT を
-検証し、**利用者 ID を contextvar に置く**（`current_user()`／`user_hash()`）。捕捉ログには
-`user_hash`（メールの sha256 先頭 16 桁）だけを残し、メール平文は残さない（プライバシーポリシー記載どおり）。
-課金の利用者キー＝メール（IdP 検証済）。将来 IdP を差し替える（案 B）場合も、この境界＝
-「検証して contextvar に email/sub を置く」だけを差し替える。
-
-■ 案 B（外部 IdP・個人認証＝2026-09 設計。`docs/個人認証_案B設計.md`）での役割
-数千人規模の名簿限定は Cloudflare Access の席課金では成立しないため、
+■ 現行＝案 B（外部 IdP・個人認証＝2026-09 設計。`docs/個人認証_案B設計.md`）
 外部 IdP（WorkOS AuthKit / Auth0 等）を認可サーバ、Polyarchy を Resource Server とする。
-`oidc_bearer_middleware` が `Authorization: Bearer` の JWT を IdP の JWKS で検証し、同じ
-contextvar 境界に利用者を置く。併せて MCP 認可仕様の Protected Resource Metadata（RFC 9728）
-を配り、401 に `WWW-Authenticate: Bearer resource_metadata=…` を付けて認可サーバを発見させる。
+`oidc_bearer_middleware` が `Authorization: Bearer` の JWT を IdP の JWKS で検証し、**利用者 ID を contextvar に置く**
+（`current_user()`／`user_hash()`）。併せて MCP 認可仕様の Protected Resource Metadata（RFC 9728）を配り、
+401 に `WWW-Authenticate: Bearer resource_metadata=…` を付けて認可サーバを発見させる。
+捕捉ログには `user_hash`（メールの sha256 先頭 16 桁）だけを残し、メール平文は残さない（プライバシーポリシー記載どおり）。
+利用者はログイン必須（ルート CLAUDE.md §3）＝公開する箱で認証が無い構成は bootstrap ⑧ が FAIL にする。
 
-HTTP で公開する全 MCP 入口（recommendations / stats / …）が同じ保険を掛ける（`mcp_http.serve_streamable_http`
-が末尾の `install_auth` を呼び、そこが env `MCP_ACCESS_TEAM_DOMAIN` / `MCP_ACCESS_AUD`（案 A）・`MCP_AUTH_ISSUER` /
-`MCP_AUTH_AUD` / `MCP_AUTH_RESOURCE_URL`（案 B）を見て装着する＝認証の装着点はこの 1 関数だけ）。
+■ 温存＝案 A（Cloudflare Access の Managed OAuth・2026-08 設計・不採用）
+数千人規模の名簿限定は Access の席課金では成立しないため採らなかった。点灯手順は残す（`access_jwt_middleware`＝
+`Cf-Access-Jwt-Assertion` を RS256／JWKS=`https://<team>/cdn-cgi/access/certs`／`aud`=Access アプリの AUD タグ／
+`iss`=`https://<team>` で検証し、同じ contextvar 境界に利用者を置く）。★案 A と案 B を同時に設定しない
+（両方の env があると 2 つを重ねて装着する＝両方の検証が必須になる）。
+
+HTTP で公開する全 MCP 入口（recommendations / stats / …）が同じ形で守られる（`mcp_http.serve_streamable_http`
+が末尾の `install_auth` を呼び、そこが env `MCP_AUTH_ISSUER` / `MCP_AUTH_AUD` / `MCP_AUTH_RESOURCE_URL`（案 B）・
+`MCP_ACCESS_TEAM_DOMAIN` / `MCP_ACCESS_AUD`（案 A）を見て装着する）。導入団体が自前の認証に替えるときは
+`install_auth` の中身だけを替える（約束はその docstring）。
 """
 import contextvars
 import hashlib
@@ -218,7 +213,8 @@ def install_auth(app, *, host: str, port: int, path: str, logger_name: str = "po
     env を見て装着する（サービス横断で同名）：
     - `MCP_ACCESS_TEAM_DOMAIN`＋`MCP_ACCESS_AUD` … 案 A（Cloudflare Access JWT・温存）
     - `MCP_AUTH_ISSUER`（＋`MCP_AUTH_AUD`・`MCP_AUTH_RESOURCE_URL`）… 案 B（外部 IdP の Bearer JWT＋PRM）
-    どちらも無ければ素通し（ローカルの stdio 代わり・開発用）。**公開する箱で認証が無い構成は
+    どちらも無ければ素通し（ローカルの stdio 代わり・開発用）。★案 A と案 B を同時に設定しない（両方あれば
+    2 つを重ねて装着する＝両方の検証が必須になる）。**公開する箱で認証が無い構成は
     bootstrap ⑧ が FAIL にする**（公開ホストがあるのに `auth_aud_<svc>` が無い＝配布を止める）。
 
     差し替えの約束（導入団体が自前の認証に替えるときは、この関数の中身だけを替える）：

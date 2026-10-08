@@ -27,6 +27,10 @@ mkdir -p "$${INSTALL_DIR}"
 # アプリコードを S3 から取得して展開（tar 内トップは polyarchy/＝リポジトリ root：recommendations/ deploy/ docs/ …）。
 aws s3 cp "s3://${bucket_name}/${code_s3_key}" /tmp/polyarchy.tar.gz --region ${aws_region}
 tar -xzf /tmp/polyarchy.tar.gz -C "$${INSTALL_DIR}"
+# 展開した tar を「稼働中の版」として残す＝最初の自動適用が失敗してもコードを切り戻せる
+# （apply_data_update.sh は releases/current.tar.gz を prev に写してから適用する。無いと初回はデータしか戻せない＝2026-10-09）。
+mkdir -p "$${INSTALL_DIR}/releases"
+cp -f /tmp/polyarchy.tar.gz "$${INSTALL_DIR}/releases/current.tar.gz"
 
 # bootstrap が参照する環境定義（Terraform の確定値を1ファイルに固める）。
 mkdir -p /etc/polyarchy

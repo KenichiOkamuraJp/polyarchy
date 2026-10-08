@@ -124,6 +124,7 @@ FOF_JGB_HOLDERS = [("total", "700", "合計"), ("central_bank", "110", "中央�
                    ("general_government", "420", "一般政府"), ("social_security_funds", "423", "社会保障基金"), ("public_pension", "424", "うち公的年金"),
                    ("households", "430", "家計"), ("overseas", "500", "海外")]
 _FOF_JGB_LABEL = {s: n for s, _c, n in FOF_JGB_HOLDERS} | {"central_government": "中央政府"}
+_FOF_JGB_ORDER = {s: i for i, s in enumerate([s for s, _c, _n in FOF_JGB_HOLDERS] + ["central_government"])}  # 原表の順
 
 # 一般政府の部門（sna_gg／sna_gg_bs の dims・第 12 弾 第 1 便）
 GG_SUBSECTOR = [("cg", "中央政府"), ("lg", "地方政府"), ("ssf", "社会保障基金"), ("total", "一般政府 合計（3 部門の単純和）")]
@@ -241,6 +242,8 @@ def dim_order(position: str, dataset: str = "") -> dict[str, int]:
         return _SECTOR_ORDER if position == "industry" else {}
     if dataset in ("sna_gg", "sna_gg_bs"):
         return _GG_ORDER if position == "industry" else {}
+    if dataset == "fof_jgb":
+        return _FOF_JGB_ORDER if position == "industry" else {}
     if dataset == "maikin":
         return _MAIKIN_EMP_ORDER if position == "industry" else _MAIKIN_SIZE_ORDER
     return INDUSTRY_ORDER if position == "industry" else SIZE_ORDER

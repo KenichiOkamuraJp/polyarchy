@@ -7,7 +7,7 @@ polyarchy_retrieval — 文書検索のコーパスに依存しない部品（�
 - `tokenizer` … 日本語の分かち書き（fugashi・プロセス内で 1 回だけロード）
 - `bm25`      … in-memory BM25 と、Qdrant sparse による BM25（語彙サイドカーの構築と検索）
 - `fusion`    … RRF 融合・交互合流
-- `models`    … 埋め込み・リランカーの読み込みとモデルの登録（版の固定はここ 1 箇所）
+- `models`    … 埋め込み・リランカーの読み込みとモデルの登録（本番の重みの版＝HF の commit の固定はここ 1 箇所）
 - `qdrant`    … Qdrant のコーパス単位のストア・コレクションの作成（**層の条件は必須**）
 - `hybrid`    … ベクトル＋BM25→RRF の 1 フィルタ条件分の融合
 

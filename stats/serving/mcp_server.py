@@ -274,7 +274,8 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
             if cov:  # measure は収録済みで dims の組合せだけが無い（S-3）＝収録済みの組合せを返す
                 return nf("unknown_series", coverage=cov,
                           hint=f"measure {cov['measure']!r} は収録済みだが dims {cov['requested_dims']!r} の系列は無い。"
-                               "収録済みの業種×規模の組合せは coverage.combinations（ここに無い組合せは未収録＝近似しない）。")
+                               "収録済みの dims の組合せ（hojin＝業種×規模・その他は dataset ごとの軸）は coverage.combinations"
+                               "（ここに無い組合せは未収録＝近似しない）。")
             hint = "find_statistics で系列の存在を確認してください。"
             if series_id.startswith("mof.hojin."):
                 hint += ("法人企業統計の系列 ID は mof.hojin.<measure>.<業種slug>-<規模slug>.fy（業種 slug は `_` 区切り＝mfg_food・wholesale、"
@@ -591,16 +592,17 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                 **({"reason": "no_values_in_panel", "hint": "全系列が errors（reason を参照）"} if not found else {})}
 
     def _pattern_coverage(pattern: str, dims: dict) -> list[dict]:
-        """id_pattern の {industry}/{size} を除いた measure 部分が収録済みなら、その収録済み組合せ（Registry.coverage_of）を返す。"""
+        """id_pattern の measure が収録済みなら、その収録済み組合せ（Registry.coverage_of）を返す。ID の分解は登録済みの系列の形に
+        合わせる（Registry.split_id＝点を含む measure・地域の接尾辞も切れる）。{measure} は dims の measure を順に当てる。"""
         import re
-        fixed = re.sub(r"\{[a-z_]+\}", "X", pattern)
-        parts = fixed.split(".")
-        if len(parts) < 5:
-            return []
+        cands = [pattern.replace("{measure}", m) for m in (dims.get("measure") or [])] if "{measure}" in pattern else [pattern]
         out = []
-        measures = dims.get("measure") if "{measure}" in pattern else [parts[2]]
-        for meas in measures or []:
-            cov = registry.coverage_of(parts[0], parts[1], meas, parts[-1])
+        for c in cands:
+            parsed = registry.split_id(re.sub(r"\{[a-z_]+\}", "X", c))
+            if parsed is None:
+                continue
+            org, dataset, meas, _dims, freq = parsed
+            cov = registry.coverage_of(org, dataset, meas, freq)
             if cov:
                 out.append(cov)
         return out

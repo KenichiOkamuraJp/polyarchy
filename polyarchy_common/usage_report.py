@@ -56,6 +56,15 @@ HEALTHZ_DEFAULT = ("http://localhost:8765/healthz", "http://localhost:8766/healt
 HEALTHZ_COMPANIES = "http://localhost:8767/healthz"
 HEALTHZ_DELIBERATIONS = "http://localhost:8768/healthz"
 LOW_HIT = 3   # recommendations の低ヒット閾値（coverage_warning と同じ count<3）
+# 捕捉レコードの tool の既知の値（サービスごと）。ここに無い tool は unknown_tools に数える＝ツールが増えたときの
+# 数え漏れを黙らせない（2026-10-09＝stats の lookup_panel と companies の found=false が集計から漏れていた）。
+# recommendations は tool を持たない（source の mcp／mcp_sweep で区別＝recommendations/docs/共通契約.md）。
+KNOWN_TOOLS = {
+    "stats": {"find_statistics", "lookup_statistic", "lookup_panel", "list_datasets", "list_sources"},
+    "companies": {"find_company", "list_items", "lookup_company_facts", "lookup_segments", "lookup_regions",
+                  "list_metrics", "screen_companies", "screen_trend"},
+    "deliberations": {"search_deliberations", "list_meeting"},
+}
 
 
 # ── 収集 ────────────────────────────────────────────────────────────────────
@@ -119,15 +128,19 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
             "recommendations_zero": 0, "recommendations_low": 0, "recommendations_orgs_filter": 0, "recommendations_period_filter": 0,
             "stats_find": 0, "stats_find_zero": 0, "stats_find_filtered": 0,
             "stats_lookup": 0, "stats_found_true": 0, "stats_found_false": 0,
-            "stats_nf_reasons": Counter(), "stats_catalog": 0,
+            "stats_nf_reasons": Counter(), "stats_catalog": 0, "stats_panel": 0, "stats_panel_found_false": 0,
             "companies": 0, "companies_screen": 0, "companies_trend": 0, "companies_unavailable": Counter(),
+            "companies_found_false": 0, "companies_nf_reasons": Counter(),
             "deliberations": 0, "deliberations_zero": 0, "deliberations_list": 0,
+            "unknown_tools": Counter(),
         })
         w["total"] += 1
         w[svc] += 1
         w["by_source"][str(rec.get("source") or "unknown")] += 1
         if rec.get("user_hash"):
             users.setdefault(key, set()).add(rec["user_hash"])
+        if svc in KNOWN_TOOLS and str(rec.get("tool", "")) not in KNOWN_TOOLS[svc]:
+            w["unknown_tools"][f"{svc}:{rec.get('tool')}"] += 1
         if svc == "recommendations":
             n = rec.get("result_count")
             if isinstance(n, int):
@@ -149,6 +162,10 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
                 w["companies_screen"] += 1
             elif rec.get("tool") == "screen_trend":  # 時系列の横断検索（第 1e 便）
                 w["companies_trend"] += 1
+            # 参照層の found=false＝取込・語彙の改善候補（ツール別・理由別。companies の捕捉は found/reason を全ツールで持つ）
+            if rec.get("found") is False:
+                w["companies_found_false"] += 1
+                w["companies_nf_reasons"][f"{rec.get('tool')}:{rec.get('reason') or 'unknown'}"] += 1
             # 横断検索で使えなかった入力＝サーバ側の固定の語（項目・未収録の目録のキー）だけ（companies が書き込み時に絞った欄＝
             # 利用者が書いた語は入らない）。「level:キー」の件数＝取込の改善候補の一次情報
             for u in rec.get("unavailable_vocab") or []:
@@ -169,6 +186,13 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
                 elif rec.get("found") is False:
                     w["stats_found_false"] += 1
                     w["stats_nf_reasons"][str(rec.get("reason") or "unknown")] += 1
+            elif tool == "lookup_panel":
+                # パネル（複数系列×期間）は単一の lookup と分けて数える＝lookup の found=false 率の母数を変えない。
+                # 見つからなかった理由は同じ内訳に「panel:」を付けて足す（拡充候補の一次情報は 1 か所で見る）
+                w["stats_panel"] += 1
+                if rec.get("found") is False:
+                    w["stats_panel_found_false"] += 1
+                    w["stats_nf_reasons"][f"panel:{rec.get('reason') or 'unknown'}"] += 1
             elif tool in ("list_datasets", "list_sources", "list_orgs"):
                 w["stats_catalog"] += 1
     rows = []
@@ -178,6 +202,8 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
         w["by_source"] = dict(sorted(w["by_source"].items()))
         w["stats_nf_reasons"] = dict(sorted(w["stats_nf_reasons"].items()))
         w["companies_unavailable"] = dict(w["companies_unavailable"].most_common())
+        w["companies_nf_reasons"] = dict(w["companies_nf_reasons"].most_common())
+        w["unknown_tools"] = dict(sorted(w["unknown_tools"].items()))
         rows.append(w)
     return rows
 
@@ -268,10 +294,12 @@ def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at:
 <p>クエリ {latest['total']} 件（recommendations {latest['recommendations']}・stats {latest['stats']}）／
 識別利用者 {latest['users']} 人（user_hash・authless 分は数えない）／
 recommendations 0 件率 {e(pct(latest['recommendations_zero'], latest['recommendations']))}・低ヒット率(&lt;{LOW_HIT}) {e(pct(latest['recommendations_low'], latest['recommendations']))}／
-stats lookup found=false {latest['stats_found_false']} 件（拡充候補の一次情報）／
+stats lookup found=false {latest['stats_found_false']} 件・パネル {latest.get('stats_panel', 0)} 件のうち found=false {latest.get('stats_panel_found_false', 0)} 件（拡充候補の一次情報）／
 companies {latest.get('companies', 0)} 件（横断検索 {latest.get('companies_screen', 0)}・時系列 {latest.get('companies_trend', 0)}）・使えなかった入力
 {e("・".join(f"{k} {v}" for k, v in (latest.get('companies_unavailable') or {}).items()) or "—")}（未収録・開示なし＝取込の改善候補／unknown_aggregate:aggregate＝語彙に無い集約を求められた回数）／
-deliberations {latest.get('deliberations', 0)} 件（回の一覧 {latest.get('deliberations_list', 0)}・検索 0 件 {latest.get('deliberations_zero', 0)}）</p>""")
+companies found=false {latest.get('companies_found_false', 0)} 件（{e("・".join(f"{k} {v}" for k, v in (latest.get('companies_nf_reasons') or {}).items()) or "—")}）／
+deliberations {latest.get('deliberations', 0)} 件（回の一覧 {latest.get('deliberations_list', 0)}・検索 0 件 {latest.get('deliberations_zero', 0)}）／
+集計の対象外の tool {e("・".join(f"{k} {v}" for k, v in (latest.get('unknown_tools') or {}).items()) or "—")}（ツールを足したら polyarchy_common/usage_report.py の KNOWN_TOOLS へ）</p>""")
     parts.append("""<h2>週次推移</h2><div class="wrap"><table>
 <tr><th>週</th><th>週初</th><th>計</th><th>recommendations</th><th>stats</th><th>source 内訳</th><th>利用者</th>
 <th>c: 0件</th><th>c: 低ヒット</th><th>c: orgs指定</th><th>c: 期間指定</th>

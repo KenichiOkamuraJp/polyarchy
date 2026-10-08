@@ -44,8 +44,10 @@ load_env() {
 
   : "${ENVIRONMENT:?env に ENVIRONMENT が要る}" \
     "${AWS_PROFILE:?env に AWS_PROFILE}" \
-    "${AWS_REGION:?env に AWS_REGION}" \
-    "${ENABLE_WEB_APP:?env に ENABLE_WEB_APP}"
+    "${AWS_REGION:?env に AWS_REGION}"
+  # 参照用 Web UI は 2026-10-09 にコードを削除＝未設定は false・true は止める（bootstrap も止める）
+  ENABLE_WEB_APP="${ENABLE_WEB_APP:-false}"
+  [[ "$ENABLE_WEB_APP" == "true" ]] && die "ENABLE_WEB_APP=true だが Web UI（chat_app）のコードは削除済み＝env を false に"
   export AWS_PROFILE AWS_DEFAULT_REGION="$AWS_REGION"
 
   # 認証確認＋アカウントID→バケット名（terraform の local.bucket_name と同式）。

@@ -42,7 +42,7 @@ CORPUS_REGISTRY: dict[str, str] = {
     COLLECTION_NAME: COLLECTION_NAME,  # 自己写像（env の COLLECTION_NAME をそのまま解決＝一時コレクションもこれで通る）
     # 政策主張DB＝バッチ1（改名＋issuer）＋B4 180k 拡大（155,663点・ゲート済）。
     # C2 適用の既定は v7 と決定（2026-08-13・公開情報の網羅が価値のため C1 を待たず確定）。
-    # 切り戻し段：v7 → v6（バッチ1のみ・80k）。切替は env 1行（Chroma v5 経路は段4で全廃）。
+    # "policy_claims" は payload の corpus 刻印（qdrant_ingest.DST_CORPUS）と同じ名の別名。切り戻しは自動適用の退避と書き戻し（deploy/RUNBOOK_OPS.md §5）。
     "policy_claims": "policy_claims_v7",
 }
 

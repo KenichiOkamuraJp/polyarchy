@@ -5,16 +5,17 @@
 #   使い方: bash deploy/scripts/release.sh <staging|prod>
 #
 # 工程（一気通貫＝手順を飛ばす余地を作らない・運用設計 §2.4／RUNBOOK §5）:
-#   ① 品質ゲート実行（recommendations 4種＋stats 4種＋共通テスト＝9 本。ENABLE_COMPANIES_APP=true なら companies 4種、
-#      ENABLE_DELIBERATIONS_APP=true なら deliberations 4種＋束の書き出しを足す。qdrant-dev〔と審議会DB の qdrant-delib〕起動が前提）
-#   ② 全 PASS を機械判定（1つでも FAIL なら upload せず終了＝箱には何も起きない）
+#   ⓪ 配る前の確認（release_preflight.sh）＝qdrant のマウント元・AWS プロファイル・コレクション名・調整値の混入・
+#      ロックとの一致・BM25 語彙と索引・コードの範囲の未コミット（測るもの＝配るもの を機械で確かめる）
+#   ① 品質ゲート実行（一覧と基準はルート README「品質の担保」＝本数をここに写さない。companies・deliberations は env の
+#      ENABLE_COMPANIES_APP／ENABLE_DELIBERATIONS_APP=true のときだけ〔deliberations は束の書き出しも〕。qdrant-dev〔と審議会DB の qdrant-delib〕起動が前提）
+#   ② 全 PASS を機械判定（アンカーは ALL 行の数値と基準値・それ以外は各ゲートの終了コード。1つでも FAIL なら upload せず終了＝箱には何も起きない）
 #   ③ qdrant-dev を止めて upload_to_s3.sh（データ転送。転送失敗でもマニフェストは書かれない）
 #   ④ リリースマニフェスト release/data.json を最後に書く（→ 箱の polyarchy-dataapply.timer が
 #      15 分以内に検知して自動適用＝コード tar の再展開も含む・smoke FAIL なら自動切り戻し・人手の箱操作ゼロ・全て記録経路）
 #
 # 合否の物差し（アンカー・正典＝ルート README「品質の担保」。改定時は env で上書き）:
-#   REQUIRE_HIT5（既定 86.3）・REQUIRE_MRR（既定 0.707）＝非劣化条件（>=）
-#   （2026-09-08 B19 遡及拡充で 86.9/0.715 から・2026-10-02 B26 で 86.2/0.713 から・同日の定型更新で 85.4/0.714 から・2026-10-07 B27 で 85.4/0.710 から・同日 B29 で 85.8/0.708 から・2026-10-08 B31 で 86.1/0.708 から改定＝README 注を参照）
+#   REQUIRE_HIT5（既定 86.3）・REQUIRE_MRR（既定 0.707）＝非劣化条件（>=）。改定の経緯は README「品質の担保」から辿る（ここに写さない）。
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 ENV_NAME="${1:?使い方: bash release.sh <staging|prod>}"
@@ -32,6 +33,10 @@ cd "$REPO_DIR"
 fail() { echo "❌ リリース中止: $*（ログ: ${GATE_LOG}）" >&2; exit 1; }
 say()  { echo "── $*"; }
 
+# shellcheck source=release_preflight.sh
+source "$SCRIPT_DIR/release_preflight.sh"
+preflight || fail "配る前の確認で中止（上の ❌ を直して再実行）"   # COLLECTION_NAME をこのシェルに export する
+
 say "① 品質ゲート（qdrant-dev 起動が前提・全出力→${GATE_LOG}）"
 curl -fsS -m 3 http://localhost:6333/collections >/dev/null || fail "qdrant-dev が起動していない（docker start qdrant-dev）"
 
@@ -45,22 +50,23 @@ python3 -c "import sys; sys.exit(0 if float('$HIT5')>=float('$REQUIRE_HIT5') and
   || fail "retrieval アンカー劣化: hit@5 ${HIT5}%（要 ${REQUIRE_HIT5}）/ MRR ${MRR}（要 ${REQUIRE_MRR}）"
 echo "      hit@5 ${HIT5}% / MRR ${MRR} ✓"
 
-say "  [2/9] filter-eval"
-python -m recommendations.eval.eval --filter-eval >>"$GATE_LOG" 2>&1 || fail "filter-eval が異常終了"
-grep -q "フィルタ 27/27" "$GATE_LOG" || fail "フィルタ 27/27 が確認できない"
+RETRIEVAL_CFG="$(grep -E '^\[retrieval-only\]' "$GATE_LOG" | tail -1 || true)"   # 測った構成（collection・pool・rerank）＝マニフェストへ（無くても止めない）
 
-say "  [3/9] multistage"
-python -m recommendations.eval.multistage_eval >>"$GATE_LOG" 2>&1 || fail "multistage_eval が異常終了"
-grep -q "12/12" "$GATE_LOG" || fail "集約棄却 12/12 が確認できない"
+# アンカー（上の [1/9]・審議会DB の retrieval）以外の合否は終了コード（出力の文字列を grep しない＝累積ログの別の行に当たって
+# FAIL を見逃す・2026-10-09）。アンカーは ALL 行の数値を基準値と比べる（数値の比較は終了コードでは表せない）。
+say "  [2/9] filter-eval（全問＋層ゲート PASS で 0）"
+python -m recommendations.eval.eval --filter-eval >>"$GATE_LOG" 2>&1 || fail "filter-eval FAIL（フィルタ全問＋層ゲート）"
+
+say "  [3/9] multistage（網羅・集約棄却・答え可能が全問で 0）"
+python -m recommendations.eval.multistage_eval >>"$GATE_LOG" 2>&1 || fail "multistage_eval FAIL"
 
 say "  [4/9] recommendations mcp_smoke"
 python -m recommendations.eval.mcp_smoke >>"$GATE_LOG" 2>&1 || fail "recommendations mcp_smoke FAIL"
-grep -q "総合: PASS" "$GATE_LOG" || fail "recommendations mcp_smoke の PASS 表示が無い"
 
 say "  [5-8/9] stats 4 ゲート（exit code が合否）"
 python -m stats.eval.mcp_smoke     >>"$GATE_LOG" 2>&1 || fail "stats mcp_smoke FAIL"
 python -m stats.eval.exact_match   >>"$GATE_LOG" 2>&1 || fail "stats exact_match FAIL"
-python -m stats.eval.test_core     >>"$GATE_LOG" 2>&1 || fail "stats test_core FAIL"
+STATS_TEST_STRICT=1 python -m stats.eval.test_core >>"$GATE_LOG" 2>&1 || fail "stats test_core FAIL（STRICT＝値ストア依存の検査のスキップも FAIL）"
 python -m stats.eval.find_quality  >>"$GATE_LOG" 2>&1 || fail "stats find_quality FAIL"
 
 say "  [9/9] 共通契約テスト"
@@ -117,21 +123,23 @@ docker start qdrant-dev >/dev/null
 [[ "$UPLOAD_OK" == 1 ]] || fail "upload_to_s3.sh 失敗（マニフェストは書かない＝箱は動かない）"
 
 say "④ リリースマニフェスト（これが箱の自動適用トリガ）"
-GITV="$(git -C "$REPO_DIR" describe --tags --always --dirty 2>/dev/null || echo unknown)"
+GITV="$(git -C "$REPO_DIR" describe --tags --always 2>/dev/null || echo unknown)"   # tar＝HEAD（コードの未コミットは配る前の確認で止まる）＝VERSION と同じ刻み
 SERIES_N="$(wc -l < stats/data/registry/series.jsonl | tr -d ' ')"
 DOCS_N="$(($(wc -l < recommendations/data/catalog.csv | tr -d ' ') - 1))"
 MANIFEST="$(mktemp -t polyarchy-release.XXXXXX.json)"
-python3 - "$MANIFEST" <<PYEOF
-import json, sys, datetime
+RETRIEVAL_CFG="$RETRIEVAL_CFG" python3 - "$MANIFEST" <<PYEOF
+import json, os, sys, datetime
 json.dump({
   "released_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
   "code_version": "$GITV",
   "gates": {"hit5_pct": float("$HIT5"), "mrr": float("$MRR"),
-             "filter": "27/27", "multistage": "12/12", "smoke": "PASS",
+             "filter": "PASS", "multistage": "PASS", "smoke": "PASS",
              "stats": "4/4 PASS", "common": "PASS", "companies": "$COMPANIES_GATES", "deliberations": "$DELIB_GATES"},
   "scale": {"stats_series": int("$SERIES_N"), "recommendations_docs": int("$DOCS_N"), "companies": int("$COMPANIES_N"),
             "deliberations_points": int("$DELIB_POINTS")},
-  "released_by": "release.sh（ゲート全 PASS 時のみ本ファイルが書かれる）",
+  "measured": {"retrieval": os.environ.get("RETRIEVAL_CFG", ""), "collection": "$COLLECTION_NAME", "lock": "match",
+               "qdrant_mount": "recommendations/data/qdrant（配布するフォルダの・照合済み）"},
+  "released_by": "release.sh（配る前の確認とゲート全 PASS 時のみ本ファイルが書かれる）",
 }, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 PYEOF
 aws s3 cp "$MANIFEST" "s3://$BUCKET_NAME/release/data.json" --profile "$AWS_PROFILE" --region "$AWS_REGION" \

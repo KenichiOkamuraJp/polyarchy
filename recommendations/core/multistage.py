@@ -11,7 +11,7 @@ LLM を介さずに（＝クレジット0で・再現可能に）実装する。
   知見2（集約/最上級は単発QA不可）→ **full scan → argmin/決定**：全団体を叩いて各社の
     最古の言及日（date_int）を突き合わせ、確定できれば団体を、できなければ健全に棄却する。
 
-一発QA（＝`service.search` 単発）との差を `multistage_eval.py` が Phase 9 メトリクスで測る。
+一発QA（＝`service.search` 単発）との差を `multistage_eval.py` が Phase 9 メトリクスで測る（本番の入口 orchestrate を通す）。
 """
 from dataclasses import dataclass
 from typing import Optional
@@ -66,8 +66,7 @@ def classify_strategy(query: str) -> str:
       "coverage"    … 横断・網羅（"各団体" 等）or 複数団体名指し→団体別 fan-out で偏りを消す。
       "baseline"    … 上記いずれでもない単一トピック→通常の関連度検索（1団体に絞らない）。
 
-    smart_search との違い：baseline（無印の単一質問）を fan-out ではなく通常検索に倒す点。
-    横断意図の無い焦点質問で「最良ソース勝ち」を保つ（＝現行 app.py と同じ体験）。
+    baseline（無印の単一質問）は fan-out ではなく通常検索に倒す＝横断意図の無い焦点質問で「最良ソース勝ち」を保つ。
     """
     named = detect_named_orgs(query)  # 網羅マーカーがあれば () を返す
     if len(named) == 1:
@@ -81,7 +80,7 @@ def classify_strategy(query: str) -> str:
 
 @dataclass
 class StageResult:
-    """orchestrate() の統一返り値（app.py / 将来の生成 eval が使う）。
+    """orchestrate() の統一返り値（MCP の sweep(mode=auto)・multistage_eval が使う）。
 
     strategy   : classify_strategy の結果（targeted/aggregation/coverage/baseline）。
     chunks     : 生成・出典表示に使う代表チャンク列（層は公開固定・PolicySearchService 由来）。
@@ -121,41 +120,21 @@ class MultiStageSearcher:
         self.score_floor = score_floor
         self.log = service.log
 
-    # ── 戦略選択：名指しなら targeted、横断なら fan-out ───────────────────
-    def smart_search(self, query: str, top_k: int = 5, per_org: int = 3,
-                     since: Optional[int] = None, until: Optional[int] = None,
-                     field: Optional[str] = None) -> list[Chunk]:
-        """設問の形で戦略を選ぶ（オーケストレータの采配を決定論で再現）。
-
-        - 単一団体を名指し（"経団連の資料は…"）→ その団体だけを targeted 検索。
-        - 複数団体名指し → その団体群に限定して fan-out。
-        - 名指しなし／"各団体"横断 → 全団体 fan-out（網羅）。
-
-        since/until/field は任意のセッションフィルタ（app.py のサイドバー等）。既定 None＝
-        従来挙動（フィルタなし）。層は PolicySearchService が常に公開固定＋フェイルクローズ。
-        """
-        named = detect_named_orgs(query)
-        if len(named) == 1:
-            hits = self.svc.search(query, orgs=list(named), top_k=top_k,
-                                   since=since, until=until, field=field)
-            self.log.info("多段（targeted）: クエリ=%r 名指し=%s → %d件", query, named[0], len(hits))
-            return hits
-        orgs = named if named else ALL_ORGS
-        return self.coverage_search(query, top_k=top_k, per_org=per_org, orgs=orgs,
-                                    since=since, until=until, field=field)
-
-    # ── UI/生成の単一入口：戦略選択→統一結果 ─────────────────────────────
+    # ── 単一入口：戦略選択→統一結果 ─────────────────────────────────────
     def orchestrate(self, query: str, top_k: int = 5, per_org: int = 3,
                     since: Optional[int] = None, until: Optional[int] = None,
                     field: Optional[str] = None,
                     orgs_scope: tuple[str, ...] = ()) -> StageResult:
-        """classify_strategy で戦略を選び、統一結果 StageResult を返す（app.py の入口）。
+        """classify_strategy で戦略を選び、統一結果 StageResult を返す（MCP の sweep(mode=auto) の入口）。
 
         検索は全て PolicySearchService（層=公開固定＋フェイルクローズ）経由＝機密は
         物理的に出ない。生成はここでは行わず、呼び出し側が chunks/scan から回答を組む
         （aggregation は決定論の scan["rationale"] が回答、それ以外は chunks を生成に渡す）。
 
-        orgs_scope: サイドバー等で団体を明示限定したときの走査範囲（既定 () ＝クエリ形で
+        per_org は全ての分岐（coverage の fan-out・aggregation の走査）に渡す＝呼び出し側の申告どおりの件数を
+        団体ごとに取る（2026-10-09 までは aggregation が既定の 5 件で走査し、sweep の申告 per_org=3 と食い違っていた）。
+
+        orgs_scope: 団体を明示限定したときの走査範囲（既定 () ＝クエリ形で
         自動選択）。指定時は 1団体→targeted・集約語あり→スコープ内走査・それ以外→スコープ内
         fan-out に倒す（クエリ由来の名指し検出より優先＝ユーザーの明示指定を尊重）。
         """
@@ -166,7 +145,7 @@ class MultiStageSearcher:
                                          since=since, until=until, field=field)
                 return StageResult("targeted", chunks, named_orgs=scope, scanned_orgs=scope)
             if any(m in query for m in AGGREGATION_MARKERS):
-                scan = self.aggregation_scan(query, orgs=scope,
+                scan = self.aggregation_scan(query, per_org=per_org, orgs=scope,
                                              since=since, until=until, field=field)
                 return StageResult("aggregation", scan["chunks"], scan=scan, scanned_orgs=scope)
             chunks = self.coverage_search(query, top_k=top_k, per_org=per_org, orgs=scope,
@@ -176,7 +155,7 @@ class MultiStageSearcher:
         strategy = classify_strategy(query)
         named = detect_named_orgs(query)
         if strategy == "aggregation":
-            scan = self.aggregation_scan(query, orgs=ALL_ORGS,
+            scan = self.aggregation_scan(query, per_org=per_org, orgs=ALL_ORGS,
                                          since=since, until=until, field=field)
             return StageResult("aggregation", scan["chunks"], scan=scan,
                                named_orgs=named, scanned_orgs=ALL_ORGS)

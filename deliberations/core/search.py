@@ -125,7 +125,9 @@ class DeliberationsSearch:
         self.meta = dict(zip(g["ids"], g["metadatas"]))
         try:
             sparse = QdrantBM25(self.store, collection, config.VOCAB_DIR / f"{collection}_vocab.json.gz")
-        except FileNotFoundError:
+        except FileNotFoundError as e:
+            # 語彙サイドカーの無いコレクション（層ゲートの一時コレクション等）＝in-memory 版。本番で出たら束の復元漏れ
+            log.warning("BM25 語彙が無いため in-memory 版で代替（絞り込みの候補の取り方が本番と違う）: %s", e)
             sparse = BM25Index(g["ids"], g["documents"], [m.get("path", "") for m in g["metadatas"]])
         self.searcher = HybridSearcher(self.store, collection, sparse, self.meta, config.HYBRID_KV,
                                        config.HYBRID_KB, widen=config.FILTER_WIDEN, exact=config.QDRANT_EXACT)

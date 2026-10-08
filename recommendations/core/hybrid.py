@@ -9,9 +9,9 @@ RRF（Reciprocal Rank Fusion）で融合し、リランカーに渡す候補プ�
 `polyarchy_retrieval` にある（2026-10-03 に切り出し＝審議会議事録DB_開発計画 §2.3）。本モジュールに
 残すのは政策主張DB の固有部分＝SearchFilter の翻訳・比較型の団体別分解（Phase 7.5）・llama_index の包装。
 バックエンドは Qdrant のみ（バッチ2 段4〔2026-08-28〕で Chroma 経路を全廃）：
-ベクトルは dense 検索・BM25 は sparse サイドカー（`core/qdrant_bm25.py`）を push-down で使い、
-サイドカーの無い一時コレクション（層ゲート自己検証など）だけ in-memory BM25 に
-フォールバックする。ローカル完結要件（ローカル/無料/外部送信なし）は不変。
+ベクトルは dense 検索・BM25 は sparse サイドカー（`core/qdrant_bm25.py`）を push-down で使う。
+サイドカーの無い一時コレクション（層ゲート自己検証など）だけ、明示（allow_inmemory_bm25=True）で in-memory BM25 を使う
+（既定は止まる＝本番・ゲートが黙って別実装の BM25 で動かない・2026-10-09）。ローカル完結要件（ローカル/無料/外部送信なし）は不変。
 """
 from polyarchy_retrieval.bm25 import BM25Index
 from polyarchy_retrieval.fusion import rrf_fuse  # noqa: F401（再公開＝既存の import 先を保つ）
@@ -22,11 +22,15 @@ from polyarchy_retrieval.tokenizer import tokenize_ja  # noqa: F401（再公開�
 # ---------------------------------------------------------------------------
 # 本番組み込み用：llama-index の Retriever 実装（ベクトル＋BM25→RRF、Phase 6 でフィルタ対応）
 # ---------------------------------------------------------------------------
-def build_hybrid_retriever(collection, embed_model, kv: int, kb: int, pool: int,
-                           search_filter=None):
+def build_hybrid_retriever(collection: str, embed_model, kv: int, kb: int, pool: int,
+                           search_filter=None, allow_inmemory_bm25: bool = False):
     """Qdrant コーパスからハイブリッド retriever を構築して返す。
 
     `collection` はコーパス名の str（CORPUS_REGISTRY で解決。コレクション名の自己写像も可）。
+    `allow_inmemory_bm25`：語彙サイドカーが無いとき in-memory BM25 で代替してよいか。True を渡すのは語彙を作らない
+    一時コレクション（eval/filters の層ゲート自己検証・eval/mcp_layer_gate_test）だけ。既定 False＝語彙が無ければ
+    FileNotFoundError で止まる（in-memory 版は絞り込みの候補の取り方が違う〔kb×widen を取って Python で絞る〕＝
+    本番・ゲートが黙って別の意味論で動かない）。
     _retrieve(query) で：ruri クエリ埋め込みの dense 検索上位 kv ＋ BM25 上位 kb を
     RRF 融合 → 上位 pool を NodeWithScore で返す（後段のリランカーが top_k に絞る）。
     起動時に全チャンクを1回読み込み id→text/metadata を作る（数秒）。
@@ -45,8 +49,7 @@ def build_hybrid_retriever(collection, embed_model, kv: int, kb: int, pool: int,
     from recommendations.core.qdrant_store import QdrantCorpusStore, qdrant_filter
 
     qstore = QdrantCorpusStore()
-    qcorpus = (collection if isinstance(collection, str)
-               else getattr(collection, "name", None) or "policy_claims")
+    qcorpus = collection
 
     g = qstore.get_all(qcorpus)
     id2text = {i: (d or "") for i, d in zip(g["ids"], g["documents"])}
@@ -54,15 +57,17 @@ def build_hybrid_retriever(collection, embed_model, kv: int, kb: int, pool: int,
 
     # BM25 側：sparse サイドカー（語彙）を使い、in-memory 索引は構築しない（毎起動の
     # 全件トークナイズを省く＝180k 破綻問題の解消側）。語彙サイドカーの無い一時コレクション
-    # （層ゲート自己試験など）は in-memory 版へフォールバック。
+    # （層ゲート自己試験など）だけ、明示で in-memory 版へ切り替える。
     qbm25 = None
     from polyarchy_common.logsetup import get_logger
     from recommendations.core.qdrant_bm25 import QdrantBM25
     try:
         qbm25 = QdrantBM25(qstore, qcorpus)
     except FileNotFoundError as e:
-        get_logger("polyarchy.hybrid").info(
-            "BM25 sparse 未構築のため in-memory 版で代替: %s", e)
+        if not allow_inmemory_bm25:
+            raise
+        get_logger("polyarchy.hybrid").warning(
+            "BM25 sparse 未構築のため in-memory 版で代替（一時コレクションの明示の許可）: %s", e)
     bm25 = None if qbm25 is not None else BM25Index(
         g["ids"], [d or "" for d in g["documents"]],
         [m.get("file_name", "不明") for m in g["metadatas"]])
@@ -123,10 +128,10 @@ def build_hybrid_retriever(collection, embed_model, kv: int, kb: int, pool: int,
     return HybridRetriever(search_filter or default_filter())
 
 
-def production_retriever(index, collection, embed_model, pool_k: int, search_filter=None):
+def production_retriever(collection: str, embed_model, pool_k: int, search_filter=None,
+                         allow_inmemory_bm25: bool = False):
     """本番の retriever を返す（ハイブリッド一本＝Qdrant dense＋BM25 sparse→RRF）。
 
-    `index` は旧 Chroma 経路の名残の互換引数（常に None を渡してよい・未使用）。
     search_api / eval の本番入口はこれを使う（＝本番 retriever の単一の真実源）。
     後段の reranker が pool_k から TOP_K に絞る想定。
 
@@ -140,4 +145,4 @@ def production_retriever(index, collection, embed_model, pool_k: int, search_fil
                            "サポート外になりました＝本番既定はハイブリッド一本")
     sf = search_filter or default_filter()
     return build_hybrid_retriever(collection, embed_model, HYBRID_KV, HYBRID_KB,
-                                  pool_k, sf)
+                                  pool_k, sf, allow_inmemory_bm25=allow_inmemory_bm25)

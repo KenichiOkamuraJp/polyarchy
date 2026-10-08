@@ -44,15 +44,15 @@ python -m companies.eval.make_candidates    # 評価問の素材づくり（既�
 python -m companies.eval.test_core          # 語彙と評価問の整合（ネットワーク不要）
 python -m companies.ingest.edinet --cached   # 取得済みの書類を値の置き場（data/store/）へ取り込む（--docids／--from --to もある）。セグメント別（store/segments/）・地域別（store/regions/）も同時に
 python -m companies.ingest.edinet --fetch-only --from 2016-09-29 --to 2025-06-15   # 有報の zip を取るだけ（古い日から＝API の取得範囲は提出日で約 10 年前まで・古い側から毎日消える＝第 1d 便）
-python -m companies.ingest.edinet --build-index   # 横断検索の索引（store/screen_index/＝項目ごと）だけを作り直す（取込の最後にも自動で作る・合わないと screen_exact が FAIL）
+python -m companies.ingest.edinet --build-index   # 横断検索の索引（store/screen_index/＝項目ごと）だけを作り直す（取込の最後にも自動で作る・合わないと screen_exact が FAIL）。lxml の無い env では python -c "from companies.core import screen; print(screen.build_index())"
 python -m companies.ops.build_segment_labels  # 取込の後＝セグメントに出る標準要素の公式ラベル表（core/segment_labels.json・git 追跡）を公式 CSV から作り直す
 python -m companies.eval.make_backfill_candidates   # 第 1d 便の評価問（★backfill*・period_basis*・screen_backfill* を上書き・遡り〔D・E〕は全量の置き場から選ぶ）
 python -m companies.eval.make_segment_candidates  # 第 1b 便の評価問の素材づくり（★segments*.jsonl を上書きする）
 python -m companies.eval.make_region_candidates   # 第 1b 便②（地域別）の評価問の素材づくり（★regions*.jsonl を上書きする）
 python -m companies.ops.build_industries    # 業種（EDINET コードリスト＝data/cache/codelist/ に置いてから・RUNBOOK §5）
-python -m companies.eval.make_screen_candidates  # 第 1c 便（横断検索）の値の正例の素材づくり（★screen.jsonl を上書きする・人手の問は screen_manual／screen_fail_closed／screen_queries）
-python -m companies.eval.make_trend_candidates  # 第 1e 便（時系列）の評価問（★trend.jsonl・trend_fail_closed.jsonl を上書き・全書類の公式 CSV を API から取る・人手の問は trend_queries）
-python -m companies.eval.exact_match        # 原典完全一致＝正例・負例とも全問 PASS（第 1b 便の segments_exact・regions_exact・第 1c 便の industries_exact・screen_exact も続けて判定）
+python -m companies.eval.make_screen_candidates  # 第 1c 便（横断検索）の値の正例の素材づくり（★screen.jsonl を上書きする・人手の問は screen_manual／screen_fail_closed／screen_queries）。★取込の後に回す＝screen.jsonl は最新の書類に連動して作り直す（人手の screen_manual は期で固定済み＝作り直さない）
+python -m companies.eval.make_trend_candidates  # 第 1e 便（時系列）の評価問（★trend.jsonl・trend_fail_closed.jsonl・trend_lookup.jsonl を上書き・全書類の公式 CSV を API から取る・人手の問は trend_queries／trend_manual_fail_closed／trend_lookup_manual）
+python -m companies.eval.exact_match        # 原典完全一致＝正例・負例とも全問 PASS（第 1b 便の segments_exact・regions_exact・第 1c 便の industries_exact・screen_exact・第 1e 便の trend_exact も続けて判定）
 python -m companies.eval.find_quality       # 発見層（企業の同定）＝全問 PASS
 python -m companies.ops.population_report   # 母集団の棚卸し（取込のあとに回す＝語彙・契約が標本の外でも成り立つか）
 python -m companies.eval.mcp_smoke          # MCP 疎通・ツール定義・fail-closed・stdout クリーン
@@ -66,7 +66,8 @@ python -m companies.serving.mcp_server      # stdio（--http --port 8767 で配�
 - ★ **XBRL のリンクベースは名前を決め打ちしない**＝ラベルは loc（要素の id）→ labelArc → label の順にたどる。`xlink:label` の名前は書類ごとに任意（`<接頭辞>_<要素>_label` と `label_<要素>` の 2 通りを実測）＝決め打ちで 243 社の拡張要素のラベルが空だった（2026-09-23・[人手の目視](docs/記録/人手の目視_2026-09-23.md) §3）。公式 CSV の「項目名」も拡張要素で空になる書類がある＝ラベルの突き合わせ先は本文（`0101010_honbun_*.htm`）。
 - ★ **既存の `exact_match.jsonl`／`fail_closed.jsonl` を `make_candidates` で再生成しない**＝人手で足した問がある（ソニーの接頭辞なし・E03160 の ROE 等＝再生成すると消えることを 2026-09-28 に確かめた）。新しい便の問は別のファイル（`period_basis*`・`backfill*`・`*_backfill`）に置き、ゲートが続けて読む。
 - ★ **横断検索の索引は「問の間は手放さない」**＝項目ごとのファイルを LRU だけで持つと、最上段の収益の判定だけで 9 項目を見るため問の途中で追い出しと読み直しが起き、現状の問が 0.05 秒→12〜22 秒になった（ゲートは通る＝速さは測らないと気づかない・2026-09-28）。索引のファイルは 1 行 1 社（1 つの JSON にすると読み込みの一時的なメモリが 4 倍）。
-- ★ **横断検索の索引の形式を変えたら `core/screen.py` の `INDEX_VERSION` を上げる**＝古い形式の索引を新しいコードが黙って読まない（ゲートの `index_status` が版の違いで FAIL・2026-09-30 に行へ decimals を足して版 2）。
+- ★ **横断検索の索引の形式を変えたら `core/screen.py` の `INDEX_VERSION` を上げる**＝古い形式の索引を新しいコードが黙って読まない（ゲートの `index_status` が版の違いで FAIL・2026-09-30 に行へ decimals を足して版 2）。**項目の語彙（`core/items.py` の要素・最上段の収益の語）を変えたら索引を作り直す**＝指紋の `__vocab__` が違えば `index_status` が FAIL（2026-10-09＝作り直さないと全社が「開示していない」扱いになる）。
+- ★ **人手の評価問は生成器が上書きしないファイルに置く**（`*_manual*`・`screen_fail_closed`・`*_queries`）。生成器の出力ファイル（`trend*.jsonl`・`screen.jsonl`・`segments*.jsonl` 等）に人手で足すと、作り直しで黙って消える（2026-10-09 まで `trend_lookup.jsonl` に人手の 2 問があった）。test_core が便ごとの下限と理由ごとの負例を検査する＝問を足したら下限を上げる。
 - ★ **1 株当たりの値は 1 つの書類の中でも株数の基準が混ざる**＝5 期推移の古い年を分割・併合で組み替えない書類・最新の 1 年だけを併合の後で載せる書類がある（後年の書類も組み替えない＝restated が出ない）。書類の組の比だけで分割を見ると見落とす（2026-10-01 staging＝非公開化の併合で EPS の年平均成長率の上位を占めた）＝年ごとに株式数の目安（自己資本 ÷ 1 株当たり純資産・利益 ÷ EPS）で判定する（`core/trend.py` の `_share_jump`）。
 - ★ **書類一覧の `xbrlFlag=1` でも XBRL が無い書類がある**（HTML だけ＝テムザックの 2018 年提出の古い有報 4 本）・**PublicDoc のインスタンスが 2 個の書類がある**（参天製薬 2017 年＝jpcrp030000 と ifrs-asr）＝`parse_instance` は両方を合わせる・無ければ `NoInstance`（失敗に数えない）。
 - ★ **値の置き場の退避・一時ファイルは `data/cache/` の下に**＝`upload_to_s3.sh` は `data/` を `cache/`・`verify/`・`logs/`・`query_log/` 以外すべて S3（→箱）へ運ぶ。

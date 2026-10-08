@@ -26,10 +26,6 @@ PRODUCTION_EMBEDDING = "ruri_v3_310m_pfx"
 # 戦略の実体は recommendations/ingest/chunking.py の STRATEGIES を参照。
 DEFAULT_STRATEGY = "semantic"
 
-# 固定長戦略を使う場合のパラメータ（semantic 採用後は ingest では未使用の後方互換値）。
-CHUNK_SIZE = 800
-CHUNK_OVERLAP = 100
-
 TOP_K = 5
 
 # バッチ2 段2（2026-08-28）：MCP search_policy_docs の top_k 要求上限。既定値は TOP_K=5 のまま、
@@ -58,7 +54,8 @@ RERANK_RETRIEVE_K = int(os.getenv("RERANK_RETRIEVE_K", "30"))
 # Phase 5：ハイブリッド検索（BM25語彙＋ベクトル→RRF融合）。検索専用比較で
 # ALL hit@5 92.9→100.0%（全ドメイン100%）・MRR 0.787→0.848、弱点の rengo は
 # 75→100% に到達したため本番採用。BM25語彙一致が recall漏れと recency混同を同時に解消。
-# fugashi＋rank_bm25 でローカル完結（外部送信なしの要件を維持）。"0"/"false" で無効化。
+# fugashi＋rank_bm25 でローカル完結（外部送信なしの要件を維持）。ハイブリッド一本＝"0"/"false" は
+# hybrid.production_retriever が例外にする（ベクトル単独の経路はバッチ2 段4〔2026-08-28〕で Chroma とともに全廃）。
 HYBRID_SEARCH = os.getenv("HYBRID_SEARCH", "1").lower() not in ("0", "false", "no", "")
 HYBRID_KV = int(os.getenv("HYBRID_KV", "50"))  # ベクトルで取る件数（融合前）
 HYBRID_KB = int(os.getenv("HYBRID_KB", "50"))  # BM25で取る件数（融合前）
@@ -89,8 +86,7 @@ INGEST_NUM_WORKERS = int(os.getenv("INGEST_NUM_WORKERS", "8"))
 # SIGALRM ガードと同趣旨で、長時間ジョブ中の API ハングでingest全体が固まるのを防ぐ。
 EMBED_TIMEOUT = float(os.getenv("EMBED_TIMEOUT", "60"))
 
-# ベクトル検索バックエンド＝Qdrant のみ（バッチ2 段4〔2026-08-28〕で Chroma 経路を全廃。
-# 切り戻しは Qdrant 内の v7→v6 コレクション切替＝COLLECTION_NAME の env 1 行）。
+# ベクトル検索バックエンド＝Qdrant のみ（バッチ2 段4〔2026-08-28〕で Chroma 経路を全廃。切り戻しは自動適用の退避と書き戻し（deploy/RUNBOOK_OPS.md §5））。
 # env VECTOR_BACKEND は互換のため読むが、qdrant 以外は起動時に明示エラー（黙って旧経路に
 # 落ちる事故を防ぐ）。QDRANT_EXACT=1（既定）で HNSW を使わない厳密検索（パリティ検証で
 # 総当たりと完全一致を確認済。15〜20 万チャンク規模では実用速度）。
@@ -98,7 +94,7 @@ VECTOR_BACKEND = os.getenv("VECTOR_BACKEND", "qdrant").lower()
 if VECTOR_BACKEND != "qdrant":
     raise RuntimeError(
         f"VECTOR_BACKEND={VECTOR_BACKEND!r} はサポート外です（Chroma 経路は 2026-08-28 バッチ2 段4 で全廃。"
-        "切り戻しは COLLECTION_NAME=policy_claims_v6 等の Qdrant コレクション切替で行う）")
+        "切り戻しは自動適用の退避と書き戻し（deploy/RUNBOOK_OPS.md §5））")
 QDRANT_EXACT = os.getenv("QDRANT_EXACT", "1").lower() not in ("0", "false", "no", "")
 
 # v1=固定長(openai-small), v2=semantic+openai-small, v3=semantic+ruri(pfx) 158文書,
@@ -106,7 +102,7 @@ QDRANT_EXACT = os.getenv("QDRANT_EXACT", "1").lower() not in ("0", "false", "no"
 # v5=同構成で1,249文書/80,632チャンク（Phase 11 データ健全性＆網羅性＝連合日付修正＋直近10年窓収集）。
 # Phase 11 で v5 を prod に昇格（v1/v2/v3/v4 は切り戻し用に保持）。
 # Phase B（B4）で Qdrant の policy_claims_v7（全期間拡大・ゲート済。2026-09 時点で約3,700文書/187k チャンク）を本線に確定。
-# 既定＝本線 v7/qdrant。切り戻しは env `COLLECTION_NAME=policy_claims_v6`（80k・Qdrant 内の中間段。
+# 既定＝本線 v7/qdrant。v6（80k・中間段）は B26 以降の評価問を満たせない＝切り戻し先ではない（切り戻しは自動適用の退避と書き戻し（deploy/RUNBOOK_OPS.md §5）。
 # Chroma v5 経路はバッチ2 段4〔2026-08-28〕で全廃＝データは S3 data/chroma/ と退避先に保管のみ）。
 # 環境変数で上書き可（ingest/eval 全てに効く）。
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "policy_claims_v7")

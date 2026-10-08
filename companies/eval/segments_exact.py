@@ -129,6 +129,8 @@ def main() -> int:
         print(f"  FAIL ラベルが空の要素: {u}")
     if bare:
         fails.append(("store", f"ラベルが空の要素 {len(bare)} 件"))
+    if not all([pos, neg]):  # 問が 0 件で PASS にしない（作り直しで空になったファイルを見逃さない・2026-10-09）
+        fails.append(("eval", "読み込んだ問が 0 件のファイルがある（評価ファイルが空・読めない）"))
     for i, e in fails[:40]:
         print(f"  FAIL {i}: {e}")
     print(f"{'PASS' if not fails else 'FAIL'}: 正例 {len(pos)}・負例 {len(neg)}・失敗 {len(fails)}")

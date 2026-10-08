@@ -280,9 +280,24 @@ cmd_test() {
   log "※ 利用者側ネットワークからの疎通確認は別途必要（この端末からは検証できない）。"
 }
 
+# ★上書き漏れの混在で止める（fail-closed・2026-10-09）＝既定値は staging 固定。prod のホスト・ゾーンに staging の
+#   秘密パス（SSM_PATH_PARAM）を組み合わせると「staging の秘密パス以外は遮断」のルールが prod に作られ、prod の
+#   正規の要求がエッジで全部止まる。片方だけ上書き漏れなら取得に失敗して秘密パスのルール無しで進む（fail-open）。
+#   判定の前提＝staging の SSM パス・プロファイル名に "staging" が入る（既定値の命名）。prod の名前に "staging" を入れない。
+guard_consistency() {
+  local stg=0 v
+  for v in "$SSM_PATH_PARAM" "$AWS_PROFILE_CF"; do [[ "$v" == *staging* ]] && stg=$((stg+1)); done
+  [[ "$stg" == 1 ]] && die "SSM_PATH_PARAM（${SSM_PATH_PARAM}）と AWS_PROFILE_CF（${AWS_PROFILE_CF}）の環境が食い違う＝片方の上書き漏れ"
+  [[ "$ZONE_NAME" != "polyarchy.net" && "$stg" == 2 ]] \
+    && die "ZONE_NAME=${ZONE_NAME} だが SSM_PATH_PARAM・AWS_PROFILE_CF が staging の既定のまま＝prod では全部上書きする（PROD_MIGRATION §2.3）"
+  [[ "$MCP_HOST" == *".$ZONE_NAME" ]] || die "MCP_HOST=${MCP_HOST} が ZONE_NAME=${ZONE_NAME} の下に無い"
+  [[ "$SSM_PATH_PARAM" == */"${SERVICE}"_http_path ]] || die "SSM_PATH_PARAM=${SSM_PATH_PARAM} が SERVICE=${SERVICE} の秘密パス（…/${SERVICE}_http_path）でない"
+  return 0
+}
+
 case "${1:-}" in
   status) cmd_status ;;
-  apply)  cmd_apply "${2:-connector}" ;;
+  apply)  guard_consistency; cmd_apply "${2:-connector}" ;;
   remove) cmd_remove ;;
   test)   cmd_test ;;
   *) die "使い方: cloudflare-guard.sh {status|apply [strict|connector]|remove|test}" ;;

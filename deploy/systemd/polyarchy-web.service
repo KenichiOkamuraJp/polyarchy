@@ -1,3 +1,5 @@
+# ★2026-10-09 に Web UI のコードを削除済み（ExecStart の chat_app.py は存在しない）＝旧構成の再現時は要修正。
+#   bootstrap・deploy.sh は ENABLE_WEB_APP=true で止まる（このユニットを置かない）。以下は当時の記述。
 # Polyarchy RAG Web（chat_app・Streamlit :8502）。★staging のみ（enable_web_app=true）。
 # prod では bootstrap がこのユニットを設置しない（MCP のみ＝ランタイム秘密ゼロ・仕様§2.3）。
 # 生成は Anthropic tool-use ループ（Claude 自身に search_policy_docs を多段で叩かせる・§32.8）。
@@ -18,7 +20,7 @@ Environment=PYTHONPATH=/opt/polyarchy/polyarchy
 Environment=HF_HOME=/opt/polyarchy/models
 # COLLECTION_NAME / VECTOR_BACKEND は deploy.env（terraform var collection_name / vector_backend）から。ここに固定値を書かない。
 Environment=POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/recommendations/data/query_log/queries.jsonl
-# ruri のロードが完全オフラインだと config 解決に失敗するため HF_HUB_OFFLINE は付けない（§mcp.service 参照）。
+# HF_HUB_OFFLINE を付けない理由は polyarchy-mcp.service を参照。
 Environment=TOKENIZERS_PARALLELISM=false
 # 127.0.0.1 バインド＝トンネル経由のみ到達（直露出しない）。st.table 不可等は §32.3（コード側で対処済）。
 ExecStart=/opt/miniconda/envs/polyarchy/bin/streamlit run recommendations/serving/chat_app.py --server.port 8502 --server.address 127.0.0.1 --server.headless true --browser.gatherUsageStats false

@@ -2,10 +2,10 @@
 HTTP 入口の運用部品（全サービス共通・純 ASGI）：アクセスログと /healthz。
 
 設計＝docs/運用設計.md §1.1・§1.2。`mcp_http.serve_streamable_http` が自動装着する。
-ラップ順（外→内）：healthz → （Access JWT 検証）→ アクセスログ → MCP アプリ。
+ラップ順（外→内）：healthz → （認証＝access.install_auth）→ アクセスログ → MCP アプリ。
 - healthz は最外＝認証不要・内側が壊れていても応答できる（生き死にの判定はここ）。
-- アクセスログは Access 検証の内側＝認証済みリクエストに `user_hash` が付く
-  （未認証の拒否は access 側が warning を出す）。authless 構成では全リクエストが対象。
+- アクセスログは認証の内側＝認証済みリクエストに `user_hash` が付く
+  （未認証の拒否は access 側が warning を出す）。認証を装着しないローカル開発では全リクエストが対象。
 
 ログは journald（stderr）へ 1 行 1 リクエスト：
   HTTP <method> <path> <status> <ms>ms user=<hash|-> ray=<cf-ray|->

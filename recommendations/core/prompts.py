@@ -1,12 +1,11 @@
 """
 生成（回答合成）用のシステムプロンプト＝引用型。
 
-`recommendations/serving/app.py`（参照 UI・compact 合成）と `recommendations/eval/eval.py`（生成込み eval）が同一物を使う。
-もとは `recommendations/serving/query.py`（Chroma 専用 CLI・archive 済）にあった定数を、依存を増やさない
+生成込み eval（`recommendations/eval/full.py`）が使う（参照 UI の app.py は 2026-10-09 に削除）。
+もとは旧 CLI `recommendations/serving/query.py`（Chroma 専用・削除済）にあった定数を、依存を増やさない
 純データとして core に置いたもの（所見 2026-08-19 段 3）。
 
-※`recommendations/serving/chat_app.py` の SYSTEM_PROMPT（ツール使用・会話型）と
-  `recommendations/serving/mcp_server.py` の SERVER_INSTRUCTIONS（MCP の振る舞い説明）は用途が違うため別物のまま。
+※`recommendations/serving/mcp_server.py` の SERVER_INSTRUCTIONS（MCP の振る舞い説明）は用途が違うため別物のまま。
 """
 
 SYSTEM_PROMPT = """あなたは政策文書の専門アナリストです。

@@ -27,6 +27,8 @@ PER_COMPANY = 10
 # 型を名指しした会社（証券コード）＝日本基準・IFRS・銀行・保険・小売・鉄道・通信・連結なし（単体の注記でセグメントを開示）
 POSITIVE = ["2204", "1801", "6501", "7203", "2802", "8306", "8766", "8750", "3382", "9020", "9432", "6758"]
 
+# ★下の SECTION・KIND は core/segments.py の表の写し＝segments_exact の欄・区分の種類の判定は「仕様の確認」であって分類の正しさは
+#   見ない（写し同士の比較＝表の書き換えのずれは検知できるが、表そのものの誤りは検知できない・2026-10-09 注記）。
 # 値が載っている欄＝要素名で決まる（2026-09-23 実測・422 書類）。ここに無い要素はセグメント情報の注記
 SECTION = {"NumberOfEmployees": "employees", "AverageNumberOfTemporaryWorkers": "employees",
            "CapitalExpendituresOverviewOfCapitalExpendituresEtc": "capex",

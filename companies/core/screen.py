@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 import datetime as dt
 import difflib
+import hashlib
 import json
 import re
 import sys
@@ -90,6 +91,7 @@ REASON_NOTE = {
     "overseas_statement_only": "表が無く「本邦が 90% 超」と会社の文で書いている＝海外 10% 未満とだけ分かる（比率は出さない）",
     "home_not_in_table": "地域別の表に本邦の区分が無い＝海外 100% の可能性も、本邦が他地域と一体の可能性もある（比率は出さない・原典で確認）",
     "home_or_total_not_identified": "地域別の表で本邦と合計のセルを特定できない（本邦が他地域と一体・合計がタグの収益と一致しない 等）",
+    "regions_not_in_document": "地域別の欄が載る書類の無い期（時系列の年＝最古の書類の前期より前）",
 }
 
 
@@ -193,7 +195,9 @@ def _company_top_candidate(f: dict) -> bool:
 # ファイルは 1 行 1 社の JSON Lines（[EDINET コード, 中身]）＝1 つの JSON にすると読み込みの一時的なメモリが 4 倍になった
 # （全量の現状の索引＝保持 153MB に対し一時 605MB・2026-09-30 実測）
 #   store/screen_index/_periods.jsonl  中身＝{"<書類>|<basis>": [決算期（新しい順）]}
-#   store/screen_index/_fingerprint.json  鮮度の照合＝{EDINET コード: [書類の一覧, 値のファイルの大きさ]}
+#   store/screen_index/_fingerprint.json  鮮度の照合＝{EDINET コード: [書類の一覧, 値のファイルの大きさ]}＋__version__＋__vocab__
+#     （__vocab__＝索引を作るときに行を選ぶ語彙＝_EL_KEY・TOP_LINE_LABEL・_TABLE_SUFFIX のハッシュ。項目を足して索引を作り直さないと
+#      全社が「開示していない」扱いになる＝語彙が変われば index_status が FAIL・2026-10-09）
 #   store/screen_index/_latest.jsonl   中身＝{"<書類>|<basis>": {決算期: {項目: [[基準, 要素, 値, 単位, context, ラベル, decimals]]}}}（最新の書類だけ）
 #   store/screen_index/<項目>.jsonl    中身＝{"<書類>|<basis>": {決算期: [[基準, 要素, 値, 単位, context, ラベル, decimals]]}}
 #   （ラベルは会社が定義した最上段の収益の候補だけ・他は null。decimals は時系列のつなぎ目で丸めの差を修正と数えないため＝第 1e 便）
@@ -230,7 +234,8 @@ def build_index() -> dict:
     for old in tmp.glob("*.json*"):
         old.unlink()
     _write_lines(tmp / "_periods.jsonl", periods)
-    (tmp / "_fingerprint.json").write_text(json.dumps({"__version__": INDEX_VERSION, **fp}, ensure_ascii=False, separators=(",", ":")))
+    (tmp / "_fingerprint.json").write_text(json.dumps({"__version__": INDEX_VERSION, "__vocab__": _vocab_hash(), **fp},
+                                                      ensure_ascii=False, separators=(",", ":")))
     for k, col in cols.items():
         _write_lines(tmp / f"{k}.jsonl", col)
     latest = {}
@@ -264,6 +269,12 @@ def _read_lines(path):
             yield json.loads(line)
 
 
+def _vocab_hash() -> str:
+    """索引の行を選ぶ語彙（標準の要素→項目・会社が定義した最上段の収益の語と表）のハッシュ＝語彙が変われば索引を作り直す。"""
+    return hashlib.sha256(json.dumps([sorted(_EL_KEY.items()), list(TOP_LINE_LABEL), list(_TABLE_SUFFIX)],
+                                     ensure_ascii=False).encode()).hexdigest()[:16]
+
+
 def _fingerprint(code: str) -> list:
     """鮮度の照合＝登録簿の書類の一覧と値のファイルの大きさ（取り込み直すと変わる）。"""
     path = store.STORE / "facts" / f"{code}.json"
@@ -278,6 +289,8 @@ def index_status() -> list[str]:
     fp = json.loads(path.read_text())
     if fp.get("__version__") != INDEX_VERSION:
         return [f"索引の形式が古い（版 {fp.get('__version__', 1)}→{INDEX_VERSION}・python -m companies.ingest.edinet --build-index）"]
+    if fp.get("__vocab__") != _vocab_hash():
+        return ["索引を作ったときと項目の語彙（core/items.py の要素・最上段の収益の語）が違う＝python -m companies.ingest.edinet --build-index"]
     bad = [c for c in store.registry() if (store.STORE / "facts" / f"{c}.json").exists() and fp.get(c) != _fingerprint(c)]
     return bad[:20] + ([f"…ほか {len(bad) - 20} 社"] if len(bad) > 20 else [])
 
@@ -570,12 +583,15 @@ def _pairs(t: dict) -> list[tuple]:
     return out
 
 
-_OVERSEAS: dict = {}  # (会社, 書類, basis) → 値 か 除外（地域別の欄は書類ごとに決まる＝問をまたいで使い回す）
+_OVERSEAS: dict = {}  # (会社, 書類, basis, 期, 時系列か) → 値 か 除外（地域別の欄は書類ごとに決まる＝問をまたいで使い回す）
 
 
 def _overseas_cached(ctx) -> dict:
     """地域別の欄のファイルは全書類ぶん（第 1d 便で約 9 倍）＝全社の欄を問のたびに読み直すと現状の問が 3 倍遅くなった（2026-09-30 実測）。"""
-    key = (ctx["code"], ctx["doc"], ctx["basis"], ctx["periods"][0])  # 期も鍵に＝時系列（第 1e 便）は同じ書類の前期の欄も使う
+    # 期も鍵に＝時系列（第 1e 便）は同じ書類の前期の欄も使う。時系列かどうかも鍵に＝欄の選び方と除外の理由が違う
+    # （2026-10-09 まで鍵に無く、同じプロセスで screen_trend の後に screen_companies を呼ぶと、時系列の理由
+    #  regions_not_in_document が横断検索に紛れて note も空になった）
+    key = (ctx["code"], ctx["doc"], ctx["basis"], ctx["periods"][0], bool(ctx.get("trend")))
     if key not in _OVERSEAS:
         try:
             _OVERSEAS[key] = _overseas(ctx)

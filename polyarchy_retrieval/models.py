@@ -1,14 +1,28 @@
 """
-ローカル HF の埋め込みとリランカー（クロスエンコーダ）の読み込みと登録＝**モデルの版の固定はここ 1 箇所**。
+ローカル HF の埋め込みとリランカー（クロスエンコーダ）の読み込みと登録＝**本番の重みの版（HF の commit）の固定はここ 1 箇所**
+（PINNED_REVISIONS）。どのキー（モデル）を本番に使うかは各コーパスの config。
 
 各モデルは「キー → インスタンス（関数）を生成する関数」で登録する（遅延生成＝HF のモデルは DL と
 import が重く、実際に使うモデルの分だけ初期化するため）。どのキーを本番に使うかは各コーパスの config。
 キャッシュ先は埋め込み・リランカーとも HF 標準（HF_HOME/hub）＝事前DL（deploy/bootstrap/prefetch_models.py）と同じ。
 
+★版＝リポジトリ名だけでは固定にならない（読み込みのたびに HF の main を解決し直す＝上流が重みを差し替えると黙って
+ベクトルが変わる）。本番で使うモデルは commit を PINNED_REVISIONS に書き、読み込み（ここ）と箱の事前 DL
+（deploy/bootstrap/prefetch_models.py）の両方がその commit を使う（2026-10-09）。上げるときは問ベクトルの
+sha256 と上位 k 件が変わらないか（変わるならアンカーを測り直す）を確かめてから、この表だけを直す。
+比較用のベンチのモデルは固定しない（main のまま）。
+
 埋め込みは llama_index の HuggingFaceEmbedding をそのまま使う（プレフィックス・正規化・バッチの扱いを
 変えるとベクトルが変わり得る＝置き換えはベクトルの同一性を確かめてから別の変更で）。
 API の埋め込み（OpenAI など）は鍵を持つ各コーパスの側に置く。
 """
+
+
+# 本番で使う重みの版（HF のリポジトリ → commit）。2026-10-09 に HF の main と手元・箱の取得物が一致することを確認して固定。
+PINNED_REVISIONS: dict[str, str] = {
+    "cl-nagoya/ruri-v3-310m": "18b60fb8c2b9df296fb4212bb7d23ef94e579cd3",                        # 埋め込み（ruri_v3_310m_pfx）
+    "hotchpotch/japanese-reranker-cross-encoder-xsmall-v1": "8547ac84ae5aee35387aad7000b379bd1b968dc6",  # リランカー（jp_reranker_xsmall_v1）
+}
 
 
 def hf_embedding(model_name: str, query_instruction: str = None, text_instruction: str = None):
@@ -36,6 +50,8 @@ def hf_embedding(model_name: str, query_instruction: str = None, text_instructio
             ) from e
         from huggingface_hub.constants import HF_HUB_CACHE
         kwargs = {"cache_folder": HF_HUB_CACHE}
+        if model_name in PINNED_REVISIONS:   # model_kwargs として SentenceTransformer にそのまま渡る
+            kwargs["revision"] = PINNED_REVISIONS[model_name]
         if query_instruction is not None:
             kwargs["query_instruction"] = query_instruction
         if text_instruction is not None:
@@ -60,7 +76,8 @@ def cross_encoder(model_name: str, max_length: int = 512):
                 f"'{model_name}' には sentence-transformers が必要です。"
                 "`pip install sentence-transformers` を実行してください。"
             ) from e
-        model = CrossEncoder(model_name, max_length=max_length)
+        pin = {"revision": PINNED_REVISIONS[model_name]} if model_name in PINNED_REVISIONS else {}
+        model = CrossEncoder(model_name, max_length=max_length, **pin)
 
         def rerank(query: str, passages: list[str]) -> list[float]:
             pairs = [(query, p) for p in passages]

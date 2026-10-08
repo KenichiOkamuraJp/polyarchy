@@ -6,7 +6,7 @@
 #   pip-compile --generate-hashes を回す。Mac 上で直接回すと Mac 向けの解決になる（torch +cpu が無い等）ので使わない。
 #
 #   bash deploy/scripts/lock_deps.sh                      # pyproject の変更を反映（既存の版は保つ＝pip-compile の既定）
-#   bash deploy/scripts/lock_deps.sh --upgrade            # 全依存を最新へ（★更新は PR＝ゲート全本〔9 本・companies 有効時 13 本〕を通してから）
+#   bash deploy/scripts/lock_deps.sh --upgrade            # 全依存を最新へ（★更新は PR＝ゲート全本〔一覧はルート README「品質の担保」〕を通してから）
 #   bash deploy/scripts/lock_deps.sh --upgrade-package X  # 1 つだけ上げる
 #
 # 生成後＝ローカルで同じロックから env を作ってゲート全本（RUNBOOK §7）→ release.sh で配布（箱の bootstrap ③ が --require-hashes で導入）。

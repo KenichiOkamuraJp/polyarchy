@@ -37,11 +37,11 @@ pip install -e ".[recommendations,stats]"          # ローカル（1 env に全
 python -m recommendations.eval.eval --retrieval-only --eval-set both   # ゲート（基準は README）
 python -m stats.eval.exact_match
 python -m polyarchy_common.tests.test_common
-bash deploy/scripts/release.sh <env>                # ゲート 9 本（companies 有効時は 13 本）→S3 配布→箱が 15 分以内に自動適用（失敗時は自動切り戻し）
+bash deploy/scripts/release.sh <env>                # 配る前の確認→全ゲート（一覧は README「品質の担保」）→S3 配布→箱が 15 分以内に自動適用（失敗時は自動切り戻し）
 ```
 
-- ★ `release.sh` は**依存の入った Python 環境を PATH の先頭に通して**実行する（素の `python3` だと llama_index 不在で即 FAIL）。
-- ★ **配布は開発用のフォルダからではなく、リポジトリをクローンした別フォルダから**（tar は作業フォルダをそのまま固める＝未コミットの変更が箱に入る。手順と `qdrant-dev` のマウント元の地雷＝RUNBOOK §5「配布用のクローンを開発用と分ける」）。
+- ★ `release.sh` は**ロックから作った Python 環境（RUNBOOK §7）を PATH の先頭に通して**実行する＝配る前の確認が `deploy/scripts/check_lock.py` でロックとの一致を照合し、違えば止まる（開発用の env は版がずれている＝基準値を測る前にも手で回す）。
+- ★ **配布は開発用のフォルダからではなく、リポジトリをクローンした別フォルダから**（ゲートが測る `qdrant-dev` のマウント元と配る索引を同じフォルダにする＝`release.sh` が照合して止める。code tar は `git archive HEAD`＝未コミットのコードは配らない・コードの範囲が dirty なら止まる。手順＝RUNBOOK §5「配布用のクローンを開発用と分ける」）。
 - ローカル stdio で使うなら `.mcp.json.example`（`stats/` にも同名）を `.mcp.json` に複製し、`<PYTHON>`・`<REPO>` を自分の環境のパスに書き換える（`.mcp.json` は git 外）。
 - データ（PDF・索引・統計値）は git 外＝S3 が原本。クローンしただけではゲートは回らない（RUNBOOK §3 データ復元）。e-Stat の appId は各自が取得して `stats/.env`（git 外）か環境変数へ。
 
@@ -52,12 +52,13 @@ bash deploy/scripts/release.sh <env>                # ゲート 9 本（companie
 - ★ **認証の三点一致**：IdP の Resource indicator・env の `AUTH_AUD_*`・実 URL（ホスト＋秘密パス）が同一文字列。認証ホストの秘密パスは原則回転しない（RUNBOOK §4）。IdP 側は DCR 有効＋Resource indicator を Default 指定＋JWT に email クレーム（PROD_MIGRATION §2.5）。
 - ★ **bootstrap の再走行はコードを更新しない**（コード反映は tar 再展開＝通常は自動適用がやる）。箱を手で触らない。どうしても手動 apply するときは `systemd-cat -t polyarchy-dataapply` を挟む（監査線に残すため・RUNBOOK §5）。
 - ★ **自動適用のスクリプト（`deploy/bootstrap/apply_data_update.sh` ほか `/usr/local/bin/polyarchy-*` に入るもの）の変更は、次の次の配布から効く**：自動適用の中の bootstrap 再走行で入れ替わる＝その配布自体は旧スクリプトで走る。直したことの確認は 2 回目の配布で行う。
-- ★ **S3→箱の `aws s3 sync` は `--exact-timestamps` を付ける**：既定は大きさが同じファイルを取り直さない＝中身が変わっても古いまま残る（2026-10-07：審議会DB の束の目印 `bundle.json` が同じ 614 バイトで、10-04 以降の配布で束が復元されなかった）。`deploy/bootstrap/bootstrap.sh` のデータ同期は対応済み。政策主張DB の Qdrant の写し（`apply_data_update.sh`）は未対応＝残タスク。
+- ★ **S3→箱の `aws s3 sync` は `--exact-timestamps` を付ける**：既定は大きさが同じファイルを取り直さない＝中身が変わっても古いまま残る（2026-10-07：審議会DB の束の目印 `bundle.json` が同じ 614 バイトで、10-04 以降の配布で束が復元されなかった）。`deploy/bootstrap/bootstrap.sh` のデータ同期と `apply_data_update.sh` の Qdrant の写し（2026-10-09・次の次の配布から効く）は対応済み＝`test_common` が S3→箱の全同期を検査する。
 - ★ **依存を変えたらロックを再生成**（`deploy/scripts/lock_deps.sh`→PR→ゲート＝RUNBOOK §7）。`mcp` は `<2` に固定（2.x は FastMCP が無い）。箱の Qdrant は musl ビルド必須。
 - ★ **ChatGPT（Business）のコネクタ**：利用者ごとの認可は「個人の設定→アプリ→接続」で行う（作成画面では出ない）。公開後にツール定義を更新できない＝変えたら作り直し。
 - ★ **OECD SDMX は 1 時間 60 ダウンロードの制限**（解除手段なし）。取得の UA は curl 相当が既定（IMF／OECD の WAF）。例外は UA 文字列で弾く中小企業白書 PDF だけ＝方針は [stats/README.md](stats/README.md)「取得の作法」（JS チャレンジ・ログイン・レート制限は突破しない）。
 - 秘密は SSM Parameter Store。`.env` を箱に運ばない。runbook・シェル履歴・コミットに値を残さない。Qdrant のデータ同期は Qdrant 停止中にのみ行う。
-- 捕捉ログは 30 日で自動削除（箱の timer と S3 ライフサイクルの両方）。残したい問は期限内に評価セットへ昇華する（`deploy/scripts/triage.sh`）。
+- 捕捉ログは 30 日で自動削除（箱の timer と S3 ライフサイクルの両方）。残したい問は期限内に評価セットへ昇華する（`deploy/scripts/triage.sh`）。★**S3 の非現行の日数を箱の 30 日に「揃えない」**（S3 は版の年齢で数える＝箱 30 日＋非現行 N 日が最長＝30 に揃えると約 60 日残る・2026-10-09 是正）＝正典は deploy/README「捕捉ログの保持」。
+- ★ **一覧の写し（サービス・捕捉ログを持つサービス・取得元の型）は静的検査が突き合わせる**（`test_common`＝箱の配線・保持・権限／stats の `test_core`＝refresh と freshness の配線）。サービス・取得元を足して検査が落ちたら、落ちた箇所に足す（文書にはサービス名・本数を列挙しない＝正典へリンク）。
 
 ## 6. セッションの振る舞い
 

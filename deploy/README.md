@@ -8,7 +8,8 @@
 > **状態（2026-08-28）**：初代 staging（v5/Chroma・PoC 試行が乗っていた箱）は **2026-08-28 に破棄**（
 > S3/SSM/Cloudflare/IAM ロールは保全）。建て直しから箱も**本線 v7/Qdrant**（`COLLECTION_NAME=policy_claims_v7`・
 > `VECTOR_BACKEND=qdrant`＝terraform 既定）。bootstrap ⑥b が Qdrant（版・sha256 固定）を導入し qdrant.service(:6333) で常駐、
-> `data/qdrant` は S3 の data 同期で配布。切り戻しは Qdrant 内の v6（`RECOMMENDATIONS_COLLECTION_NAME`）＝
+> `data/qdrant` は S3 の data 同期で配布。切り戻しは Qdrant 内の v6（`RECOMMENDATIONS_COLLECTION_NAME`）＝（2026-10-09 注：v6 は今の評価問を満たさない＝
+> 現行の切り戻しは自動適用の退避と書き戻し〔RUNBOOK_OPS §5〕）
 > Chroma 経路はバッチ2 段4（2026-08-28）で全廃（S3 `data/chroma/` は v5 データ保管のみ）。
 > `deploy/FREEZE` は 2026-08-28 に解除（PoC 停止・箱破棄に伴い削除）。
 > stats（:8766）は**設置済**（2026-08-28・A1）。**2026-09-02 から両サービスとも個人認証（案 B・AuthKit）でログイン必須**（authless は 2026-08-28〜09-01 の暫定）。運用一式（health timer・CW Logs/アラーム・SNS・週次レポート）も稼働＝[`RUNBOOK_OPS.md`](RUNBOOK_OPS.md)。
@@ -27,13 +28,13 @@
   EC2 t3.xlarge (東京・Ubuntu22.04・gp3 100GB暗号化・IMDSv2)
     ├ systemd polyarchy-mcp   :8765  ← 主役（層公開固定・秘密ゼロ・秘密パスで待受）
     ├ systemd qdrant          :6333  ← ベクトルDB（v7 本線・127.0.0.1 のみ・storage=data/qdrant）
-    ├ systemd polyarchy-web   :8502  ← **廃止（2026-09-02）**＝unit はリポ残置・箱には無い
+    ├ systemd polyarchy-web   :8502  ← **廃止（2026-09-02）・コード削除（2026-10-09）**＝unit だけリポに残る・箱には無い
     ├ systemd cloudflared            ← 入口（手動 start：カットオーバー時。以後は自動適用が ingress の変化時だけ再起動）
     ├ systemd polyarchy-stats :8766  ← 統計参照DB（認証必須・稼働中）
     ├ systemd polyarchy-companies :8767  ← 企業情報DB（opt-in＝ENABLE_COMPANIES_APP・モデル不要・2026-09-22 配線・有効化は RUNBOOK §5「サービスを足す」）
     ├ systemd qdrant-deliberations :6340＋polyarchy-deliberations :8768  ← 審議会議事録DB（opt-in＝ENABLE_DELIBERATIONS_APP・モデルは ruri＋リランカー・データは束〔Qdrant のスナップショット〕・2026-10-04 配線・有効化は RUNBOOK §5）
-    ├ systemd polyarchy-fuelsync.timer → 捕捉ログ(燃料)を S3 へ（毎時・recommendations と stats と companies）
-    ├ systemd polyarchy-logprune.timer → 捕捉ログの30日超過分を削除（毎日・recommendations と stats と companies）
+    ├ systemd polyarchy-fuelsync.timer → 捕捉ログ(燃料)を S3 へ（毎時・捕捉ログを持つ全サービス＝下の「捕捉ログの保持」）
+    ├ systemd polyarchy-logprune.timer → 捕捉ログの30日超過分を削除（毎日・同じ全サービス）
     ├ systemd polyarchy-health.timer   → 毎分 /healthz → CloudWatch metric（運用設計 §1）
     ├ systemd polyarchy-usagereport.timer → 週次利用レポート → S3 ops/report/（月曜 09:20 JST）
     ├ systemd polyarchy-dashboard.timer   → 運用ダッシュボード → S3 ops/dashboard/（毎時）
@@ -50,7 +51,7 @@
 - **`scripts/deploy.sh`** … operator 手順を1本化（secrets→bucket→upload→apply）。`bash scripts/deploy.sh <env> [phase]`。
 - **`scripts/rollback.sh`** … ロールバック/現状復帰（status／snapshot／destroy）。
 - **`scripts/cloudflare-guard.sh`** … 入口ガード（秘密パス＋レート制限。IP 許可はオプション＝公開 DB では `IP_ALLOWLIST=off`・§9.5）を Cloudflare に冪等適用。
-- **`scripts/prune_query_log.py`** … 捕捉ログの保持期間超過分を削除（30日・systemd タイマーから毎日・recommendations／stats／companies の 3 本）。
+- **`scripts/prune_query_log.py`** … 捕捉ログの保持期間超過分を削除（30日・systemd タイマーから毎日・捕捉ログを持つ全サービス＝「捕捉ログの保持」）。
 - **`scripts/access-oauth.sh`** …（案 A 資産・**現行未使用**＝2026-09-02 案 B 採択）Cloudflare Access アプリ（Managed OAuth）の作成/確認（公式コネクタ化）。
 - **`RUNBOOK_OPS.md`** … 運用・障害対応の一次手順書（アラーム対応・復元・秘密再発行）。
 - **`pages/`** … 公開ページ（利用規約・プライバシーポリシー・ドキュメント）＝Cloudflare Pages `docs.polyarchy.net`（旧 `docs.policy-database.com` エイリアスは 2026-09-02 撤去済）。
@@ -202,8 +203,9 @@ sudo -u polyarchy -H bash -lc '
   export POLYARCHY_QUERY_LOG=/tmp/gate.jsonl      # 燃料を汚さない
   # 検索ゲートは API キー不要（検索は ruri ローカル＝2026-09-19 にキーのガードを外した）。下の 2 行は、SSM にキーを登録している
   # 環境で回答まで含む評価（eval/full）も回す場合だけ要る＝無ければ空のままでよい。
-  # ※HF_HUB_OFFLINE は付けない：ruri(SentenceTransformer) が完全オフラインだと config 解決に失敗する
-  #   （重みはprefetch済で大半キャッシュ利用・箱は egress あり）。ゲートの実行は `scripts/release.sh` が自動化済。
+  # ※HF_HUB_OFFLINE は付けない（箱でオフライン化できるかは未実測）。旧い理由「ruri は完全オフラインだと config 解決に失敗する」の
+  #   原因は cache_folder の食い違い＝7038ef4 で解消済み（手元では読める）。重みの版は polyarchy_retrieval/models.py の
+  #   PINNED_REVISIONS（commit）で固定＝上流の main が動いても重みは変わらない。ゲートの実行は `scripts/release.sh` が自動化済。
   export OPENAI_API_KEY="$(aws ssm get-parameter --region ap-northeast-1 --with-decryption --name /polyarchy/staging/openai_api_key --query Parameter.Value --output text 2>/dev/null || true)"
   export ANTHROPIC_API_KEY="$(aws ssm get-parameter --region ap-northeast-1 --with-decryption --name /polyarchy/staging/anthropic_api_key --query Parameter.Value --output text 2>/dev/null || true)"
   P=/opt/miniconda/envs/polyarchy/bin/python
@@ -219,13 +221,13 @@ sudo systemctl start polyarchy-mcp polyarchy-stats
 **合格ライン**：正典は**ルート README「品質の担保」**（v7/Qdrant・バッチ2 段1〔2026-08-28〕から
 検索系は本番経路＝`PolicySearchService`＋diversify=True で測る。retrieval は `--eval-set both` が正典）：
 - `--retrieval-only --eval-set both` … hit@5／MRR がアンカー非劣化
-- `--filter-eval` … 全問正解 ＋ 層ゲート PASS
-- `multistage_eval` … 網羅 / 集約棄却が基準どおり
+- `--filter-eval` … 全問正解 ＋ 層ゲート PASS（終了コードが合否）
+- `multistage_eval` … 網羅・集約棄却・答え可能が全問（終了コードが合否）
 （基準値はルート [README](../README.md)「品質の担保」と `scripts/release.sh` の既定値が正。）
 - `mcp_smoke` … PASS（stdout クリーン・layer 引数なし）
 
 （旧 v5/Chroma の測定線＝hit@5 88.7%／MRR 0.728 は歴史記録。Chroma 経路はバッチ2 段4〔2026-08-28〕で
-全廃＝切り戻しは Qdrant 内 `COLLECTION_NAME=policy_claims_v6`。）
+全廃。v6 は今の評価問を満たさない＝切り戻しは自動適用の退避と書き戻し〔RUNBOOK_OPS §5〕。）
 
 数値がズレたら**データ/モデル/依存の差**を疑う（HFモデルのリビジョン・fugashi辞書・torch版）。
 
@@ -311,12 +313,27 @@ aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/staging/
 → `bash scripts/cloudflare-guard.sh apply connector` で WAF ルールも更新 → 新URLを利用者へ再配布。
 
 ### 捕捉ログの保持＝30日で自動削除（**この節が正典**。他文書はここへリンク）
-プライバシーポリシーの約束（30 日）を機械で担保する。**箱と S3 の両方・recommendations と stats の両方**で担保する。日数を揃える場所＝`systemd/polyarchy-logprune.service`（recommendations・stats の 2 行・`LOG_RETENTION_DAYS`）・`terraform/storage.tf`（`query-log-retention-30d`・`stats-query-log-retention-30d`）・`pages/privacy.html`（「30 日」の記述）・`PROD_MIGRATION.md` §6.5：
+プライバシーポリシーの約束（30 日）を機械で担保する。**箱と S3 の両方・捕捉ログを持つ全サービス**で担保する。
+サービスの一覧は `polyarchy_common/usage_report.py` の `S3_PREFIXES`／`LOG_DIRS` が正＝fuelsync の `sync_one`・logprune の対象・
+箱の書込権限（`terraform/iam.tf`）・S3 の保持ルール（`terraform/storage.tf` の `query_log_rules`）は `test_common` が突き合わせる
+（文書でサービス名・本数を列挙しない＝便を足すたびに写しが漏れていた）。
 - **箱**：`polyarchy-logprune.timer`（毎日）→ [`scripts/prune_query_log.py`](scripts/prune_query_log.py) が
-  JSONL の `ts` を見て 30 日超過行を削除（原子的差し替え・削除中の追記も保全）。日数は
+  JSONL の `ts`（**記録の年齢**）を見て 30 日超過行を削除（原子的差し替え・削除中の追記も保全）。日数は
   `systemd/polyarchy-logprune.service` の `LOG_RETENTION_DAYS`。
-- **S3**：ライフサイクル `query-log-retention-30d`（`terraform/storage.tf`）＝ `data/query_log/` を
-  30 日で失効（versioning ON のため**旧版も 30 日**）。
+- **S3**：fuelsync が毎時、サービスごとに固定のキー 1 本（`…/query_log/queries.jsonl`）へ上書きする保護コピー（箱の EBS が原本）。
+  ライフサイクル（`terraform/storage.tf`）は**版の年齢**で数える＝versioning ON で毎時上書きされるので現行版は常に若く `expiration` は
+  実質発火せず、効くのは**非現行になってからの日数**（`noncurrent_days`）。**通常運転で S3 に残る最長＝箱の 30 日＋非現行の 1 日＋ライフサイクルの
+  非同期の遅れ（AWS の処理で 1〜2 日）＝約 31〜32 日**（プライバシーポリシーの「30 日」と 1〜2 日ずれる＝文言か日数をそろえるかは運営者の判断）。
+  ★非現行の日数を箱と同じ 30 に「揃える」と最長約 60 日残る（2026-10-09 まではこの状態＝是正は terraform apply で反映）。
+  ★**例外＝fuelsync が止まったとき**（箱の破棄・停止・サービスを無効にした・同期の失敗が続く）は現行版が更新されず、最後の上げ込みから
+  `expiration`（30 日）で消える＝その中に最大 30 日前の記録がある＝最長約 60 日。**箱を破棄・停止するとき・サービスを無効にするときは、
+  そのサービスの S3 の `query_log/` を消す**（2026-08-28 の staging の破棄の前例。消すのは本人）。
+- **箱へ戻さない**：bootstrap ⑥ の S3→箱の同期は全サービスで `query_log/` を除外（S3 の写しは最長 1 時間前＝戻すと自動適用のたびに
+  箱の原本の追記分が消える）。例外は**新しい箱**（手元に `queries.jsonl` が無い）だけ＝bootstrap ⑥ の `restore_fuel` が S3 の保護コピーから
+  1 回だけ戻す（戻さないと最初の fuelsync が S3 の現行版を小さいファイルで上書きし、旧版は非現行 1 日で消える＝燃料が途切れる）。
+- **読める人**：データ運用者の権限（`iam-data-operator-policy.json`）は `data/*query_log/*` の読み取りを 1 本の Deny で拒否（サービスを足しても漏れない）。
+- **アクセスログ**（`user=<hash>` を含む）：箱の `/var/log/polyarchy/*.log` は daily＋rotate 30（`bootstrap/logrotate-polyarchy`）・
+  journal は `MaxRetentionSec=30day`（`bootstrap/journald-polyarchy.conf`）・CloudWatch Logs は 30 日。
 
 確認・手動実行：
 ```bash
@@ -335,11 +352,11 @@ aws s3api get-bucket-lifecycle-configuration --bucket <bucket>   # S3 側の確�
 ## 10. 落とし穴チェックリスト（ロードマップ§6）
 
 - [ ] **fugashi 辞書**（unidic-lite）を導入・`Tagger()` 疎通（bootstrap ④で検証済）。
-- [ ] **HFモデル事前DL**して EBS 固定（bootstrap ⑤。★`HF_HUB_OFFLINE` は units から撤去済＝完全オフラインは ruri の config 解決を壊す・§6 注記）。
+- [ ] **HFモデル事前DL**して EBS 固定（bootstrap ⑤。重みの版＝`polyarchy_retrieval/models.py` の `PINNED_REVISIONS`〔commit〕を取る。`HF_HUB_OFFLINE` は付けていない＝箱でのオフライン化は未実測・§6 注記）。
 - [ ] **CPU 版 torch**（GPU 無し箱。既定 linux wheel は CUDA 同梱で巨大）＝ロックが `+cpu` 版を指す（`lock_deps.sh` が download.pytorch.org/whl/cpu を extra index に）。
 - [ ] **依存はロックからのみ**（`--require-hashes`・2026-09-04）＝pyproject を変えたら `lock_deps.sh` → ゲート → release。ロック無しの tar は bootstrap ③ で止まる。
 - [ ] **Tunnel cred 移設で DNS 変更は不要**（UUID 向きのまま）。**Mac 側は必ず停止**（二重 origin 回避）。
-- [ ] （web 廃止 2026-09-02＝以下は chat_app 残置コード向け）**`st.table`/`st.dataframe` 不可**（pyarrow/mimalloc が Streamlit スレッドで SIGSEGV・§32.3）→ Markdown 表（コード済）。
+- [ ] （web 廃止 2026-09-02・コード削除 2026-10-09＝旧構成を再現するときの注意）**`st.table`/`st.dataframe` 不可**（pyarrow/mimalloc が Streamlit スレッドで SIGSEGV・§32.3）→ Markdown 表。
 - [ ] MCP streamable-http の **`transport_security` off**（421＝DNSリバインディング保護・§33.5。既定 off）。
 - [ ] **secrets を `.env` で運ばない**（SSM）。**フォルダ/tar に `.env` を混ぜない**（upload_to_s3.sh は除外済）。
 - [ ] **正典 eval バイト不変**（sha256＝`phase12_pipeline.py` の `CANONICAL_SHA256`）・**prod v5 不変**・**層公開固定**。
@@ -356,8 +373,9 @@ sudo systemctl restart polyarchy-mcp      # 非常時の手動復旧（定常の
 systemctl list-timers polyarchy-fuelsync.timer   # 燃料バックアップの次回
 ```
 
-**コード/データ更新（定常）**＝`bash deploy/scripts/release.sh <env>`（ゲート全 PASS → upload → マニフェスト）
-だけ。箱の `polyarchy-dataapply.timer` が **code tar の再展開・データ同期・再起動・smoke・失敗時の自動切り戻し**まで
+**コード/データ更新（定常）**＝`bash deploy/scripts/release.sh <env>`（配る前の確認 → ゲート全 PASS → upload → マニフェスト）
+だけ。code tar は **git の追跡ファイルだけ（`git archive HEAD`・2026-10-09〜）**＝未コミットのコードは配らない（コードの範囲に差分があれば
+配る前の確認で止まる）。箱の `polyarchy-dataapply.timer` が **code tar の再展開・データ同期・再起動・smoke と稼働中の /healthz・失敗時の自動切り戻し**まで
 無人で行う（2026-09-03〜・RUNBOOK §5）。以下の手順は**非常時（timer が動かない・apply 自体が壊れた）**のみ：
 
 手元で `upload_to_s3.sh` → 箱で **まずコード tar を再展開**（★bootstrap は

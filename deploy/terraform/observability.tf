@@ -70,11 +70,14 @@ resource "aws_cloudwatch_metric_alarm" "health_mcp" {
   tags                = var.extra_tags
 }
 
-# 自動適用の切り戻し（B15 論点1・2026-09-03）：apply が smoke FAIL で旧版へ自動復帰したとき dataapply=0 を送る。
-# 可用性は保たれている（旧版でサービング中）が、リリースが不採用になった事実は人が知る必要がある＝メール。
+# 自動適用の失敗（B15 論点1・2026-09-03）：apply は 2 つの場合に dataapply=0 を送る＝
+#   (a) 反映後の検証（smoke・/healthz）が FAIL で旧版へ自動復帰した（マーク ROLLED_BACK）
+#   (b) 止める前の退避段で中止した（サービスは無停止・マークは書かない＝15 分後に再試行）
+# どちらも可用性は保たれている（旧版でサービング中）が、リリースが入っていない事実は人が知る必要がある＝メール。
+# 見分けは CW Logs（polyarchy/dataapply）の「切り戻し完了」か「①退避段で失敗」の行（RUNBOOK §5）。
 resource "aws_cloudwatch_metric_alarm" "dataapply_rollback" {
   alarm_name          = "${var.project}-${var.environment}-dataapply-rollback"
-  alarm_description   = "リリースの自動適用が smoke FAIL で自動切り戻しされた（旧版で稼働中・RUNBOOK §5「切り戻し後」）"
+  alarm_description   = "リリースの自動適用が失敗した＝検証 FAIL で自動切り戻し、または退避段で中止（どちらも旧版で稼働中・ログで見分ける＝RUNBOOK §5）"
   namespace           = "polyarchy"
   metric_name         = "dataapply"
   dimensions          = { service = "box" }

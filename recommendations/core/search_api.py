@@ -51,10 +51,6 @@ def _shingles(text: str, n: int = 5) -> set[str]:
     return {t[i:i + n] for i in range(max(1, len(t) - n + 1))}
 
 
-def _jaccard(a: set[str], b: set[str]) -> float:
-    return len(a & b) / len(a | b) if a and b else 0.0
-
-
 def _series_of(file_name: str) -> Optional[str]:
     """版の系列＝政府の同じ取得元の文書（gov_aigl_… の各版・gov_dsgl_… の各版など）。畳むのは同じ系列の中だけ。
     経済団体の文書は系列を持たない（年次のダイジェストや分冊が表紙・前置きを共有する＝畳むと正解が消える）。"""
@@ -141,11 +137,13 @@ class PolicySearchService:
     （BM25 索引・埋め込みは再構築しない）。
 
     text_chars: 各チャンク本文の返却上限（0 以下で無制限）。MCP のペイロードを軽くする用途。
+    allow_inmemory_bm25: 語彙サイドカーの無い一時コレクション（層ゲートの自己検証）だけ True。既定 False＝
+      語彙が無ければ起動で止まる（本番・ゲートが黙って別実装の BM25 で動かない＝hybrid.build_hybrid_retriever）。
     """
 
     def __init__(self, collection_name: str = COLLECTION_NAME,
                  default_top_k: int = TOP_K, text_chars: int = 1200,
-                 logger=None):
+                 logger=None, allow_inmemory_bm25: bool = False):
         configure_quiet_logging()
         self.log = logger or get_logger("polyarchy.search")
         self.collection_name = collection_name
@@ -166,7 +164,6 @@ class PolicySearchService:
                 raise RuntimeError(
                     f"Qdrant コレクション {collection_name} が空です（先に qdrant_ingest が必要）")
             self.collection = collection_name  # str＝hybrid が Qdrant 起点で構築する
-            self.index = None  # ハイブリッド経路のみ（互換のため属性は残す）
 
             # リランカーの top_n はプール全件に広げる（C3 検証＝diversify 用にリランク順列を保持）。
             # スコアリングは従来からプール全件に行っており top_n は truncate 位置のみ
@@ -176,12 +173,10 @@ class PolicySearchService:
             self.reranker = production_reranker_postprocessor(top_n=self.pool_k)
             # 既定フィルタ（公開固定）で 1 度だけ retriever を組む。以後は set_filter で条件差し替え。
             self.retriever = production_retriever(
-                self.index, self.collection, self.embed_model, self.pool_k,
-                SearchFilter(layers=PUBLIC_ONLY))
-        # チャンク総数（backend 非依存）。UI（app/chat_app）はこちらを参照する
-        # （qdrant では self.collection が str のため collection.count() は使えない）。
+                self.collection, self.embed_model, self.pool_k,
+                SearchFilter(layers=PUBLIC_ONLY), allow_inmemory_bm25=allow_inmemory_bm25)
+        # チャンク総数。eval（retrieval・filters）の見出しが参照する。
         self.chunk_count = n
-        self._can_set_filter = hasattr(self.retriever, "set_filter")
         self.log.info(
             "検索サービス初期化完了: コレクション=%s チャンク数=%d ハイブリッド=%s "
             "リランカー=%s 候補プール=%d→top-%d 層=固定[%s]",
@@ -216,13 +211,9 @@ class PolicySearchService:
         k = top_k or self.default_top_k
         sf = self._make_filter(orgs, since, until, field)
 
-        if self._can_set_filter:
-            self.retriever.set_filter(sf)
-            nodes = self.retriever.retrieve(query)
-        else:
-            r = production_retriever(self.index, self.collection, self.embed_model,
-                                     self.pool_k, sf)
-            nodes = r.retrieve(query)
+        # retriever は 1 つを set_filter で差し替えて使う（索引・埋め込みは再構築しない）＝search は直列に呼ぶ前提
+        self.retriever.set_filter(sf)
+        nodes = self.retriever.retrieve(query)
         if self.reranker is not None:
             nodes = self.reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(query))
         same_doc_hits: dict[str, int] = {}

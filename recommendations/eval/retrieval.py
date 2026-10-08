@@ -2,7 +2,7 @@
 検索専用 eval（`python -m recommendations.eval.eval --retrieval-only`＝クレジット0・確定的アンカー）。
 
 バッチ2 段1（2026-08-28・所見 2026-08-19 段 5-1 の決定を実施）：測定経路を**利用者が実際に通る
-本番経路＝`PolicySearchService.search()`＋diversify=True（MCP／chat_app の既定）**に一本化した。
+本番経路＝`PolicySearchService.search()`＋diversify=True（MCP の既定）**に一本化した。
 retriever＋reranker の eval 直組みは削除（層ゲート自己検証だけ retriever 直叩きを残す＝filters.py）。
 hit@k / MRR を団体別・設問型別に出し、Phase 9 の網羅（coverage_multi）・集約（aggregation）
 メトリクスを併記する。合格ライン（アンカー数値）はルート README「品質の担保」が正典。

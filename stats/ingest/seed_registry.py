@@ -292,18 +292,26 @@ HOJIN_TIER3 = [
 HOJIN_SAMPLE = [("population_count", "001", "母集団法人数", "社", (TAG_CORP, TAG_IND), "FY1960")]
 
 
-def hojin_industry_panel(existing: set[str]) -> list[Series]:
+# 全体系列（全産業〔除く金融保険〕×全規模）だけに付ける注記（古い層から引き継ぐ）
+HOJIN_TOTAL_NOTES = {
+    **{m: "貸借対照表（当期末）。" for m in ("total_assets", "fixed_assets", "tangible_fixed_assets", "land", "net_assets")},
+    "capex_ex_software": "資金需給欄。ソフトウェアを含む設備投資は表の年により無い＝別途。",
+}
+
+
+def hojin_industry_panel() -> list[Series]:
     """Tier 1（全業種 62 × 全規模）＋ Tier 2（全業種 62 × 規模 4 区分＝10億以上／1億〜10億／1千万〜1億／1千万未満）× HOJIN_TIER1 の 11 項目。
     Tier 2 は 2026-08-21 に全業種で投入（要件＝サービス業への雇用移動が「中小の低生産性サービス業」への移動かを規模で割る）。
-    既登録 series_id は作らない。first_period＝業種の開始年度・規模の開始年度（1千万円未満は FY1975）・項目の下限の最も遅いもの。"""
+    **業種×規模のセルの定義の正**＝古い層（第2弾の PL・KEY10・第5弾の HOJIN_VA）と同じ series_id も全部作り、build() が
+    古い定義を位置を保って置き換える（2026-10-09 まで「既登録は作らない」で古い定義が黙って勝ち、33 系列で提供開始・注記・分野が
+    捨てられていた）。first_period＝業種の開始年度・規模の開始年度（1千万円未満は FY1975）・項目の下限の最も遅いもの。"""
     out: list[Series] = []
     cells = [(slug, size) for slug, *_ in HOJIN_INDUSTRIES for size in HOJIN_SIZE]
     for ind, size in cells:
         _code, _name, ind_fy, _parent = HOJIN_IND_INFO[ind]
         ind_fy = max(ind_fy, SIZE_FIRST.get(size, "FY1960"))
         for measure, code, ttl, unit, tags, floor in HOJIN_TIER1 + HOJIN_TIER3 + HOJIN_SAMPLE:
-            sid = f"mof.hojin.{measure}.{ind}-{size}.fy"
-            if sid in existing or (measure, ind, size) in HOJIN_EMPTY_CELLS:
+            if (measure, ind, size) in HOJIN_EMPTY_CELLS:
                 continue
             note = "原数値。金額は百万円（換算しない）。" if unit == "百万円" else "原数値。"
             if measure == "population_count":
@@ -318,6 +326,10 @@ def hojin_industry_panel(existing: set[str]) -> list[Series]:
             if ind == "pure_holding":
                 note += "上位集計（学術専門(集約)・サービス業(集約)・非製造業・全産業）から控除して実勢を見る：同じ期・同じ規模のこの系列を分子・分母の両方から引く（list_datasets の hojin analysis_notes.pure_holding）。"
             note = (note + " " + industry_note(ind)).strip()
+            if (ind, size) == ("allexfin", "allsize"):
+                # 古い層（第2弾の PL・BS）が全体系列に付けていた注記を保つ（2026-10-09 にパネルを正にしたとき落ちた 6 系列）。
+                # 全セルには足さない＝発見層の当たり方を変えない（notes に共通の語を書くと全系列が当たる＝stats/CLAUDE.md）
+                note = HOJIN_TOTAL_NOTES.get(measure, "") + note
             out.append(hojin_fy(measure, code, ttl, unit=unit, tags=tags, notes=note, ind=ind, size=size,
                                 first_period=max(ind_fy, floor)))
     return out
@@ -2927,7 +2939,13 @@ def build() -> list[Series]:
     S += hojin_size_expand({x.series_id for x in S})
     S += hojin_derived()
     # ---- 第6弾 業種別パネル Tier 1 ----
-    S += hojin_industry_panel({x.series_id for x in S})
+    # 業種×規模のセルはパネルの定義が正＝古い層と同じセルは位置を保って置き換え、新しいセルは末尾に足す（発見層の並びを変えない）
+    pos = {x.series_id: i for i, x in enumerate(S)}
+    for x in hojin_industry_panel():
+        if x.series_id in pos:
+            S[pos[x.series_id]] = x
+        else:
+            S.append(x)
     # ---- 以下 planned（取得元確定・取込は次段） ----
     bojts = "https://www.stat-search.boj.or.jp/"
     S.append(planned("boj.tankan.bsi.large-mfg.q", "短観 業況判断DI 大企業・製造業（最近）", "boj", "日本銀行", "企業", "％ポイント", "q", "四半期", "tankan", "bsi",

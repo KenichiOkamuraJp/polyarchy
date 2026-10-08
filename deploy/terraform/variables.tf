@@ -44,7 +44,7 @@ variable "root_volume_gb" {
 }
 
 variable "enable_web_app" {
-  description = "chat_app(Streamlit:8502) を常駐させるか。web は 2026-09-02 に廃止＝staging・prod とも false（MCP のみ＝ランタイム秘密ゼロ）。true は旧構成の再現用（要 Anthropic キー）。"
+  description = "chat_app(Streamlit:8502) を常駐させるか。web は 2026-09-02 に廃止＝staging・prod とも false（MCP のみ＝ランタイム秘密ゼロ）。Web UI のコードは 2026-10-09 に削除＝true は bootstrap が止める（false のまま）。"
   type        = bool
   default     = false
 }
@@ -59,7 +59,7 @@ variable "tunnel_hostname_mcp" {
 }
 
 variable "collection_name" {
-  description = "recommendations の検索コレクション名（systemd の COLLECTION_NAME）。既定＝本線 v7/Qdrant。切り戻しは Qdrant 内の policy_claims_v6（Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃）。"
+  description = "recommendations の検索コレクション名（systemd の COLLECTION_NAME）。既定＝本線 v7/Qdrant。切り戻しは自動適用の退避と書き戻し（v6 は今の評価問を満たさない・Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃）。"
   type        = string
   default     = "policy_claims_v7"
 }

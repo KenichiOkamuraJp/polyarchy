@@ -104,7 +104,7 @@ def build_query_engine(top_k: int, collection_name: str = COLLECTION_NAME, embed
     )
 
     # バッチ2 段4（2026-08-28・Chroma 全廃）：コレクション参照を Qdrant 一本化
-    # （collection はコーパス名の str・index は None＝ハイブリッド経路のみ）。
+    # （collection はコーパス名の str＝ハイブリッド経路のみ）。
     from recommendations.core.qdrant_store import QdrantCorpusStore
     n_chunks = QdrantCorpusStore().count(collection_name)
     if n_chunks == 0:
@@ -112,10 +112,11 @@ def build_query_engine(top_k: int, collection_name: str = COLLECTION_NAME, embed
             f"ERROR: Qdrant コレクション {collection_name} が空です。先に qdrant_ingest が必要です"
         )
     # Phase 5：本番検索は「ハイブリッド(BM25＋ベクトル→RRF)で候補を広く取り→リランカーで
-    # top_k に絞る」。HYBRID_SEARCH/PRODUCTION_RERANKER を無効化すると各段を外せる。
+    # top_k に絞る」。PRODUCTION_RERANKER を空にするとリランカーの段だけ外せる（ハイブリッドは外せない＝
+    # HYBRID_SEARCH を無効にすると hybrid.production_retriever が例外にする）。
     reranker = production_reranker_postprocessor(top_n=top_k)
     pool_k = max(RERANK_RETRIEVE_K, top_k) if reranker else top_k
-    retriever = production_retriever(None, collection_name, embed_model, pool_k)
+    retriever = production_retriever(collection_name, embed_model, pool_k)
     note = (f", hybrid={HYBRID_SEARCH}"
             f"{', rerank=' + PRODUCTION_RERANKER if reranker else ''}"
             f"(pool {pool_k})")

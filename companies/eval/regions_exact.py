@@ -122,6 +122,8 @@ def main() -> int:
         print(f"  FAIL 写しが原典と合わない欄: {u}")
     if bad:
         fails.append(("store", f"写しが原典と合わない欄 {len(bad)} 件"))
+    if not all([pos, neg]):  # 問が 0 件で PASS にしない（作り直しで空になったファイルを見逃さない・2026-10-09）
+        fails.append(("eval", "読み込んだ問が 0 件のファイルがある（評価ファイルが空・読めない）"))
     for i, err in fails[:40]:
         print(f"  FAIL {i}: {err}")
     print(f"{'PASS' if not fails else 'FAIL'}: 地域別 正例 {len(pos)}・負例 {len(neg)}・失敗 {len(fails)}")

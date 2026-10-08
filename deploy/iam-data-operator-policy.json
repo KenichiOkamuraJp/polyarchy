@@ -28,10 +28,7 @@
       "Sid": "NoQueryLogRead",
       "Effect": "Deny",
       "Action": ["s3:GetObject"],
-      "Resource": [
-        "arn:aws:s3:::<BUCKET>/data/query_log/*",
-        "arn:aws:s3:::<BUCKET>/data/stats/query_log/*"
-      ]
+      "Resource": "arn:aws:s3:::<BUCKET>/data/*query_log/*"
     }
   ]
 }

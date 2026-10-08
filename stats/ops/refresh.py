@@ -33,8 +33,10 @@ configure_quiet_logging()
 log = get_logger("polyarchy.stats.ops")
 
 # accessor.type → ingest モジュール（stats/ingest/<name>.py）。planned/derived は対象外。
+# registered の type はここか freshness.EXCLUDED_TYPES（理由つきの除外）のどちらかに必ず載せる＝test_core が網羅を検査する
+# （2026-10-09 まで esri_xlsx_yearsheets の 439 系列が漏れ、SNA 年次推計の更新で同じ dataset の中で版が混ざるところだった）。
 TYPE_TO_MODULE = {
-    "esri_xlsx": "esri", "esri_xls": "esri", "esri_qe_csv": "esri",
+    "esri_xlsx": "esri", "esri_xls": "esri", "esri_qe_csv": "esri", "esri_xlsx_yearsheets": "esri",
     "estat": "estat",
     "boj_file": "boj_file", "ipss_xlsx": "boj_file",
     "cao_gap_xlsx": "cao_gap",
@@ -61,9 +63,13 @@ def build_plan(datasets: list[tuple[str, str]]) -> dict[str, list[str]]:
     for s in registry.series.values():
         if (s.org, s.dataset) not in datasets or s.status != "registered" or s.is_derived:
             continue
-        mod = TYPE_TO_MODULE.get(s.accessor.get("type", ""))
+        t = s.accessor.get("type", "")
+        mod = TYPE_TO_MODULE.get(t)
         if mod is None:
-            log.warning("%s: accessor.type=%s は自動再取込に非対応＝手動確認", s.series_id, s.accessor.get("type"))
+            if t in freshness.EXCLUDED_TYPES:
+                log.info("%s: accessor.type=%s は自動再取込の対象外（%s）", s.series_id, t, freshness.EXCLUDED_TYPES[t])
+            else:
+                log.warning("%s: accessor.type=%s は自動再取込に非対応＝手動確認", s.series_id, t)
             continue
         plan.setdefault(mod, []).append(s.series_id)
     return plan
@@ -117,7 +123,7 @@ def main(argv=None) -> int:
         rows = freshness.check(a.only)
         # 取込待ち（前回までに検知して、まだ取り込まれていないもの）も対象＝日次の差分で消えた分を拾う
         targets = sorted({(r["org"], r["dataset"]) for r in rows if r["changed"] or r.get("pending_since")})
-        probe_failed = any(r["note"].startswith("probe 失敗") or "解析失敗" in r["note"] for r in rows)
+        probe_failed = any(r["status"] == "error" for r in rows)
         if probe_failed:
             log.warning("probe 不能の dataset あり＝手動確認（python -m stats.ops.freshness --json）")
         if not targets:

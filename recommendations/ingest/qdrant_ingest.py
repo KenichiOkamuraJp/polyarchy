@@ -9,10 +9,9 @@ qdrant-client 直叩き**（llama_index のベクトルストア形式＝_node_c
 ＝B1 で実証済）。payload は metadata_core の共通コア8欄＋issuer を ingest 時に一発で刻印
 （date_int の int 化も含む＝旧 backfill_meta の後追いを廃止）。
 
-サブコマンド：
+サブコマンド（v6→v7 の土台作りに使った一回限りの clone は 2026-10-09 に削除＝既定の複製元が v6 のまま本線の CLI に
+残り、誤って実行すると本線の点を v6 時点の payload・sparse で上書きした。削除前の版は dfe943d）：
 
-  clone     既存コレクションの複製（vectors ごと・legacy キー除去・語彙サイドカーコピー）。
-            v6 → v7 の土台作りに使う。冪等（件数一致ならスキップ）
   ingest    未投入 doc だけをチャンク化 → ruri 埋め込み → upsert。冪等（投入済み doc は
             スキップ）・再開可能（1 doc = 1 upsert 呼び＝実質アトミック。中断後は同コマンド
             再実行のみ）。完了後に finalize を自動実行
@@ -20,12 +19,10 @@ qdrant-client 直叩き**（llama_index のベクトルストア形式＝_node_c
             ＋ metadata_core 全点監査＋issuer 分布レポート
 
 実行（コレクションは COLLECTION_NAME で指定＝CORPUS_REGISTRY の自己写像で解決）：
-    COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.qdrant_ingest clone
     COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.qdrant_ingest ingest [--limit N] [--dry-run]
     COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.qdrant_ingest ingest --files A.pdf --redo
 """
 import argparse
-import shutil
 import sys
 import time
 from collections import defaultdict
@@ -33,18 +30,17 @@ from pathlib import Path
 
 from qdrant_client import QdrantClient, models
 
-from recommendations.core.config import COLLECTION_NAME, DATA_DIR, INGEST_NUM_WORKERS, OPENAI_API_KEY, PDF_DIR
+from recommendations.core.config import COLLECTION_NAME, INGEST_NUM_WORKERS, OPENAI_API_KEY, PDF_DIR
 from polyarchy_common.logsetup import configure_quiet_logging, get_logger
 from recommendations.core.qdrant_store import DENSE_NAME, ensure_collection
 from recommendations.core.qdrant_store import QDRANT_URL
 
 log = get_logger("polyarchy.qdrant_ingest")
 
-CLONE_SRC_DEFAULT = "policy_claims_v6"
 DST_CORPUS = "policy_claims"  # 共通コア corpus 刻印（CORPUS_REGISTRY のキーと一致させる）
 
 # llama_index／ローカル環境の内部キー。qdrant 経路の serving は読まない（B1 実証）ため
-# 新規点の payload に書かず、クローン時は既存点からも除去する（B4 設計 §5・承認済）。
+# 新規点の payload に書かない（B4 設計 §5・承認済）。
 LEGACY_KEYS = ("_node_content", "_node_type", "file_path")
 
 # 発行体ファセット（バッチ1）。org→名称は recommendations.core.orgs の 1 表（gov のみ file_name 接頭辞で細分化）。
@@ -63,7 +59,6 @@ ISSUER_OF_GOV_PREFIX = {
     "aigl": "総務省・経済産業省",  # AI事業者ガイドライン＝両省の策定（閣議決定ではない）  # 日本成長戦略＝本部が案を作り閣議決定・官民投資ロードマップ＝本部決定
 }
 
-SCROLL_BATCH = 512
 CLIENT_TIMEOUT = 300
 
 
@@ -97,64 +92,6 @@ def _fn_filter(file_name: str) -> models.Filter:
 
 def _file_count(qc: QdrantClient, collection: str, file_name: str) -> int:
     return qc.count(collection, count_filter=_fn_filter(file_name), exact=True).count
-
-
-def _vocab_path(collection: str) -> Path:
-    return DATA_DIR / "bm25" / f"{collection}_vocab.json.gz"
-
-
-# ──────────────────────────────── clone ────────────────────────────────
-
-def clone(src: str, dst: str, recreate: bool = False) -> None:
-    """src コレクションを dst へ複製する（dense/sparse とも運搬・legacy キー除去・冪等）。"""
-    qc = _client()
-    if not qc.collection_exists(src):
-        raise RuntimeError(f"複製元がありません: {src}")
-    total = qc.count(src, exact=True).count
-    if total == 0:
-        raise RuntimeError(f"複製元が空です: {src}")
-
-    _ensure_target(qc, dst, recreate)
-    have = qc.count(dst, exact=True).count
-    if have == total:
-        log.info("複製済み（%d 件一致）＝コピーはスキップ。作り直すには --recreate", total)
-    else:
-        if have not in (0, total):
-            log.warning("複製先が中途半端（%d/%d 件）。--recreate での作り直しを推奨", have, total)
-        log.info("クローン開始: %s(%d件) → %s（再埋め込みなし・legacy キー除去: %s）",
-                 src, total, dst, "・".join(LEGACY_KEYS))
-        t0 = time.time()
-        done = stripped = 0
-        offset = None
-        while True:
-            points, offset = qc.scroll(src, limit=SCROLL_BATCH, offset=offset,
-                                       with_payload=True, with_vectors=True)
-            buf = []
-            for p in points:
-                raw = p.payload or {}
-                payload = {k: v for k, v in raw.items() if k not in LEGACY_KEYS}
-                if len(payload) != len(raw):
-                    stripped += 1
-                buf.append(models.PointStruct(id=str(p.id), vector=p.vector, payload=payload))
-            if buf:
-                qc.upsert(dst, points=buf, wait=True)
-                done += len(buf)
-                if done % 10_000 < SCROLL_BATCH:
-                    log.info("  %d/%d（%.0f秒）", done, total, time.time() - t0)
-            if offset is None:
-                break
-        have = qc.count(dst, exact=True).count
-        if have != total:
-            raise RuntimeError(f"件数不一致: {src} {total} != {dst} {have}")
-        log.info("クローン完了: %d 件・legacy キー除去 %d 点・%.0f秒", have, stripped, time.time() - t0)
-
-    # BM25 語彙サイドカー：本文同一のためコピーで足りる（増分後は finalize が作り直す）
-    src_vocab, dst_vocab = _vocab_path(src), _vocab_path(dst)
-    if src_vocab.exists():
-        shutil.copyfile(src_vocab, dst_vocab)
-        log.info("語彙サイドカーをコピー: %s → %s", src_vocab.name, dst_vocab.name)
-    else:
-        log.warning("複製元の語彙サイドカーがありません: %s（finalize で構築可能）", src_vocab)
 
 
 # ──────────────────────────────── ingest ───────────────────────────────
@@ -330,10 +267,6 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Qdrant への doc 単位増分 ingest（B4-①）")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    c = sub.add_parser("clone", help="既存コレクションを複製（legacy キー除去・語彙コピー）")
-    c.add_argument("--src", default=CLONE_SRC_DEFAULT, help=f"複製元（既定 {CLONE_SRC_DEFAULT}）")
-    c.add_argument("--recreate", action="store_true", help="複製先を削除して作り直す")
-
     i = sub.add_parser("ingest", help="未投入 doc の増分 ingest（完了後 finalize 自動実行）")
     i.add_argument("--corpus", default=DST_CORPUS, help=f"corpus 刻印（既定 {DST_CORPUS}）")
     i.add_argument("--limit", type=int, help="残 doc の先頭 N 件だけ投入（スモーク用）")
@@ -346,14 +279,12 @@ def main() -> None:
 
     f = sub.add_parser("finalize", help="BM25 sparse 全再構築＋共通コア監査のみ実行")
 
-    for p in (c, i, f):
+    for p in (i, f):
         p.add_argument("--collection", default=COLLECTION_NAME,
                        help=f"対象コレクション（既定 COLLECTION_NAME={COLLECTION_NAME}）")
     args = ap.parse_args()
 
-    if args.cmd == "clone":
-        clone(args.src, args.collection, recreate=args.recreate)
-    elif args.cmd == "ingest":
+    if args.cmd == "ingest":
         if args.redo and not args.files:
             sys.exit("ERROR: --redo は --files と併用してください（全 doc 再投入の誤爆防止）")
         ingest(args.collection, corpus=args.corpus, limit=args.limit, files=args.files,

@@ -64,3 +64,11 @@ python -m polyarchy_common.tests.test_common  # 共通契約の単体テスト
 - 正例（exact_match）は**取込と別の経路**（セル番地を固定・系列コードで直接引く）で照合する。手で選んだセルの誤りもここで止まる。
 - **直近 N 年の窓だけを公表する Excel は取り込まない**（再取込で古い期が消える＝値ストアは上書き）＝planned で取得元 URL を返す。機械可読の表が無い（PDF のグラフのみ）ものは `status=guide`＋`guide.reason`。
 - 暗号化された Excel（OLE の EncryptedPackage）は解かない＝読めない年版として扱う（翌年版の前年度列で埋まる設計にする）。
+
+## 配線の規則（2026-10-09＝複雑性の点検で、写しの漏れが黙って効いていたもの）
+
+- ★ **取得元の型（accessor.type）を足したら**、`stats/ops/refresh.py` の `TYPE_TO_MODULE` と `stats/ops/freshness.py` の `build_probes` の両方に配線するか、`freshness.EXCLUDED_TYPES` に理由つきで載せる（test_core が「registered の全 type がどちらかにある」「probe が unsupported を出さない」を検査する）。漏れると月次の更新で「更新したつもりで古いまま」になる（`esri_xlsx_yearsheets` の 439 系列が漏れていた）。
+- ★ **test_core の値ストアに依存する検査は `need(<代表系列>)` で囲む**（`has_data` で黙って飛ばさない）。release.sh は `STATS_TEST_STRICT=1` で呼ぶ＝スキップが 1 つでもあれば FAIL。
+- ★ **法人企業統計の業種×規模のセルの定義は `hojin_industry_panel` が正**（古い層〔第2弾の PL・KEY10・第5弾の HOJIN_VA〕と同じ series_id は build() が位置を保って置き換える）。属性（提供開始・注記・分野）はパネルの側で直す。
+- 系列 ID の分解は `Registry.split_id`（登録済みの系列の形に合わせる＝点を含む measure・地域の接尾辞も切れる）。位置（`split(".")[2]`）で切らない。
+- dims に dataset 固有の語彙を足したら、`dim_vocab.dim_order` にも原表の順を足す（test_core が検査する）。

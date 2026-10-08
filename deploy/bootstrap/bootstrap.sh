@@ -25,7 +25,14 @@ source "$DEPLOY_ENV"
 : "${APP_DIR:?}" "${INSTALL_DIR:?}" "${HF_HOME:?}" "${COLLECTION_NAME:?}"
 # REPO_DIR＝tar 展開先のリポジトリ root（deploy/ はここ）。旧 deploy.env（APP_DIR のみ）との互換で既定を補う。
 REPO_DIR="${REPO_DIR:-$INSTALL_DIR/polyarchy}"
-: "${DATA_S3_PREFIX:?}" "${ENABLE_WEB_APP:?}"
+: "${DATA_S3_PREFIX:?}"
+# 参照用 Web UI（chat_app）は 2026-09-02 に廃止・2026-10-09 にコードを削除＝未設定は false。true は止める
+# （unit の ExecStart の chat_app.py が無い＝起動失敗のループになる）。下の web の分岐は旧構成の再現用に残す。
+ENABLE_WEB_APP="${ENABLE_WEB_APP:-false}"
+if [[ "$ENABLE_WEB_APP" == "true" ]]; then
+  echo "[bootstrap] ✗ ENABLE_WEB_APP=true だが Web UI（recommendations/serving/chat_app.py）のコードは削除済み＝deploy.env を false に" >&2
+  exit 1
+fi
 # stats（統計参照DB・別プロセス :8766）は opt-in。deploy.env に ENABLE_STATS_APP=true で設置（B6 案 B・C2 以降）。
 ENABLE_STATS_APP="${ENABLE_STATS_APP:-false}"
 # companies（企業情報DB・別プロセス :8767）も opt-in。deploy.env に ENABLE_COMPANIES_APP=true で設置（モデル不要・ランタイム秘密なし）。
@@ -118,7 +125,7 @@ sudo -u "$SVC_USER" env HF_HOME="$HF_HOME" "$ENV_PY" \
   "$REPO_DIR/deploy/bootstrap/prefetch_models.py"
 fi
 
-# ── ⑥ データを S3 から取得（Chroma/PDF/eval/catalog/query_log）─────────────────
+# ── ⑥ データを S3 から取得（Qdrant/BM25 語彙/eval/catalog 等。捕捉ログ query_log と cache は箱で生まれるもの＝戻さない）──
 echo "[bootstrap] ⑥ S3 からデータ同期 s3://$S3_BUCKET/$DATA_S3_PREFIX/"
 mkdir -p "$APP_DIR/data"
 # ★sync は root で実行する。sudo -u polyarchy だと data/ が root 所有のときサブディレクトリを
@@ -126,8 +133,10 @@ mkdir -p "$APP_DIR/data"
 #   どのユーザからでも使える）。取得後に所有権をまとめて polyarchy へ渡す。
 # --delete は付けない（箱側で溜まった捕捉ログ＝燃料を消さない）。
 # cache/ は箱で作る（新着チェックの結果 等）＝S3 に古い写しが残っていても箱の最新を上書きしない（2026-10-02）。
+# query_log/ も箱で作る（S3 の data/query_log/ は fuelsync の保護コピー＝最長 1 時間前）＝戻すと自動適用のたびに
+#   箱の原本の追記分が消える（cache/ と同じ機構・2026-10-09）。箱で生まれるものの除外は test_common が全同期で検査する。
 # deliberations/ は審議会DB の束（S3 `data/deliberations/`）＝フラグに関係なく除外する（政策主張DB の data/ に紛れ込ませない）。
-aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exact-timestamps --exclude "stats/*" --exclude "companies/*" --exclude "deliberations/*" --exclude "cache/*"
+aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exact-timestamps --exclude "stats/*" --exclude "companies/*" --exclude "deliberations/*" --exclude "cache/*" --exclude "query_log/*"
 # .streamlit/config.toml は code tar に同梱済（fileWatcherType=none・§32.3）。
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR/data"
 # stats（統計参照DB）のデータ＝S3 `data/stats/` → `stats/data/`（共通契約 §4）。tar は */data を除外するので
@@ -135,7 +144,7 @@ chown -R "$SVC_USER:$SVC_USER" "$APP_DIR/data"
 if [[ "$ENABLE_STATS_APP" == "true" ]]; then
   echo "[bootstrap] ⑥ stats データ同期 s3://$S3_BUCKET/$DATA_S3_PREFIX/stats/ → $REPO_DIR/stats/data/"
   mkdir -p "$REPO_DIR/stats/data"
-  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/stats/" "$REPO_DIR/stats/data/" --region "$AWS_REGION" --exact-timestamps --exclude "query_log/*"
+  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/stats/" "$REPO_DIR/stats/data/" --region "$AWS_REGION" --exact-timestamps --exclude "query_log/*" --exclude "cache/*"
   chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/stats/data"
 fi
 # companies（企業情報DB）のデータ＝S3 `data/companies/` → `companies/data/`（値の置き場 store/ と評価問 eval/）。
@@ -143,7 +152,7 @@ fi
 if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
   echo "[bootstrap] ⑥ companies データ同期 s3://$S3_BUCKET/$DATA_S3_PREFIX/companies/ → $REPO_DIR/companies/data/"
   mkdir -p "$REPO_DIR/companies/data"
-  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/companies/" "$REPO_DIR/companies/data/" --region "$AWS_REGION" --exact-timestamps --exclude "query_log/*"
+  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/companies/" "$REPO_DIR/companies/data/" --region "$AWS_REGION" --exact-timestamps --exclude "query_log/*" --exclude "cache/*"
   chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/companies/data"
 fi
 # ★ S3→箱の sync は --exact-timestamps を付ける：既定の sync は大きさが同じファイルを取り直さない＝中身が変わっても
@@ -158,6 +167,21 @@ if [[ "$ENABLE_DELIBERATIONS_APP" == "true" ]]; then
   aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/deliberations/bundle/" "$REPO_DIR/deliberations/data/bundle/" --region "$AWS_REGION" --delete --exact-timestamps --exclude ".restored_*"
   chown -R "$SVC_USER:$SVC_USER" "$REPO_DIR/deliberations/data"
 fi
+# 捕捉ログ（燃料）は箱で生まれる＝上の同期では戻さない。ただし**新しい箱**（手元に queries.jsonl が無い）だけは S3 の保護コピー
+# から 1 回だけ戻す＝戻さないと最初の fuelsync が S3 の現行版を新しい箱の小さいファイルで上書きし、旧版は非現行 1 日で消える
+# （燃料が途切れる・2026-10-09）。戻した記録も logprune が ts で 30 日を超えた分を削る。サービスの一覧は fuelsync.sh と同じ（test_common）。
+restore_fuel() { # $1=手元の query_log ディレクトリ $2=S3 の data/ の後ろ（fuelsync.sh の sync_one の第 3 引数）
+  [[ -d "$(dirname "$1")" && ! -f "$1/queries.jsonl" ]] || return 0
+  mkdir -p "$1"
+  if aws s3 cp "s3://$S3_BUCKET/$DATA_S3_PREFIX/$2/queries.jsonl" "$1/queries.jsonl" --region "$AWS_REGION" --only-show-errors 2>/dev/null; then
+    echo "[bootstrap] ⑥ 新しい箱＝捕捉ログを S3 の保護コピーから戻した（$2）"
+  fi
+  chown -R "$SVC_USER:$SVC_USER" "$1"
+}
+restore_fuel "$APP_DIR/data/query_log" query_log
+restore_fuel "$REPO_DIR/stats/data/query_log" stats/query_log
+restore_fuel "$REPO_DIR/companies/data/query_log" companies/query_log
+restore_fuel "$REPO_DIR/deliberations/data/query_log" deliberations/query_log
 
 # ── ⑥b Qdrant 導入（VECTOR_BACKEND=qdrant のときだけ・v7 本線）──
 # サーバは systemd 常駐（qdrant.service・⑩で設置）。docker は箱に入れない（依存を増やさない）。
@@ -419,6 +443,11 @@ chown syslog:adm /var/log/polyarchy
 install -m 644 "$REPO_DIR/deploy/bootstrap/rsyslog-polyarchy.conf" /etc/rsyslog.d/30-polyarchy.conf
 install -m 644 "$REPO_DIR/deploy/bootstrap/logrotate-polyarchy" /etc/logrotate.d/polyarchy
 systemctl restart rsyslog
+# journal の保持の上限（アクセスログの user=<hash> が journal にも入る）＝変わったときだけ journald を再起動（再走行で揺らさない）。
+if ! cmp -s "$REPO_DIR/deploy/bootstrap/journald-polyarchy.conf" /etc/systemd/journald.conf.d/30-polyarchy.conf; then
+  install -D -m 644 "$REPO_DIR/deploy/bootstrap/journald-polyarchy.conf" /etc/systemd/journald.conf.d/30-polyarchy.conf
+  systemctl restart systemd-journald
+fi
 
 install -m 755 "$REPO_DIR/deploy/bootstrap/health_metric.sh" /usr/local/bin/polyarchy-health-metric
 install -m 755 "$REPO_DIR/deploy/bootstrap/usage_report_weekly.sh" /usr/local/bin/polyarchy-usage-report

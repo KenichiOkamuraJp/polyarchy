@@ -11,7 +11,7 @@
 #   ④ policy_tagger（分野タグ・文書性格の追い判定＝Anthropic API を使用。recommendations/.env に鍵）
 #      ★取込の後に回す＝判定は本文を Qdrant から読む（取込の前だと新規文書は題名だけで判定される・
 #      2026-10-02 に判明）。未判定の文書は分野タグなしで取り込まれ、判定が catalog と payload の両方に書く
-#   ⑤ release.sh <env>（ゲート 9 本〔companies 有効時は 13 本〕全 PASS のときだけ配布＝FAIL なら箱には何も起きない）
+#   ⑤ release.sh <env>（配る前の確認＋全ゲート〔一覧はルート README「品質の担保」〕全 PASS のときだけ配布＝FAIL なら箱には何も起きない）
 #
 # 安全設計＝失敗の最悪ケースは「リリースが起きない」（fail-closed）。--no-release で⑤の手前まで。
 # ★catalog.csv（git 追跡）が変わる＝実行後に差分をレビューしてコミットする（開発者 or 運用者・下記に表示）。
@@ -73,5 +73,5 @@ if [[ "$NO_RELEASE" == "--no-release" ]]; then
   exit 0
 fi
 
-say "⑤ リリース（ゲート 9〜13 本 → 全 PASS のときだけ配布・箱は自動適用）"
+say "⑤ リリース（配る前の確認 → 全ゲート → 全 PASS のときだけ配布・箱は自動適用）"
 bash "$SCRIPT_DIR/release.sh" "$ENV_NAME"

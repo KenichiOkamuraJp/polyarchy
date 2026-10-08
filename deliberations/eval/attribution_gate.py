@@ -5,7 +5,10 @@
 
 判定＝**取り違え 0 件**（自動が「不明」なのは可・ラベルと違う区分や発言者を付けたら不可）。あわせて
 fail-closed（匿名の要約の単位に発言者が出ていない・付けた発言者の名前が記録の中に書かれている）を全件で見る。
-アンカー問（M0）の発言者つきの問は、根拠の引用を含む単位の発言者を確かめる（C 型は不明であること）。
+アンカー問（M0）の発言者つきの問は、根拠の引用を含む単位の発言者と区分を確かめる（C 型は不明であること）。
+資料の問（presenter_type つき）は文書の提出者の区分と提出者を、初出の型（D・match_pattern つき）は全単位から初出の回を
+数え直して正解と照合する（会議体を足すと答えが動く＝人の数え直しに頼らない・2026-10-09。それまでラベルは第 1 便の
+4 会議体だけで、後から足した 4 会議体〔発言の 56%〕の区分をどのゲートも見ていなかった）。
 """
 import json
 import re
@@ -103,7 +106,17 @@ def main() -> int:
 
     for q in anchors["questions"]:
         e = q["expected"]
-        if not e.get("speaker") or "acceptable_paths" in e:
+        if "acceptable_paths" in e:
+            continue
+        if e.get("presenter_type"):   # 資料の問＝文書（ページ）の提出者の区分と提出者
+            d = docs.get(e["path"])
+            if not d:
+                bad.append(f"問 {q['id']}: 文書が無い {e['path']}")
+                continue
+            judge("問の資料の区分", q["id"], d["presenter_type"], e["presenter_type"])
+            who = (d.get("page_presenters") or {}).get(str(e.get("page"))) or d["presenter"]
+            judge("問の資料の提出者", q["id"], who, e["presenter"])
+        if not e.get("speaker"):
             continue
         ev = q["evidence"][0]
         hit = find_unit(units[ev["path"]], ev["quote"], e["speaker"])
@@ -111,6 +124,26 @@ def main() -> int:
             bad.append(f"問 {q['id']}: 根拠の引用を含む単位が無い")
             continue
         judge("問の発言者", q["id"], hit["speaker"], e["speaker"])
+        if e.get("speaker_role"):
+            judge("問の発言者の区分", q["id"], hit["speaker_role"], e["speaker_role"])
+
+    # 初出の型（D）：match_pattern（NFKC・空白除去の後の正規表現）で全単位を照合し直し、最も早い日の回が正解と一致するか
+    all_units = [u for us in units.values() for u in us]
+    for q in anchors["questions"]:
+        if "match_pattern" not in q:
+            continue
+        e, rx = q["expected"], re.compile(n(q["match_pattern"]))
+        hits = [u for u in all_units if rx.search(n(u["text"]))]
+        if not hits:
+            bad.append(f"初出 {q['id']}: 「{q['match_pattern']}」に当たる単位が無い")
+            continue
+        first = min(u["date"] for u in hits)
+        at = {(u["org"], u["session_no"]) for u in hits if u["date"] == first}
+        if first == e["first_date"] and at == {(e["org"], e["session_no"])}:
+            ok += 1
+        else:
+            bad.append(f"初出 {q['id']}: 全単位で数え直すと {first} {sorted(at)}（正解 {e['first_date']} {e['org']} 第{e['session_no']}回）"
+                       "＝会議体を足して答えが動いたなら問の正解を直す（deliberations/CLAUDE.md の地雷）")
 
     # fail-closed（全件）：匿名の単位に名前なし・付けた名前は記録に書かれている
     fc = 0

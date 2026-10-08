@@ -181,6 +181,7 @@ class Registry:
 
     def register(self, s: Series) -> None:
         self._agg_pos = None
+        self._id_shapes = None
         errs = s.violations()
         if errs:
             raise ValueError(f"系列 {s.series_id!r} は共通契約違反: {errs}")
@@ -286,11 +287,13 @@ class Registry:
 
     def coverage_of(self, org: str, dataset: str, measure: str, freq: str) -> Optional[dict]:
         """ある measure の**収録済み dims の組合せ**（S-3・2026-08-22）。unknown_series の診断用＝
-        「measure 自体が無い」と「measure はあるが業種×規模の組合せが無い」を区別し、後者は収録済みの組合せを返す。無ければ None。"""
+        「measure 自体が無い」と「measure はあるが dims の組合せが無い」を区別し、後者は収録済みの組合せを返す。無ければ None。
+        dims の位置の意味と並びは dataset ごと（hojin＝業種×規模・fof_jgb＝保有者 等＝dim_vocab.dim_order）。"""
         members = [x for x in self.series.values() if x.org == org and x.dataset == dataset and x.measure == measure and x.freq == freq]
         if not members:
             return None
-        from stats.core.hojin_vocab import INDUSTRY_ORDER, SIZE_ORDER
+        from stats.core.dim_vocab import dim_order
+        INDUSTRY_ORDER, SIZE_ORDER = dim_order("industry", dataset), dim_order("size", dataset)
         ind_sizes: dict[str, set[str]] = {}
         for m in members:
             a, b = self.split_dims(m.dims)
@@ -302,16 +305,47 @@ class Registry:
         combos = [{"sizes": [k for k in key if k], "industries": v} for key, v in by_sizes.items()]
         return {"measure": measure, "series_count": len(members), "combinations": combos}
 
-    def diagnose_unknown(self, series_id: str) -> Optional[dict]:
-        """unknown_series の診断。ID が `<org>.<dataset>.<measure>.<dims>.<freq>` の形で measure が収録済みなら coverage を返す。"""
+    def split_id(self, series_id: str) -> Optional[tuple[str, str, str, str, str]]:
+        """系列 ID を (org, dataset, measure, dims, freq) に分ける。位置で切らず、同じ org.dataset に**登録済みの系列の形**に合わせる
+        （measure は最長一致＝点を含む measure〔fof・sna の stock.*〕も切れる。末尾は登録済みの `.<freq>[.<region_level>]`＝
+        地域の接尾辞〔tokitsu の .pref・国際の .cty〕も切れる）。登録済みの形に合わなければ None。2026-10-09＝位置で切っていたため
+        929 系列（17 dataset）で S-3 の診断が黙って効かなかった。"""
+        shapes = getattr(self, "_id_shapes", None)
+        if shapes is None:
+            shapes = {}
+            for x in self.series.values():
+                prefix = f"{x.org}.{x.dataset}.{x.measure}."
+                tail = x.series_id[len(prefix):] if x.series_id.startswith(prefix) else None
+                if tail is None:
+                    continue
+                suffix = tail[len(x.dims):] if x.dims and tail.startswith(x.dims) else "." + tail
+                shapes.setdefault((x.org, x.dataset), {}).setdefault(x.measure, {})[suffix] = x.freq
+            self._id_shapes = shapes
         parts = series_id.split(".")
-        if len(parts) < 5:
+        if len(parts) < 3:
             return None
-        org, dataset, measure, freq = parts[0], parts[1], parts[2], parts[-1]
+        org, dataset = parts[0], parts[1]
+        rest = series_id[len(org) + len(dataset) + 2:]
+        measures = shapes.get((org, dataset), {})
+        for m in sorted(measures, key=len, reverse=True):
+            if not rest.startswith(m + "."):
+                continue
+            tail = rest[len(m):]   # ".<dims>.<freq>[.<region>]" か ".<freq>[.<region>]"
+            for suffix in sorted(measures[m], key=len, reverse=True):
+                if tail.endswith(suffix):
+                    return org, dataset, m, tail[1:len(tail) - len(suffix)], measures[m][suffix]
+        return None
+
+    def diagnose_unknown(self, series_id: str) -> Optional[dict]:
+        """unknown_series の診断。登録済みの形（split_id）で measure が収録済みと分かり、dims だけが無いなら coverage を返す。"""
+        parsed = self.split_id(series_id)
+        if parsed is None or not parsed[3]:
+            return None
+        org, dataset, measure, dims, freq = parsed
         cov = self.coverage_of(org, dataset, measure, freq)
         if cov is None:
             return None
-        cov["requested_dims"] = ".".join(parts[3:-1])
+        cov["requested_dims"] = dims
         return cov
 
     # 畳み軸の宣言（第 9 弾・2026-08-29）：dataset ごとに増殖軸が違う＝hojin 等は dims（下の汎用畳み）・

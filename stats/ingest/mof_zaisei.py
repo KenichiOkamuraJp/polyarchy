@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import functools
 import re
 import sys
 from pathlib import Path
@@ -110,46 +111,58 @@ def ingest_year_rows(s: Series, wb, cp: Path, day: str) -> list[ValueRecord]:
     return recs
 
 
+@functools.lru_cache(maxsize=None)
+def _registered_sections(file: str) -> frozenset[str]:
+    """同じ原本（year_sheets）に登録済みの経費の見出し（正規化済み）＝「計」行を探す範囲の区切り。"""
+    from stats.core.registry import default_registry
+    return frozenset(_norm(x.accessor["section"]) for x in default_registry().series.values()
+                     if x.accessor.get("type") == "mof_zaisei" and x.accessor.get("layout") == "year_sheets"
+                     and x.accessor.get("file") == file and x.accessor.get("section"))
+
+
 def ingest_year_sheets(s: Series, wb, cp: Path, day: str) -> list[ValueRecord]:
+    """シート＝年度・行＝経費。値列・見出し行・「計」行はどれも**1 つに確定しなければエラー**（黙って最初の一致を選ばない・
+    2026-10-09＝取込の要石を他の型と揃えた。それまでは 3 か所で最初の一致を採っていた）。"""
     a = s.accessor
     section = _norm(a["section"])
     want_hdr = _norm(a["value_header"])
+    others = _registered_sections(a["file"]) - {section}
     recs: list[ValueRecord] = []
     for sn in wb.sheetnames:
         fy = sheet_to_fy(sn)
         if fy is None:
             continue
         ws = wb[sn]
-        # 値列＝見出し（当初予算／補正予算／計／予算現額／決算額）で確定（先頭8行）
-        col = None
-        for r in range(1, 9):
-            for c in range(1, ws.max_column + 1):
-                if _norm(ws.cell(r, c).value) == want_hdr:
-                    col = c
-                    break
-            if col:
-                break
-        if not col:
-            raise MofZaiseiError(f"{s.series_id}: {sn}: 見出し {a['value_header']!r} が無い")
-        # 見出し行を探す（列B/C のラベル・括弧付きも許容）
-        hit = None
-        for r in range(1, ws.max_row + 1):
-            lab = _norm(ws.cell(r, 2).value) or _norm(ws.cell(r, 3).value)
-            lab = lab.strip("（）()")
-            if lab == section:
-                hit = r
-                break
-        if hit is None:
+        # 値列＝見出し（当初予算／補正予算／計／予算現額／決算額）で確定（先頭8行・1 列に確定しなければエラー）
+        cols = sorted({c for r in range(1, 9) for c in range(1, ws.max_column + 1) if _norm(ws.cell(r, c).value) == want_hdr})
+        if len(cols) != 1:
+            raise MofZaiseiError(f"{s.series_id}: {sn}: 見出し {a['value_header']!r} の列が {len(cols)} 個（1 列に確定しない）: {cols[:5]}")
+        col = cols[0]
+        # 見出し行を探す（列B/C のラベル・括弧付きも許容・1 行に確定しなければエラー）
+        def label(r):
+            return (_norm(ws.cell(r, 2).value) or _norm(ws.cell(r, 3).value)).strip("（）()")
+        hits = [r for r in range(1, ws.max_row + 1) if label(r) == section]
+        if not hits:
             continue  # その年度の表に無い経費（例：予備費の細目）＝値なし
+        if len(hits) > 1:
+            raise MofZaiseiError(f"{s.series_id}: {sn}: 経費の見出し {a['section']!r} が {len(hits)} 行（1 行に確定しない）: {hits[:5]}")
+        hit = hits[0]
         v = cell_str(ws.cell(hit, col).value)
         row_used = hit
         if v is None:
-            # 次の「計」行（「小計」は飛ばす・次の見出しに当たったら中止）
-            for r in range(hit + 1, ws.max_row + 1):
-                lab = _norm(ws.cell(r, 2).value) or _norm(ws.cell(r, 3).value)
-                if lab in ("計", "合計"):
-                    v = cell_str(ws.cell(r, col).value); row_used = r
-                    break
+            # 1 行で完結する経費（見出し行のほかの列に値がある＝国債費・防衛関係費 等）は、この列の「－」・空欄＝値なし。
+            # ★下の「計」を探しに行かない（R8 の補正予算＝「－」で、以前の実装は下の別の経費の「計」に当たっていた）
+            if any(ws.cell(hit, c).value not in (None, "") for c in range(4, ws.max_column + 1)):
+                continue
+            # 見出しだけの行（値の列が全部空）の経費は、その下の「計」行（「小計」は数えない）。探す範囲＝同じ原本に登録済みの
+            # 別の経費の見出しが次に現れる行の手前まで（無ければ表の末尾まで）。範囲内の「計」が 1 行でなければエラー
+            stop = next((r for r in range(hit + 1, ws.max_row + 1) if label(r) in others), ws.max_row + 1)
+            totals = [r for r in range(hit + 1, stop) if label(r) in ("計", "合計")]
+            if len(totals) != 1:
+                raise MofZaiseiError(f"{s.series_id}: {sn}: 見出し {a['section']!r}（{hit} 行）の下の「計」が {len(totals)} 行"
+                                     f"（{hit + 1}〜{stop - 1} 行・1 行に確定しない）: {totals[:5]}")
+            row_used = totals[0]
+            v = cell_str(ws.cell(row_used, col).value)
         if v is None:
             continue
         recs.append(ValueRecord(series_id=s.series_id, period=fy, region="JP", value=v, status="", vintage=day, retrieved_at=day,

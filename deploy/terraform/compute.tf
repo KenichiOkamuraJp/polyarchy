@@ -29,7 +29,7 @@ locals {
     project                   = var.project
     environment               = var.environment
     enable_web_app            = var.enable_web_app
-    collection_name           = var.collection_name # 既定 policy_claims_v7（v7/Qdrant 本線。切り戻しは env で policy_claims_v6）
+    collection_name           = var.collection_name # 既定 policy_claims_v7（v7/Qdrant 本線。切り戻しは自動適用の退避と書き戻し）
     vector_backend            = var.vector_backend
     tunnel_host_mcp           = var.tunnel_hostname_mcp
     tunnel_host_web           = var.tunnel_hostname_web

@@ -308,17 +308,28 @@ def test_usage_report_aggregate():
         # 時系列の横断検索（第 1e 便）＝回数は別に数え、使えなかった入力は同じ欄で数える
         ("companies", {"ts": "2026-08-19T12:01:00", "tool": "screen_trend", "args": {"conditions": [{"metric": "operating_profit", "aggregate": "cagr"}]},
                        "unavailable_vocab": [{"term": "operating_profit", "level": "input_not_ingested"}]}),
+        # 各サービスが実際に書く形（stats の lookup_panel・companies の参照層の found=false・審議会DB）＝集計の数え漏れを固定する
+        ("stats", {"ts": "2026-08-19T13:00:00", "tool": "lookup_panel", "period": "FY2024", "region": None, "source": "mcp",
+                   "found": False, "reason": "no_series", "n_errors": 1}),
+        ("companies", {"ts": "2026-08-19T13:01:00", "tool": "lookup_company_facts", "args": {"company": secret, "item": "net_sales"},
+                       "found": False, "reason": "item_not_disclosed"}),
+        ("deliberations", {"ts": "2026-08-19T13:02:00", "tool": "search_deliberations", "query": secret, "hits": 0}),
+        ("stats", {"ts": "2026-08-19T13:03:00", "tool": "lookup_newtool", "source": "mcp"}),   # 集計が知らない tool
     ]
     rows = aggregate(recs)
     assert len(rows) == 1 and rows[0]["week"] == "2026-W34"
     w = rows[0]
-    assert w["total"] == 7 and w["recommendations"] == 2 and w["stats"] == 3 and w["companies"] == 2 and w["users"] == 1
-    assert w["by_source"] == {"app_chat": 1, "mcp": 4, "unknown": 2}
+    assert w["total"] == 11 and w["recommendations"] == 2 and w["stats"] == 5 and w["companies"] == 3 and w["users"] == 1
+    assert w["by_source"] == {"app_chat": 1, "mcp": 6, "unknown": 4}
+    assert w["stats_panel"] == 1 and w["stats_panel_found_false"] == 1
+    assert w["companies_found_false"] == 1 and w["companies_nf_reasons"] == {"lookup_company_facts:item_not_disclosed": 1}
+    assert w["deliberations"] == 1 and w["deliberations_zero"] == 1
+    assert w["unknown_tools"] == {"stats:lookup_newtool": 1}
     assert w["companies_screen"] == 1 and w["companies_trend"] == 1
     assert w["companies_unavailable"] == {"input_not_ingested:gross_profit": 1, "input_not_ingested:operating_profit": 1}
     assert w["recommendations_zero"] == 1 and w["recommendations_low"] == 1 and w["recommendations_orgs_filter"] == 1 and w["recommendations_period_filter"] == 1
     assert w["stats_find"] == 1 and w["stats_find_filtered"] == 1 and w["stats_lookup"] == 1
-    assert w["stats_found_false"] == 1 and w["stats_nf_reasons"] == {"no_values": 1} and w["stats_catalog"] == 1
+    assert w["stats_found_false"] == 1 and w["stats_nf_reasons"] == {"no_values": 1, "panel:no_series": 1} and w["stats_catalog"] == 1
     # 検索語は集計行にも HTML にも現れない（数字のみ＝恒久蓄積できる根拠）
     import json as _json
     page = render_html(rows, {}, [], "2026-08-21T00:00:00")
@@ -329,7 +340,7 @@ def test_usage_report_aggregate():
     old = [{"week": "2026-W30", "total": 100}, {"week": "2026-W34", "total": 3}]
     merged = merge_weekly(old, rows)
     assert [r["week"] for r in merged] == ["2026-W30", "2026-W34"]
-    assert merged[1]["total"] == 7                                     # 増えた再計算は置換
+    assert merged[1]["total"] == 11                                    # 増えた再計算は置換
     shrunk = merge_weekly(merged, [{"week": "2026-W30", "total": 2}])
     assert shrunk[0]["total"] == 100                                   # 痩せた再計算は既存優先
 
@@ -382,21 +393,104 @@ def test_ops_dashboard_memory_and_fuelsync():
         od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR, od.subprocess.run, od.shutil.which, od.companies_enabled = saved
 
 
-def test_box_cache_not_shipped():
-    """箱で作る cache/（提言の新着チェックの結果 等）を手元から S3 に上げない・S3 から箱へ戻さない（2026-10-02 staging＝
-    手元の 09-03 の update_check.json が upload で S3 に載り、自動適用の bootstrap 再走行の同期が箱の最新の値を上書きした）。"""
+def _sync_cmds(path) -> list[str]:
+    """deploy のシェルの aws s3 sync を 1 コマンドずつ（行末の \\ でつないだ継続行を 1 行に・コメント行は除く）。"""
     import re
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]
+    text = re.sub(r"\\\n\s*", " ", (root / path).read_text(encoding="utf-8"))
+    return [ln for ln in text.splitlines() if "s3 sync" in ln and not ln.lstrip().startswith("#")]
 
-    def syncs(path: str) -> list[str]:  # 行末の \ でつないだ 1 コマンドずつ
-        text = re.sub(r"\\\n\s*", " ", (root / path).read_text(encoding="utf-8"))
-        return [ln for ln in text.splitlines() if "s3 sync" in ln and not ln.lstrip().startswith("#")]
 
-    up = [c for c in syncs("deploy/scripts/upload_to_s3.sh") if "recommendations/data/\"" in c and "qdrant" not in c.split("s3://")[0]]
-    assert up and all('--exclude "cache/*"' in c for c in up), up
-    down = [c for c in syncs("deploy/bootstrap/bootstrap.sh") if "$APP_DIR/data/" in c]
-    assert down and all('--exclude "cache/*"' in c for c in down), down
+# 箱で生まれるもの＝手元から S3 に上げない・S3 から箱へ戻さない（S3 の写しは古い＝戻すと箱の最新を上書きする）。
+BOX_BORN = ("cache/*", "query_log/*")
+
+
+def test_box_born_not_shipped():
+    """箱で生まれるもの（cache/＝新着チェックの結果 等・query_log/＝捕捉ログ）を、サービスのデータの丸ごとの同期で
+    手元から S3 に上げない・S3 から箱へ戻さない（2026-10-02 staging＝手元の 09-03 の update_check.json が upload で S3 に載り、
+    自動適用の bootstrap 再走行の同期が箱の最新の値を上書きした。2026-10-09＝政策主張DB の同期だけ query_log/ を除外しておらず、
+    自動適用のたびに S3 の写し〔fuelsync の最長 1 時間前〕が箱の原本の追記分を消していた）。"""
+    import re
+    # 上り＝<svc>/data/ の丸ごと（qdrant のミラーと審議会DB の束はサブディレクトリだけ＝対象外）
+    up = [c for c in _sync_cmds("deploy/scripts/upload_to_s3.sh") if re.search(r'/data/" "s3://', c)]
+    down = [c for c in _sync_cmds("deploy/bootstrap/bootstrap.sh") if re.search(r'" "\$(APP_DIR|REPO_DIR/\w+)/data/"', c)]
+    assert len(up) == 3 and len(down) == 3, (up, down)   # recommendations・stats・companies
+    bad = [(b, c) for c in up + down for b in BOX_BORN if f'--exclude "{b}"' not in c]
+    assert not bad, bad
+
+
+def test_box_s3_pull_exact_timestamps():
+    """S3→箱の aws s3 sync は全部 --exact-timestamps（既定は大きさが同じファイルを取り直さない＝中身が変わっても古いまま
+    残る。2026-10-07＝審議会DB の束の目印 bundle.json が同じ 614 バイトで 10-04 以降の配布で復元されなかった・B28）。"""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    pulls = [f"{p.name}: {c.strip()}" for p in sorted((root / "deploy/bootstrap").glob("*.sh"))
+             for c in _sync_cmds(p.relative_to(root)) if "s3 sync \"s3://" in c]
+    assert len(pulls) >= 5, pulls   # bootstrap の 4 本＋apply の qdrant のミラー
+    bad = [c for c in pulls if "--exact-timestamps" not in c]
+    assert not bad, bad
+
+
+def test_capture_log_services_aligned():
+    """捕捉ログを持つサービスの一覧（usage_report の S3_PREFIXES／LOG_DIRS＝正）が、箱の fuelsync（S3 への保護コピー）・
+    logprune（30 日で削除）・箱の書込権限（iam.tf）・S3 の保持ルール（storage.tf）に揃っている（2026-10-09＝便を足すたびに
+    写しが漏れていた。漏れると保持 30 日の約束か燃料の保護が黙って外れる）。"""
+    import re
+    from pathlib import Path
+    from polyarchy_common import usage_report as ur
+    root = Path(__file__).resolve().parents[2]
+    read = lambda p: (root / p).read_text(encoding="utf-8")   # noqa: E731
+    want = {s: p.removeprefix("data/") for s, p in ur.S3_PREFIXES.items()}          # query_log・stats/query_log …
+    local = {s: str(p.relative_to(ur.ROOT)) for s, p in ur.LOG_DIRS.items()}       # recommendations/data/query_log …
+    assert set(want) == set(local), (want, local)
+    fuel = re.findall(r'^sync_one (\w+) "\$REPO_DIR/([^"]+)" (\S+)\s*$', read("deploy/bootstrap/fuelsync.sh"), re.M)
+    assert {s: (l, r) for s, l, r in fuel} == {s: (local[s], want[s]) for s in want}, fuel
+    restore = re.findall(r'^restore_fuel "\$(?:APP_DIR|REPO_DIR)/([^"]+)" (\S+)\s*$', read("deploy/bootstrap/bootstrap.sh"), re.M)
+    assert {r: l for l, r in restore} == {want[s]: local[s].removeprefix("recommendations/") if s == "recommendations" else local[s]
+                                          for s in want}, restore   # 新しい箱で燃料を戻す（bootstrap ⑥）も同じ一覧
+    prune = set(re.findall(r"POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/(\S+)/queries\.jsonl",
+                           read("deploy/systemd/polyarchy-logprune.service")))
+    assert prune == set(local.values()), prune
+    iam = set(re.findall(r'"\$\{var\.data_s3_prefix\}/(\S*query_log)/\*"', read("deploy/terraform/iam.tf")))
+    assert iam == set(want.values()), iam
+    rules = set(re.findall(r'prefix = "(\S*query_log)/"', read("deploy/terraform/storage.tf")))
+    assert rules == set(want.values()), rules
+
+
+def test_box_service_list_aligned():
+    """opt-in のサービス（user_data の ENABLE_<X>_APP＝正・廃止した WEB は除く）が、自動適用の停止・起動・smoke・/healthz・
+    退避、health のメトリクス、fuelsync・logprune、ログ転送、アラーム、rollback.sh の status に揃っている（2026-10-09＝
+    サービス追加の配線は deploy/ の 26〜30 ファイルに及び、漏れても何も落ちない）。ポートは health と apply で一致すること。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    read = lambda p: (root / p).read_text(encoding="utf-8")   # noqa: E731
+    svcs = {m.lower() for m in re.findall(r"^ENABLE_(\w+)_APP=", read("deploy/terraform/user_data.sh.tftpl"), re.M)} - {"web"}
+    assert svcs == {"stats", "companies", "deliberations"}, svcs   # サービスを足したら、この関数の各所にも揃える
+    apply, health = read("deploy/bootstrap/apply_data_update.sh"), read("deploy/bootstrap/health_metric.sh")
+    files = {"fuelsync": read("deploy/bootstrap/fuelsync.sh"), "logprune": read("deploy/systemd/polyarchy-logprune.service"),
+             "cwagent": read("deploy/bootstrap/cloudwatch-agent.json"), "alarm": read("deploy/terraform/observability.tf"),
+             "rollback": read("deploy/scripts/rollback.sh")}
+    bad = []
+    for s in sorted(svcs):
+        checks = {
+            "apply の停止": re.search(rf"systemctl stop [^\n]*\bpolyarchy-{s}\b", apply),
+            "apply の起動": re.search(rf"systemctl restart [^\n]*\bpolyarchy-{s}\b", apply),
+            "apply の smoke": f"-m {s}.eval.mcp_smoke" in apply,
+            "apply の退避": f'"$REPO_DIR/{s}/data/"' in apply,
+            "fuelsync": f"sync_one {s} " in files["fuelsync"],
+            "logprune": f"/{s}/data/query_log/queries.jsonl" in files["logprune"],
+            "ログ転送": f'"polyarchy/{s}"' in files["cwagent"],
+            "アラーム": f'"health_{s}"' in files["alarm"],
+            "rollback status": re.search(rf"for s in [^;]*\bpolyarchy-{s}\b", files["rollback"]),
+        }
+        bad += [f"{s}: {k}" for k, ok in checks.items() if not ok]
+        hp = re.search(rf"Value={s}\}}\],Value=\$\(probe (\d+)\)", health)
+        ap = re.search(rf"wait_healthz {s} (\d+)", apply)
+        if not (hp and ap and hp.group(1) == ap.group(1)):
+            bad.append(f"{s}: health と apply の /healthz のポート（{hp and hp.group(1)}・{ap and ap.group(1)}）")
+    assert not bad, bad
 
 
 def test_shell_var_not_followed_by_multibyte():
@@ -406,23 +500,46 @@ def test_shell_var_not_followed_by_multibyte():
     import subprocess
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]
-    files = subprocess.run(["git", "ls-files", "*.sh"], cwd=root, capture_output=True, text=True, check=True).stdout.split()
+    # 追跡済み＋まだ追跡していない（.gitignore で外していない）ファイル＝コミットの前に回したゲートでも新しいスクリプトを見る
+    # （2026-10-09＝新規の release_preflight.sh が未追跡のままゲートを通り、コミットした後でこの検査に当たるところだった）
+    files = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.sh"],
+                           cwd=root, capture_output=True, text=True, check=True).stdout.split()
     pat = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]")
     bad = [f"{f}:{i}" for f in files for i, ln in enumerate((root / f).read_text(encoding="utf-8").splitlines(), 1) if pat.search(ln)]
     assert files and not bad, bad
 
 
+def test_box_referenced_files_exist():
+    """箱の bootstrap・自動適用が設置・実行するリポジトリのファイル（deploy/ の下・systemd のユニット）が、リポジトリにある
+    （2026-10-09＝新しいファイルを git に足し忘れると、tar＝git archive HEAD に入らず箱の bootstrap が set -e で止まり、
+    自動適用が切り戻しになる。配布用のクローンで回すゲートなら、足し忘れはここで止まる）。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    missing = []
+    for src in ("deploy/bootstrap/bootstrap.sh", "deploy/bootstrap/apply_data_update.sh"):
+        text = (root / src).read_text(encoding="utf-8")
+        for rel in re.findall(r'"\$REPO_DIR/(deploy/[^"$]+\.[a-z]+|deploy/bootstrap/[^"$/]+)"', text):
+            if not (root / rel).exists():
+                missing.append(f"{src}: {rel}")
+        for unit in re.findall(r'"\$UNIT_SRC/([^"$]+)"', text):
+            if not (root / "deploy/systemd" / unit).exists():
+                missing.append(f"{src}: deploy/systemd/{unit}")
+    assert not missing, missing
+
+
 def test_env_backup_not_shipped():
-    """env の控え（deploy/env/staging.env.bak-<日付>）を tar で箱へ運ばない・git に載せない（2026-10-04 staging＝
-    tar の除外 *.env にも .gitignore にも当たらず、次の配布で箱に入るところだった）。"""
-    import fnmatch
+    """env の控え（deploy/env/staging.env.bak-<日付>）・社内ノート等の追跡していないものを tar で箱へ運ばない・git に載せない
+    （2026-10-04 staging＝旧方式〔作業フォルダを除外リストで固める〕の *.env にも .gitignore にも当たらず、次の配布で箱に
+    入るところだった）。2026-10-09 から tar は git archive HEAD＝追跡ファイルだけ（除外リストの後追いをやめた）。"""
     import re
     import subprocess
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]
-    tar_ex = re.findall(r"--exclude='([^']+)'", (root / "deploy/scripts/upload_to_s3.sh").read_text(encoding="utf-8"))
-    for name in ("staging.env", "staging.env.bak-20261004", "prod.env.bak"):
-        assert any(fnmatch.fnmatch(name, p) for p in tar_ex), (name, tar_ex)
+    up = (root / "deploy/scripts/upload_to_s3.sh").read_text(encoding="utf-8")
+    cmd = [ln for ln in re.sub(r"\\\n\s*", " ", up).splitlines() if re.search(r"^\s*git .* archive ", ln)]
+    assert len(cmd) == 1 and "HEAD" in cmd[0] and "**/data/**" in cmd[0], cmd   # 追跡ファイルだけ・データは S3 経由
+    assert not re.search(r"^\s*tar [^\n]*-c", up, re.M), "作業フォルダを tar で固める旧方式に戻っている"
     ign = subprocess.run(["git", "check-ignore", "--no-index", "deploy/env/staging.env.bak-20261004", "deploy/env/staging.env.example"],
                          cwd=root, capture_output=True, text=True).stdout.split()
     assert ign == ["deploy/env/staging.env.bak-20261004"], ign   # 控えは外れ、ひな型は追跡のまま

@@ -1,16 +1,22 @@
 """stats.core の単体テスト（ネットワーク不要）：期間表記の厳密解釈・時間コード変換・レジストリ検証。
 実行（リポジトリ root）：  python -m stats.eval.test_core
+値ストアに依存する検査（数表の恒等式など）は代表系列の値が無いと SKIP を印字して数える。release.sh は
+STATS_TEST_STRICT=1 で呼ぶ＝スキップが 1 つでもあれば FAIL（データの復元漏れ・代表系列の改名で検査が黙って外れない）。
 """
+import os
+
 from stats.core.periods import convert, matches_freq, parse
 from stats.core.registry import Registry, Series, default_registry
 
 
 def main() -> int:
     ok = True
+    n_checks = 0   # 検査の数（下の個別の検査が使う n_chk とは別の名前）
     def chk(cond, msg):
-        nonlocal ok
+        nonlocal ok, n_checks
         print(("  ✓ " if cond else "  ✗ ") + msg)
         ok &= bool(cond)
+        n_checks += 1
     print("=== stats.core 単体テスト ===")
     chk(parse("2024").freq == "a" and parse("FY2024").freq == "fy", "暦年/年度の解釈")
     chk(parse("2024Q1").freq == "q" and parse("FY2024Q1").freq == "fq" and parse("FY2024H2").freq == "h", "四半期/年度四半期/半期")
@@ -107,6 +113,18 @@ def main() -> int:
     chk(cov and cov["measure"] == "sales" and cov["requested_dims"] == "nosuch_industry-cap1b" and any("allexfin" in c["industries"] for c in cov["combinations"]),
         "S-3 measure 収録済み＋dims 不一致＝coverage.combinations を返す")
     chk(reg.diagnose_unknown("mof.hojin.nosuch_measure.allexfin-allsize.fy") is None and reg.diagnose_unknown("xx") is None, "S-3 measure 自体が無ければ None")
+    # S-3 の ID の分解は登録済みの形に合わせる（2026-10-09＝位置で切っていたため 929 系列で黙って効かなかった）
+    cov_f = reg.diagnose_unknown("boj.fof.stock.assets_total.nosuch.fy")
+    cov_t = reg.diagnose_unknown("soumu.tokitsu.net_assets.nosuch.fy.pref")
+    chk(cov_f and cov_f["measure"] == "stock.assets_total" and cov_f["requested_dims"] == "nosuch", "S-3 点を含む measure（fof の stock.*）も診断できる")
+    chk(cov_t and cov_t["measure"] == "net_assets" and cov_t["requested_dims"] == "nosuch", "S-3 地域の接尾辞つきの ID（tokitsu の .fy.pref）も診断できる")
+    rt = [x.series_id for x in reg.series.values() if reg.split_id(x.series_id) != (x.org, x.dataset, x.measure, x.dims, x.freq)]
+    chk(not rt, f"split_id：登録済みの全系列が自分の欄に分かれる（食い違い {rt[:3] or 'なし'}）")
+    # ファミリーカードの並び：dataset 固有の語彙を持つ dims は dim_order にも原表の順がある（2026-10-09＝fof_jgb の保有者が字順だった）
+    from stats.core.dim_vocab import dim_label as _dl, dim_order as _do
+    _no_order = sorted({x.dataset for x in reg.series.values() if x.dims and not x.dataset.startswith("hojin")
+                        for a in [reg.split_dims(x.dims)[0]] if _dl("industry", a, x.dataset) != a and a not in _do("industry", x.dataset)})
+    chk(not _no_order, f"dims に固有の語彙がある dataset は dim_order に並びがある（欠け {_no_order or 'なし'}）")
     # §5.4 利用者が「残してほしい」と明記した注記（付加価値は定義値を直接引く・合成しない）
     from stats.core.hojin_vocab import HOJIN_ANALYSIS_NOTES
     chk("定義値" in HOJIN_ANALYSIS_NOTES["value_added"] and "合成しない" in HOJIN_ANALYSIS_NOTES["value_added"]
@@ -127,7 +145,16 @@ def main() -> int:
     def _v_r(sid, p, region):
         r = _vs.lookup(sid, p, region)
         return int(r.value) if r else None
-    if _vs.has_data("cao.sna_sector.saving_net.nfc.fy"):
+
+    skipped: list[str] = []
+    def need(sid):
+        """値ストア依存のブロックの前提（代表系列の値がある）。無ければ SKIP を印字して数える＝黙って飛ばさない。"""
+        if _vs.has_data(sid):
+            return True
+        skipped.append(sid)
+        print(f"  - SKIP 値ストア依存の検査（{sid} の値が無い）")
+        return False
+    if need("cao.sna_sector.saving_net.nfc.fy"):
         bad = []
         for slug in ("nfc", "fin", "gg", "hh", "npish"):
             for y in ("FY2024", "FY2015", "FY2000"):
@@ -156,7 +183,7 @@ def main() -> int:
         and _pb_label("fof", "flow.assets_total", "fy") == "年度（期中）" and _pb_label("roudou", "unemployment_rate", "m") is None,
         "第12弾 期の定義：代表例（SNA の BS＝暦年末・資金循環ストック＝年度末・フロー＝期中・労調＝未宣言）")
     # 第 12 弾 第 6 便（2026-10-02）：社会資本ストック推計＝部門の『全国』行（都道府県ファイル）＝全国ファイルの部門の値・沖縄の復帰前は値なし・粗≧純
-    if _vs.has_data("cao.infra_stock.net_stock.total.fy"):
+    if need("cao.infra_stock.net_stock.total.fy"):
         bad = [f"{sec}/{m}/{y}" for sec in ("roads", "sewerage", "water_supply") for m in ("net_stock", "gross_stock")
                for y in ("FY1980", "FY2020")
                if _v(f"cao.infra_stock.{m}.{sec}.fy", y) is None or _v(f"cao.infra_stock.{m}.{sec}.fy", y) != _v(f"cao.infra_stock_pref.{m}.{sec}.fy.pref", y)]
@@ -165,7 +192,7 @@ def main() -> int:
         n47 = sum(1 for i in range(1, 48) if _v_r("cao.infra_stock_pref.net_stock.total16.fy.pref", "FY2020", f"{i:02d}") is not None)
         chk(not bad and ok_okinawa and n47 == 47, f"第12弾 社会資本ストック：部門の全国行＝全国ファイル・粗≧純・沖縄は 1972 年度から・47 都道府県{bad}{n47}")
     # 第 12 弾 第 5 便（2026-10-02）：純計（財政統計 第16表）・社会保障財源（第14表）・国債の保有者別（資金循環の細目）＋財政統計の単位の整合
-    if _vs.has_data("mof.zaisei.junkei_net_total.revenue.fy"):
+    if need("mof.zaisei.junkei_net_total.revenue.fy"):
         bad = []
         for side in ("revenue", "expenditure"):
             for y in ("FY1987", "FY2008", "FY2024"):
@@ -180,7 +207,7 @@ def main() -> int:
                or abs(_v("mof.zaisei.revenue_total.settled.fy", y) / 1000 - _v("mof.zaisei.revenue_total_major.settled.fy", y)) > 1]
         units = {reg.series[sid].unit for sid in ("mof.zaisei.expenditure_total.settled.fy", "mof.zaisei.expenditure_total_major.settled.fy")}
         chk(not bad and units == {"千円"}, f"第12弾 財政統計の単位：第1表（千円）＝第20表（千円）・第1表÷1000＝第16表／第4表（百万円・±1）{bad}{units}")
-    if _vs.has_data("ipss.shaho_fin.total.total.fy"):
+    if need("ipss.shaho_fin.total.total.fy"):
         def _sf(m, y):
             return _v(f"ipss.shaho_fin.{m}.total.fy", y)
         bad = [y for y in ("FY1951", "FY1990", "FY2023")
@@ -188,12 +215,12 @@ def main() -> int:
                or abs(_sf("contributions", y) - _sf("contributions_insured", y) - _sf("contributions_employer", y)) > 1
                or abs(_sf("tax", y) - _sf("tax_state", y) - _sf("tax_other_public", y)) > 1]
         chk(not bad, f"第12弾 社会保障財源：合計＝保険料＋公費＋資産収入＋その他・保険料＝被保険者＋事業主・公費＝国庫＋他の公費（億円の丸め）{bad}")
-    if _vs.has_data("boj.fof_jgb.jgb_holdings.total.fy"):
+    if need("boj.fof_jgb.jgb_holdings.total.fy"):
         bad = [y for y in ("FY1979", "FY2000", "FY2024") if _v("boj.fof_jgb.jgb_holdings.total.fy", y) != _v("boj.fof_jgb.jgb_outstanding.total.fy", y)]
         chk(not bad, f"第12弾 国債・財投債：保有（資産）の合計＝発行残高（負債）の合計（資金循環の恒等式）{bad}")
     # 第 12 弾 第 4 便（2026-10-02）：統一的な基準による財務書類（都道府県）。原表の中で常に成り立つ関係だけを固定する
     # （資産合計＝負債合計＋純資産合計は原表自体が外れる団体・年度がある＝FY2024 福井県 全体 等＝固定しない・注記に事実）
-    if _vs.has_data("soumu.tokitsu.net_assets.general.fy.pref"):
+    if need("soumu.tokitsu.net_assets.general.fy.pref"):
         def _t(m, b, fy, p):
             return _v_r(f"soumu.tokitsu.{m}.{b}.fy.pref", f"FY{fy}", p)
         bad, n_chk = [], 0
@@ -219,7 +246,7 @@ def main() -> int:
         chk(cov == {2016: 40, 2017: 46, 2018: 47, 2024: 47} and _t("net_assets", "general", 2016, "13") is None,
             f"第12弾 統一的な基準：収録団体数（FY2016 は 40＝H28 版 39＋H29 版の前年度シート 1・東京都は無い）{cov}")
     # 第 12 弾 第 3 便（2026-10-02）：国の財務書類＝貸借の恒等式・増減計算書の式・期首＝前期末（百万円の丸めで ±2）
-    if _vs.has_data("mof.zaimu_shorui.net_assets.national.fy"):
+    if need("mof.zaimu_shorui.net_assets.national.fy"):
         def _z(m, k, fy):
             return _v(f"mof.zaimu_shorui.{m}.{k}.fy", f"FY{fy}")
         bad = []
@@ -241,14 +268,14 @@ def main() -> int:
         chk(_z("net_assets", "national", 2024) is None and _z("net_assets", "consolidated", 2024) is not None,
             "第12弾 国の財務書類：FY2024 の一般会計・特別会計（暗号化された Excel）は未収録のまま＝連結で埋めていない")
     # 第 12 弾 第 1 便（2026-10-02）：公的企業の BS・一般政府の部門別（付表 3・付表 6）
-    if _vs.has_data("cao.sna_sector_bs.net_worth.nfc_public.a"):
+    if need("cao.sna_sector_bs.net_worth.nfc_public.a"):
         bad = [f"{slug}/{y}" for slug in ("nfc_public", "fin_public") for y in ("2024", "2010", "1994")
                if abs((_v(f"cao.sna_sector_bs.assets_total.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.nonfinancial_assets.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.financial_assets.{slug}.a", y) or 0)) > 0.6
                or abs((_v(f"cao.sna_sector_bs.assets_total.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.liabilities.{slug}.a", y) or 0) - (_v(f"cao.sna_sector_bs.net_worth.{slug}.a", y) or 0)) > 0.6]
         chk(not bad, f"第12弾 公的企業 2 部門の BS 恒等式（非金融＋金融＝期末資産＝負債＋正味資産）{bad[:4]}")
         chk(all(abs((_v("cao.sna_sector_bs.fixed_assets.nfc_public.a", y) or -1) - (_v("cao.sna_fcs.total.nfc_public.a", y) or -2)) < 0.05 for y in ("2024", "1994")),
             "第12弾 公的非金融企業の固定資産（si13）＝固定資本ストックマトリックスの公的非金融法人（別表と一致）")
-    if _vs.has_data("cao.sna_gg_bs.financial_assets.total.a"):
+    if need("cao.sna_gg_bs.financial_assets.total.a"):
         from stats.ingest.seed_registry import GG_ACC_ROWS, GG_BS_ROWS
         subs = ("cg", "lg", "ssf")
         bad = []
@@ -295,7 +322,7 @@ def main() -> int:
                       - (_v(f"cao.sna_gg.primary_balance.{s2}.fy", y) or 1e9)) > 0.15]
         chk(not bad, f"第12弾 付表 6：PB＝純貸出＋支払利子（FISIM 調整前）−受取利子（FISIM 調整前）＝原表の注 4{bad[:4]}")
     # 第 8 弾 第 2 便（2026-08-24）：資金循環／固定資本ストック／雇用形態／社会保障給付費の恒等式
-    if _vs.has_data("boj.fof.stock.assets_total.hh.fy"):
+    if need("boj.fof.stock.assets_total.hh.fy"):
         bad = []
         for sec in ("nfc", "fin", "gg", "hh", "npish", "row"):
             for kind in ("stock", "flow"):
@@ -337,18 +364,18 @@ def main() -> int:
             "F-1 資金循環：`_memo` の項目が合計の構成要素（LI）に含まれていない")
         nlf = [_v(f"cao.sna2020.net_lending_financial.{s2}.fy", "FY2024") for s2 in ("nfc", "fin", "gg", "hh", "npish", "row")]
         chk(all(x is not None for x in nlf) and abs(sum(nlf)) < 0.6, "付表 18 の２．（金融勘定側）＝6 部門の和が 0（資金循環の恒等式）")
-    if _vs.has_data("cao.sna_fcs.total.total.a"):
+    if need("cao.sna_fcs.total.total.a"):
         bad = [y for y in ("2024", "2010", "1994")
                if abs((_v("cao.sna_fcs.total.total.a", y) or 0) - sum(_v(f"cao.sna_fcs.total.{s2}.a", y) or 0 for s2 in ("nfc", "fin", "gg", "hh", "npish"))) > 0.6
                or abs((_v("cao.sna_fcs.total.nfc.a", y) or 0) - (_v("cao.sna_fcs.total.nfc_private.a", y) or 0) - (_v("cao.sna_fcs.total.nfc_public.a", y) or 0)) > 0.6]
         chk(not bad, f"F-4 固定資本ストック：一国計＝Σ制度部門・非金融法人＝民間＋公的{bad}")
         chk(abs((_v("cao.sna_fcs.total.total.a", "2024") or 0) - (_v("cao.sna2020.stock.fixed_assets.total.a", "2024") or 0)) < 0.6,
             "F-4 固定資本ストックの一国計＝ストック編 付表（cao.sna2020.stock.fixed_assets.total）＝別表と一致")
-    if _vs.has_data("soumu.roudou_emp.regular.total.q"):
+    if need("soumu.roudou_emp.regular.total.q"):
         bad = [q for q in ("2024Q4", "2015Q1", "2002Q1")
                if abs((_v("soumu.roudou_emp.employees_ex_officers.total.q", q) or 0) - (_v("soumu.roudou_emp.regular.total.q", q) or 0) - (_v("soumu.roudou_emp.nonregular.total.q", q) or 0)) > 1.5]
         chk(not bad, f"F-6 労調：役員を除く雇用者＝正規＋非正規（万人の丸めで ±1）{bad}")
-    if _vs.has_data("ipss.shaho.benefits.total.fy"):
+    if need("ipss.shaho.benefits.total.fy"):
         bad = [y for y in ("FY2023", "FY2010", "FY1990")
                if abs((_v("ipss.shaho.benefits.total.fy", y) or 0) - sum(_v(f"ipss.shaho.benefits.{m}.fy", y) or 0 for m in ("medical", "pension", "welfare_other"))) > 1.5]
         chk(not bad, f"F-7 社会保障給付費：合計＝医療＋年金＋福祉その他（介護は再掲＝足さない）{bad}")
@@ -366,7 +393,9 @@ def main() -> int:
     from stats.core.dim_vocab import STAN_ACTIVITY, dim_label
     from stats.core.values import ValueStore
     vs = ValueStore()
-    ident = [slug for slug, _c, _n, m in STAN_ACTIVITY if m == "identity" and vs.has_data(f"oecd.stan.value_added.{slug}.a.cty")]
+    _ident_all = [slug for slug, _c, _n, m in STAN_ACTIVITY if m == "identity"]
+    need(f"oecd.stan.value_added.{_ident_all[0]}.a.cty")   # 値が無ければ下の検査は空回り＝SKIP として数える
+    ident = [slug for slug in _ident_all if vs.has_data(f"oecd.stan.value_added.{slug}.a.cty")]
     bad = []
     for slug in ident:
         a = vs.lookup(f"oecd.stan.value_added.{slug}.a.cty", "2024", "JPN"); b = vs.lookup(f"cao.sna_activity.gdp.{slug}.a", "2024", "JP")
@@ -511,6 +540,34 @@ def main() -> int:
     chk(sheet_to_fy("参考") is None and sheet_to_fy("R") is None and sheet_to_fy("令和123") is None, "mof_zaisei シート名：表記外は None")
     chk(cell_str("1,234") == "1234" and cell_str(1234) == "1234" and cell_str(12.0) == "12" and cell_str(12.5) == "12.5"
         and cell_str("－") is None and cell_str(True) is None and cell_str(None) is None, "mof_zaisei セル→文字列（桁区切り除去・整数化・非数値は None）")
+    # mof_zaisei year_sheets（第19表(2)・第20表）：手元に原本があるときだけ、解析が 1 つに確定して値ストアと一致することを固定する
+    # （原本 cache/ は S3 に上げない＝データ復元だけのクローンでは省略・STRICT のスキップには数えない）
+    import glob as _glob
+    from pathlib import Path as _P
+    from stats.ingest.mof_zaisei import ingest_year_sheets as _iys
+    _zs = [x for x in reg.series.values() if x.accessor.get("type") == "mof_zaisei" and x.accessor.get("layout") == "year_sheets"]
+    _raw = {f: sorted(_glob.glob(str(DATA_DIR / "cache" / "mof" / "*" / f))) for f in {x.accessor["file"] for x in _zs}}
+    if _zs and all(_raw.values()):
+        import openpyxl as _ox
+        _wbs, _errs, _n = {}, [], 0
+        for x in _zs:
+            cp = _P(_raw[x.accessor["file"]][-1]).resolve()
+            wb = _wbs.setdefault(cp, _ox.load_workbook(cp, data_only=True))
+            try:
+                recs = _iys(x, wb, cp, "test")
+                for r in recs:
+                    _n += 1
+                    got = _vs.lookup(x.series_id, r.period, "JP")
+                    if got is None or got.value != r.value:
+                        _errs.append(f"{x.series_id}/{r.period}")
+                # 逆向きも＝値ストアにあって解析に無い期（解析が黙って期を落とす）を拾う
+                lost = sorted(set(_vs.all_periods(x.series_id)) - {r.period for r in recs})
+                _errs += [f"{x.series_id}/{p}（解析に無い）" for p in lost]
+            except Exception as e:  # noqa: BLE001
+                _errs.append(f"{x.series_id}: {e}")
+        chk(not _errs and _n > 0, f"mof_zaisei year_sheets：原本の解析が 1 つに確定し値ストアと双方向で一致（{len(_zs)} 系列・{_n} 値）{_errs[:3]}")
+    else:
+        print("  - （mof_zaisei year_sheets の原本が手元に無い＝原本との照合は省略）")
     from stats.ingest.soumu_hakusho import wareki_fy, _val
     chk(wareki_fy("令和8年度") == "FY2026" and wareki_fy("平成26年度") == "FY2014" and wareki_fy("令和元年度") == "FY2019" and wareki_fy("令和 8 年度") == "FY2026",
         "soumu_hakusho 和暦年度→FY")
@@ -588,6 +645,20 @@ def main() -> int:
         and carry_pending("2026-10-05", None, "2026-09-01", "2026-10-06", stateless=True) == "2026-10-05",
         "取込待ち：probe 失敗（changed=None）の日は前回の状態を持ち越す")
     from stats.ops.freshness import _jst_date
+    # 更新の配線の網羅（2026-10-09）：registered（派生でない）の全 accessor.type が refresh の再取込か理由つきの除外の
+    # どちらかに載り、freshness の probe が unsupported を出さない（取得元を足して配線を忘れると、更新したつもりで古いまま
+    # ＝esri_xlsx_yearsheets の 439 系列が漏れていた）。ingest モジュールが TYPES を持つなら、その type を扱うこと。
+    import importlib
+    from stats.ops.freshness import EXCLUDED_TYPES, build_probes
+    from stats.ops.refresh import TYPE_TO_MODULE
+    reg_types = {s.accessor.get("type", "") for s in reg.series.values() if s.status == "registered" and not s.is_derived}
+    unwired = sorted(reg_types - set(TYPE_TO_MODULE) - set(EXCLUDED_TYPES))
+    chk(not unwired, f"refresh の配線の網羅：registered の type は TYPE_TO_MODULE か除外表に載る（未配線 {unwired or 'なし'}）")
+    mis = sorted(t for t, m in TYPE_TO_MODULE.items()
+                 if (ty := getattr(importlib.import_module(f"stats.ingest.{m}"), "TYPES", None)) and t not in ty)
+    chk(not mis, f"refresh の配線先の ingest が その type を扱う（食い違い {mis or 'なし'}）")
+    unsup = sorted(k for k, pr in build_probes(reg).items() if pr["kind"] == "unsupported")
+    chk(not unsup, f"freshness の probe の網羅：unsupported を出さない（{unsup or 'なし'}）")
     chk(_jst_date("Fri, 02 Oct 2026 01:37:52 GMT") == "2026-10-02" and _jst_date("Thu, 01 Oct 2026 16:00:00 GMT") == "2026-10-02"
         and _jst_date("") == "", "取込待ち：検知の日は Last-Modified の JST の日付（retrieved_at と同じ物差し）")
     # ③ 時間で壊れない評価問：負例の未来の期は収録の最終期からの相対（@last+N）で書く
@@ -604,7 +675,11 @@ def main() -> int:
     rolling = [c["id"] for c in _load_eval("exact_match.jsonl")
                if ((c.get("source_locator") or {}).get("type"), (c.get("source_locator") or {}).get("file")) in ROLLING_LOCATORS]
     chk(not rolling, f"正例が「当月分」など中身が入れ替わるファイルを参照しない（{rolling or 'なし'}）")
-    print("総合: PASS ✅" if ok else "総合: FAIL ✗")
+    strict = os.environ.get("STATS_TEST_STRICT") == "1"
+    if strict and skipped:
+        print(f"  ✗ STATS_TEST_STRICT=1：値ストア依存の検査のスキップ {len(skipped)} 件（データの復元・代表系列の名前を確かめる）")
+        ok = False
+    print(f"総合: {'PASS ✅' if ok else 'FAIL ✗'}（検査 {n_checks}・スキップ {len(skipped)}{'・STRICT' if strict else ''}）")
     return 0 if ok else 1
 
 

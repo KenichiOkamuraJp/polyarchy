@@ -1,9 +1,12 @@
 # /var/log/polyarchy/*.log のローテーション（CW Logs へ転送済みの分の箱側の掃除）。
 # copytruncate＝CW agent が同じ fd を読み続けても安全な方式。
+# 保持＝30 日（アクセスログは user=<hash> を含む＝プライバシーポリシー「接続ログは通常 30 日以内」・CW Logs の保持と同じ）。
+#   旧設定 weekly＋rotate 4 は最長約 5 週残った（2026-10-09 是正）。journal 側の保持は journald-polyarchy.conf。
 /var/log/polyarchy/*.log {
-    weekly
-    rotate 4
+    daily
+    rotate 30
     compress
+    delaycompress
     missingok
     notifempty
     copytruncate

@@ -39,56 +39,9 @@ cp .env.example .env
    ```
    （旧 Chroma 取込 CLI `recommendations.ingest.ingest` はバッチ2 段4〔2026-08-28〕で削除＝
    同モジュールは load_documents 等の共有部のみ）
-3. 質問応答は MCP サーバから（Web UI＝`app.py`／`chat_app.py` は **2026-09-02 廃止（B13・MCP 特化）＝コード残置・ローカル検証用のみ**）。
-   （旧 CLI `recommendations.serving.query` は Chroma 専用のため `recommendations/archive/` に退避。生成プロンプトは `recommendations/core/prompts.py`）
-
-### Web UI（Phase 13・多段対応 参照 UI）— **廃止（2026-09-02・B13）。コード残置・ローカル検証用。以下は当時の記述**
-
-設問の形に応じて **多段オーケストレーション**（`recommendations.core.multistage.orchestrate`）で検索戦略を
-自動選択する Streamlit UI。検索は本番の `PolicySearchService`（層=公開固定＋フェイルクローズ）、
-生成は本番と同一の SYSTEM_PROMPT＋Anthropic：
-
-```bash
-conda activate polyarchy
-cd /path/to/polyarchy   # リポジトリ root
-streamlit run recommendations/serving/app.py --server.headless true   # ブラウザで http://localhost:8501
-```
-
-- **検索戦略の自動切替**（多段が発火）：
-  - 「**各団体は**〜」「複数団体名指し」→ **coverage**（団体別 fan-out・単一検索の1団体偏りを回避）
-  - 「〜を**最初に/唯一/最も**」→ **aggregation**（全団体走査→argmin か健全な棄却・**判定は決定論＝無料**）
-  - 「**経団連は**〜」→ **targeted**（その団体に絞る）／それ以外 → **baseline**（通常の関連度検索）
-- 集約型は判定パネル（棄却/確定＋各団体の最古言及テーブル＋根拠）を提示。集約以外は多段が選んだ
-  チャンクを compact 合成し、出典（団体・日付・ページ・原文リンク・チャンク本文）を併記。棄却語を
-  含む回答は警告バナーで明示。
-- **層＝公開固定＋フェイルクローズ**（`PolicySearchService`）。機密は UI から広げる術がない
-  （Phase 8 の「機密層 opt-in」は PoC で撤去。多人数化で価値が増す物理境界）。
-- **利用者質問の捕捉（第2チャネル）**：app.py も `capture_query(source="app")` で実質問を追記 JSONL に
-  残す（共有層 `search_api` には置かない＝評価問の非混入）。Phase 12 の器の燃料。
-- モデル・DB・BM25 索引・リランカーは `@st.cache_resource` で起動時1回だけロードし常駐。
-- サイドバーで団体・日付・分野タグの絞り込み（多段に primitive で渡す）。
-- 回答生成（集約型以外）は Anthropic API のクレジットを消費する（動作確認は少数クエリで）。
-- 配布・ホスティング・認証の現行設計＝`deploy/PROD_MIGRATION.md` §2.5・`docs/個人認証_案B設計.md`。
-- ※ `st.table` は使わない（pyarrow/mimalloc が Streamlit スレッドで segfault するため Markdown 表で描画）。
-  `.streamlit/config.toml` で fileWatcher 無効化済み。
-
-### 対話UI（Phase 13+・エージェント型 chat）— **廃止（2026-09-02・B13）。コード残置。以下は当時の記述**
-
-`app.py` の一発QAに対し、**Claude 自身に検索ツールを多段で叩かせる会話UI**（`chat_app.py`）。
-ドッグフーディングで「実用レベル」と評価された MCP エージェント体験を Streamlit チャットに載せたもの。
-
-```bash
-conda activate polyarchy && cd /path/to/polyarchy   # リポジトリ root
-streamlit run recommendations/serving/chat_app.py --server.headless true   # http://localhost:8502
-```
-
-- **会話しながら多段検索**：追い質問・掘り下げ・横断を Claude が自律的に判断（1発話に複数回検索）。
-  会話履歴を保持し、「その目標について詳しく」等の文脈依存の追い質問にも答える。
-- `st.status` に検索の経緯（🔎 各検索）をライブ表示。回答は出典（団体/日付/ページ/原文リンク/本文）付き。
-- 検索は `PolicySearchService`（**層=公開固定＋フェイルクローズ**）。外に出るのは生成のみ。各**ユーザー発話**を
-  `capture_query(source="app_chat")` で捕捉（LLM 内部の検索クエリは捕捉しない）。
-- **クレジット**：1発話に複数回の LLM／ツール呼び出し（1発話 ~20–100秒・上限 `MAX_TOOL_CALLS`）。素早い単発は
-  `app.py`（決定論・軽量）、じっくり対話は `chat_app.py`、と使い分け。`.streamlit/config.toml` を共用。
+3. 質問応答は MCP サーバから（下記）。参照用の Web UI（Streamlit の `serving/app.py`・`chat_app.py`・`_ui.py`）は
+   2026-09-02 に廃止（B13・MCP 特化）し、2026-10-09 にコードも削除した（廃止後も取得元を足すたびに手で直していた）。
+   削除前の版は公開リポジトリの履歴 `dfe943d` で参照できる。生成プロンプト（生成込み eval 用）は `recommendations/core/prompts.py`。
 
 ### MCP サーバ（Phase 10・検索のツール化 / retrieval-as-a-tool）
 
@@ -159,15 +112,13 @@ recommendations/                       政策主張DB（フォルダ名＝コー
 ├── core/                     検索スタック
 │   ├── config.py             設定値（パス・コレクション名・本番モデル）
 │   ├── orgs.py               団体の 1 表（コード・言及語・表示名・正式名・issuer）＝全モジュールが参照
-│   ├── prompts.py            生成（回答合成）用 SYSTEM_PROMPT（app.py と eval が共用）
+│   ├── prompts.py            生成（回答合成）用 SYSTEM_PROMPT（生成込み eval＝eval/full.py が使う）
 │   ├── embeddings.py / rerankers.py / hybrid.py / qdrant_bm25.py / qdrant_store.py / filters.py / multiquery.py
 │   ├── search_api.py         本番検索を薄く包む共有サービス（層は公開固定＋フェイルクローズ）
 │   ├── multistage.py         多段検索オーケストレータ（団体 fan-out / 集約走査 / 棄却）
 │   └── query_capture.py      実クエリの永続捕捉（レコード形は recommendations 固有・器は polyarchy_common.capture）
 ├── serving/                  入口
-│   ├── mcp_server.py         MCP サーバ（search_policy_docs / sweep_policy_docs / list_orgs・stdio と Streamable HTTP）
-│   ├── chat_app.py / app.py  Streamlit UI（廃止 2026-09-02・残置）
-│   └── _ui.py                2 つの UI の共通部品（表示名・日付変換・出典描画）
+│   └── mcp_server.py         MCP サーバ（search_policy_docs / sweep_policy_docs / list_orgs・stdio と Streamable HTTP）
 ├── ingest/                   収集・取込
 │   ├── collect.py            収集（5 団体アダプタ＝index 関数＋正規化・取得〜catalog 行は fetch_and_record に共通化）
 │   ├── chunking.py / ingest.py（文書ローダ共有部）/ qdrant_ingest.py（取込の本線＝doc 単位増分）
@@ -180,10 +131,9 @@ recommendations/                       政策主張DB（フォルダ名＝コー
 │   ├── multistage_eval.py / mcp_smoke.py / mcp_capture_test.py / mcp_layer_gate_test.py
 │   ├── evalset_gate.py / phase12_pipeline.py（トリアージ→eval 昇華）
 │   └── multistage_agent_demo.py
-├── archive/                  過去フェーズの記録（本線から未参照・実行保証なし。一覧は archive/README.md）
 ├── data/                     pdfs / catalog.csv / eval / query_log（大物は git 外・S3 管理）
 ├── .env.example              API キーのテンプレ（実体の .env は git 管理外・recommendations/ 直下）
-└── （Streamlit 設定はリポジトリ root の .streamlit/config.toml＝cwd=root で起動）
+└── （リポジトリ root の .streamlit/config.toml は廃止した Web UI の設定＝配備側の旧構成の再現用に残る）
 ```
 
 共通契約（`../polyarchy_common/`）：メタデータ共通コア（層の不変条件）・分野タグ21分類・`logsetup`（日本語ログ＋stdio 保護）・
@@ -200,10 +150,10 @@ recommendations/                       政策主張DB（フォルダ名＝コー
 | 埋め込みモデル | `ruri_v3_310m_pfx`（本番・ローカル）| 格納/検索の本番埋め込み。境界検出のみ `text-embedding-3-small` |
 | LLM | `claude-sonnet-4-6` | 必要に応じて変更 |
 | チャンク戦略 | `semantic`（構造的分割）| Phase 2 比較で最良。実体は `recommendations/ingest/chunking.py` |
-| コレクション | `policy_claims_v7`（Qdrant・既定） | 本線＝約3,700文書/187k チャンク（2026-09 時点）。切り戻しは Qdrant 内の `COLLECTION_NAME=policy_claims_v6`（80k）。Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃（v5 データは S3 と退避先に保管のみ） |
+| コレクション | `policy_claims_v7`（Qdrant・既定） | 本線＝約3,700文書/187k チャンク（2026-09 時点）。切り戻しは自動適用の退避と書き戻し（deploy/RUNBOOK_OPS.md §5）＝v6（80k）は B26 以降の評価問を満たせず切り戻し先ではない。Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃（v5 データは S3 と退避先に保管のみ） |
 | 検索件数 | 5 | top-K |
 
-> チャンクサイズ(`CHUNK_SIZE`/`CHUNK_OVERLAP`)は固定長戦略を使う場合のみ有効な後方互換値。
+> チャンクの大きさ＝semantic 分割の後段で 1 チャンク最大 1,024 トークン（`ingest/chunking.py` の MAX_CHUNK_TOKENS）。返却時の本文は `text_chars`（既定 1,200 字）で切る。
 
 ## 評価・実験
 

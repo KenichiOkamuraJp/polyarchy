@@ -11,6 +11,7 @@
 #                （数秒の断。通常のデータ更新では config が変わらない＝入口を揺らさない。2026-09-22 staging 実測＝再起動しないと
 #                 新ホストは 25 分以上 404 のまま・切り戻し経路でも同じ判定）
 #   ③ 検証   ＝qdrant 応答待ち → 箱上 smoke（recommendations＋stats＋companies〔有効時〕＋deliberations〔有効時〕）
+#              → 稼働中の各サービスの /healthz が 200（配った形＝unit・env・HTTP の待受・認証の装着を通るのはこちらだけ）
 #   ④ 判定   ＝PASS：マーク更新（status=APPLIED）・メトリクス dataapply=1
 #              FAIL：**自動切り戻し**＝停止 → ①の退避を書き戻し（qdrant はミラー）→ prev tar 再展開＋pip → 再起動 → smoke 再実行
 #                    → マーク status=ROLLED_BACK（このマニフェストは再試行しない＝15 分毎の再適用ループを防ぐ）
@@ -159,7 +160,18 @@ svc_start() { # qdrant → 応答待ち（最長 300 秒）→ アプリ → 入
   reload_ingress
   [[ "$ok" == 1 ]]
 }
-smoke() { # 箱上 smoke（recommendations＋stats＋companies〔有効時〕）。戻り値＝合否。訓練フラグがあれば FAIL 扱い
+# 稼働中のサービス（systemd の unit・サービスごとの env・HTTP の待受・install_auth）は stdio の smoke を通らない＝
+#   /healthz（health_metric.sh と同じポート）が 200 を返すまで待つ。Type=simple の restart は起動直後に落ちても
+#   成功を返すので、ここで初めて「配った形で起動した」と言える（2026-10-09）。mcp はモデル読込で遅い＝最長 300 秒。
+wait_healthz() { # $1=名前 $2=port → 0/1
+  for _ in $(seq 1 60); do
+    curl -fsS -m 5 "http://127.0.0.1:$2/healthz" >/dev/null 2>&1 && return 0
+    sleep 5
+  done
+  warn "$1 の /healthz（:$2）が 300 秒以内に 200 を返さない（unit・env・認証の配線を journalctl -u で確認）"
+  return 1
+}
+smoke() { # 箱上 smoke（recommendations＋stats＋companies〔有効時〕＋deliberations〔有効時〕）＋稼働中の /healthz。戻り値＝合否。訓練フラグがあれば FAIL 扱い
   local ok=1
   sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR HF_HOME=$HF_HOME COLLECTION_NAME=$COLLECTION_NAME VECTOR_BACKEND=${VECTOR_BACKEND:-qdrant} $PY -m recommendations.eval.mcp_smoke" || ok=0
   sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR $PY -m stats.eval.mcp_smoke" || ok=0
@@ -169,6 +181,10 @@ smoke() { # 箱上 smoke（recommendations＋stats＋companies〔有効時〕）
   if [[ "$DELIB_ON" == 1 ]]; then
     sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR HF_HOME=$HF_HOME DELIB_QDRANT_URL=http://127.0.0.1:6340 $PY -m deliberations.eval.mcp_smoke" || ok=0
   fi
+  wait_healthz mcp 8765 || ok=0
+  if [[ "${ENABLE_STATS_APP:-false}" == "true" ]]; then wait_healthz stats 8766 || ok=0; fi
+  if [[ "$COMPANIES_ON" == 1 ]]; then wait_healthz companies 8767 || ok=0; fi
+  if [[ "$DELIB_ON" == 1 ]]; then wait_healthz deliberations 8768 || ok=0; fi
   if [[ -e "$DRILL_FLAG" ]]; then warn "訓練フラグ $DRILL_FLAG あり＝smoke を FAIL 扱いにする（演習）"; ok=0; fi
   [[ "$ok" == 1 ]]
 }
@@ -193,7 +209,8 @@ PYEOF
 
 # ── ① 退避（1 回目＝稼働中・大物の転送を先に済ませる）────────────────────────
 log "① 退避（rsync → ${RB_DIR}）※この間サービスは稼働中。②以降の停止が 3 分を超えると health アラームが ALARM→OK と 1 往復する（想定内・RUNBOOK §5）"
-fail_early() { warn "①退避段で失敗（$1）＝サービスは無停止のまま中止。原因（ディスク・S3 権限）を直せば次の 15 分で再試行"; metric 0; exit 1; }
+# 中止でも dataapply=0 を送る（同じアラームで気づく＝RUNBOOK §5）。マークは書かない＝ダッシュボードは稼働中の版のまま（事実どおり）。
+fail_early() { warn "①退避段で失敗（$1）＝サービスは無停止のまま中止（切り戻しではない）。原因（ディスク・S3 権限）を直せば次の 15 分で再試行"; metric 0; exit 1; }
 snapshot_data || fail_early "rsync"
 if [[ -f "$REL_DIR/current.tar.gz" ]]; then cp -f "$REL_DIR/current.tar.gz" "$REL_DIR/prev.tar.gz" || fail_early "prev tar"; fi
 aws s3 cp "s3://$S3_BUCKET/$CODE_S3_KEY" "$REL_DIR/next.tar.gz" --region "$AWS_REGION" --quiet || fail_early "code tar 取得"
@@ -206,12 +223,13 @@ apply_new() { # 各段は失敗したら即 return 1（set +e の下で呼ぶた
   extract_code "$REL_DIR/next.tar.gz" || { warn "tar 再展開に失敗"; return 1; }
   # ★Qdrant ストレージは新旧セグメント混在を許せない＝ミラー同期（--delete）を apply が自前で行う
   #   （bootstrap ⑥ の --delete なし同期は捕捉ログ温存のための仕様＝qdrant には適用不可。2026-09-03 実測の恒久対策）
-  aws s3 sync "s3://$S3_BUCKET/data/qdrant/" "$APP_DIR/data/qdrant/" --delete --region "$AWS_REGION" --only-show-errors \
+  #   --exact-timestamps＝大きさが同じで中身の違うファイル（固定長のページ等・箱の qdrant が実行中に触ったもの）も取り直す（B28）
+  aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/qdrant/" "$APP_DIR/data/qdrant/" --delete --exact-timestamps --region "$AWS_REGION" --only-show-errors \
     || { warn "qdrant 同期に失敗"; return 1; }
   chown -R polyarchy:polyarchy "$APP_DIR/data"
   bash "$REPO_DIR/deploy/bootstrap/bootstrap.sh" || { warn "bootstrap 再走行に失敗"; return 1; }
   svc_start || { warn "qdrant が起動しない"; return 1; }
-  log "③ 箱上 smoke（recommendations＋stats＋companies〔有効時〕）"
+  log "③ 箱上 smoke（recommendations＋stats＋companies〔有効時〕＋deliberations〔有効時〕）＋稼働中の /healthz"
   smoke
 }
 set +e

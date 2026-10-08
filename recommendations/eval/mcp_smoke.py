@@ -69,6 +69,18 @@ async def main() -> int:
             has_layer = any("layer" in p.lower() or "機密" in p for p in props)
             print(f"    layer 引数の有無: {'あり(!!)' if has_layer else 'なし（機密は要求不可）'}")
             ok = ok and not has_layer
+            # 1b) 入口の契約（ルート README §2）＝ツール集合の完全一致・全ツールに layer 引数なし・title・readOnlyHint
+            #     （companies/eval/mcp_smoke.py と同じ検査。2026-10-09 までは 2 本の layer しか見ていなかった）
+            contract = []
+            if set(names) != {"search_policy_docs", "sweep_policy_docs", "list_orgs"}:
+                contract.append(f"ツール集合が違う: {sorted(names)}")
+            for t in tools.tools:
+                if any("layer" in p.lower() or "機密" in p for p in (t.inputSchema or {}).get("properties", {})):
+                    contract.append(f"{t.name} に layer 引数がある（層は公開固定）")
+                if not (t.annotations and t.annotations.readOnlyHint) or not t.title:
+                    contract.append(f"{t.name} に title／readOnlyHint が無い")
+            print(f"[1b] 入口の契約: {'OK' if not contract else contract}")
+            ok = ok and not contract
 
             # 2) 通常検索（一発）---------------------------------------------
             q = "最低賃金の全国加重平均1500円への引き上げについて各団体の立場は？"

@@ -12,11 +12,15 @@
 # ═══════════════════════════════════════════════════════════════════════════
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-# 公開ホスト（healthz の外形確認用）。2026-09-02 ドメイン移行後の現行。
-MCP_HOST="${MCP_HOST:-recommendations.polyarchy.net}"
-STATS_HOST="${STATS_HOST:-stats.polyarchy.net}"
-COMPANIES_HOST="${COMPANIES_HOST:-}"   # companies を有効にした環境だけ指定（例 companies.polyarchy.net）
-DELIBERATIONS_HOST="${DELIBERATIONS_HOST:-}"   # deliberations を有効にした環境だけ指定（例 deliberations.polyarchy.net）
+# 公開ホスト（healthz の外形確認用）＝対象環境の env ファイル（deploy/env/<env>.env）の TUNNEL_HOST_<SVC> から組む
+# （load_env の後に hosts_from_env）。2026-10-09 までは staging のホストを既定に固定しており、
+# `status prod` が staging の /healthz を prod の結果として表示した＝env から組めないものは確かめない（表示で明示）。
+hosts_from_env() {
+  MCP_HOST="${TUNNEL_HOST_MCP:-}"
+  STATS_HOST="${TUNNEL_HOST_STATS:-}"
+  COMPANIES_HOST="${TUNNEL_HOST_COMPANIES:-}"
+  DELIBERATIONS_HOST="${TUNNEL_HOST_DELIBERATIONS:-}"
+}
 
 # ── SSM でコマンド（★ダブルクオートを含めない単一文字列・; 連結可）を実行し stdout を返す ──
 ssm_run() { # $1=instance-id  $2=command
@@ -33,25 +37,24 @@ ssm_run() { # $1=instance-id  $2=command
   aws ssm get-command-invocation --command-id "$cid" --instance-id "$iid" --query 'StandardOutputContent' --output text 2>/dev/null
 }
 
-verify_public() { # /healthz は認証不要（WAF 除外）＝origin 生存の外形確認
-  local m s
-  m=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$MCP_HOST/healthz" 2>/dev/null || echo ERR)
-  s=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$STATS_HOST/healthz" 2>/dev/null || echo ERR)
-  log "公開URL: recommendations($MCP_HOST)/healthz=$m  stats($STATS_HOST)/healthz=$s  （200=疎通OK）"
-  if [[ -n "$COMPANIES_HOST" ]]; then
-    c=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$COMPANIES_HOST/healthz" 2>/dev/null || echo ERR)
-    log "公開URL: companies($COMPANIES_HOST)/healthz=$c"
-  fi
-  if [[ -n "$DELIBERATIONS_HOST" ]]; then
-    d=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$DELIBERATIONS_HOST/healthz" 2>/dev/null || echo ERR)
-    log "公開URL: deliberations($DELIBERATIONS_HOST)/healthz=$d"
-  fi
+verify_public() { # /healthz は認証不要（WAF 除外）＝origin 生存の外形確認（ホストは対象環境の env から＝hosts_from_env）
+  local pair name var host code
+  for pair in recommendations:MCP_HOST stats:STATS_HOST companies:COMPANIES_HOST deliberations:DELIBERATIONS_HOST; do
+    name="${pair%%:*}"; var="${pair#*:}"; host="${!var:-}"
+    if [[ -z "$host" ]]; then
+      log "公開URL: ${name}＝env に TUNNEL_HOST が無い（公開していない・または env の不備）＝確かめない"
+      continue
+    fi
+    code=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$host/healthz" 2>/dev/null || echo ERR)
+    log "公開URL: ${name}($host)/healthz=${code}（200=疎通OK）"
+  done
 }
 
 # ── サブコマンド ───────────────────────────────────────────────────────────────
 cmd_status() {
   local name="${1:-staging}"
   load_env "$name"
+  hosts_from_env
   local iid; iid=$(instance_id)
   echo "── EC2($name) iid=${iid:-なし} ──"
   if [[ -n "$iid" ]]; then

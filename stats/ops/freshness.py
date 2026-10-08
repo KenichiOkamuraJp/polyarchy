@@ -6,7 +6,9 @@ freshness＝取得元に新しいデータが出たかの**存否確認**（読�
   前回値（stats/data/cache/freshness.json・git 外）と比較＝「原本が更新された可能性」を検知。
 - API 系＝e-Stat：getMetaInfo の TIME 最大コードを収録 last_period と比較（要 ESTAT_APP_ID）。
   IMF DataMapper／世銀：最新 period を取得して比較。OECD：lastNObservations=1 で最新 period。
-- 判定は保守的：分からないものは changed=None（probe_error / unsupported）で正直に返す。
+- 判定は保守的：分からないものは changed=None で正直に返す。行の status＝ok／error（probe 失敗・解析失敗・
+  unsupported）／config_missing（e-Stat の appId なし）／excluded（EXCLUDED_TYPES＝理由つきで自動確認の対象外）。
+  失敗の数え方は status で行う（note の文言で判定しない＝2026-10-09）。
 - changed は「前回の確認からの差分」＝日次で回すと翌日には消える。取り込まれずに溜まっている分は **pending**
   （取込待ち）で見る＝変化を検知した日（pending_since）を状態に残し、その日以降に取り込まれる（その dataset の値の
   retrieved_at が追いつく）まで消さない。収録と取得元を直接比べる型（QE・見通し・総務省の次版・国際機関の最新年）は
@@ -40,6 +42,17 @@ STATE_PATH = CACHE_DIR / "freshness.json"
 TIMEOUT = 60
 # 収録と取得元を直接比べる型（状態ファイルの差分ではない）＝pending は今の比較だけで決める
 STATELESS_KINDS = ("qe", "mitoshi", "soumu_next", "imf", "wb", "oecd")
+# 自動の更新確認・再取込（stats.ops.refresh）から理由つきで外す accessor.type。ここに無い registered の type は、
+# refresh.TYPE_TO_MODULE と build_probes の両方に配線する（test_core が網羅を検査する＝取得元を足して配線を忘れると落ちる）。
+EXCLUDED_TYPES = {
+    "pdf_hakusho_sme": "中小企業白書の PDF は私用領域の文字の写像が年版で変わり得る＝年版ごとに手で確かめて取り込む",
+}
+
+
+def _fail(row: dict, note: str, status: str = "error") -> None:
+    """probe の失敗を行に刻む（status で数える＝note の文言は表示用）。"""
+    row["note"] = note
+    row["status"] = status
 
 
 def mitoshi_changed(doc: str, held, info: dict) -> bool:
@@ -116,7 +129,7 @@ def build_probes(registry: Registry) -> dict:
             # QE は公表回ごとに別 URL＝固定 URL の HEAD では新公表を検知できない（第 9 弾 段 3）。
             # 年次索引から最新公表回を発見して収録 edition と比較する（適用は stats.ops.qe_update）。
             p["kind"] = "qe"; p["edition"] = str(a.get("edition", ""))
-        elif t in ("esri_xlsx", "esri_xls"):
+        elif t in ("esri_xlsx", "esri_xls", "esri_xlsx_yearsheets"):
             f = str(a.get("file", ""))
             if "{Y}" in f:
                 f = f.replace("{Y}", str(a.get("edition", "")))
@@ -133,7 +146,10 @@ def build_probes(registry: Registry) -> dict:
             # BLS API v1＝当年 1 リクエストで最新期を見る（日次 25 リクエスト枠を消費＝dataset 単位で 1 回）
             p["kind"] = "bls"; p.setdefault("codes", set()).add(str(a.get("series", "")))
         elif t == "eurostat_api":
-            p["kind"] = "eurostat"; p.setdefault("datasets_q", set()).add(str(a.get("dataset", "")))
+            # dataset ごとに公表の鮮度が違う（HICP は止まり・失業率は現行＝2026-08-29 実測）＝全 dataset を見る。
+            # クエリは ingest と同じ組み立て（eurostat.API＋seed の params・geo の先頭 1 国）＝URL を複製しない
+            p["kind"] = "eurostat"
+            p.setdefault("queries", {})[str(a.get("dataset", ""))] = (dict(a.get("params") or {}), (a.get("geo") or ["DE"])[0])
         elif t == "boj_flat":
             p["kind"] = "head"; p["urls"].add(boj_flat.BASE + str(a.get("zip", "")))
         elif t == "mof_csv":
@@ -146,8 +162,6 @@ def build_probes(registry: Registry) -> dict:
         elif t == "soumu_tokitsu_xlsx":
             # 統一的な基準による財務書類（第 12 弾 第 4 便）＝新しい年版は索引に頁が足される（年版→ファイル番号は ingest の FILES）
             p["kind"] = "head"; p["urls"].add(str(s.source_url))
-        elif t == "estat_file":
-            p["kind"] = "head"; p["urls"].add(str(a.get("file", "")))
         elif t == "estat_catalog_xlsx":
             # e-Stat カタログ経由（一般職業紹介状況）＝最新データセットの SURVEY_DATE／RELEASE_DATE が signal（第 11 弾 第 6 便）
             p["kind"] = "estat_catalog"; p["catalog"] = (str(a.get("catalog_word", "")), str(a.get("title_prefix", "")), int(a.get("table_no", 1)))
@@ -184,6 +198,8 @@ def build_probes(registry: Registry) -> dict:
             p["kind"] = "oecd"; p.setdefault("flows", set()).add(str(a.get("dataflow", "")))
         elif t == "soumu_hakusho":
             p["kind"] = "soumu_next"
+        elif t in EXCLUDED_TYPES:
+            p["kind"] = p["kind"] or "excluded"; p["excluded_reason"] = EXCLUDED_TYPES[t]
         else:
             p["kind"] = p["kind"] or "unsupported"
     return probes
@@ -206,7 +222,7 @@ def stored_last_period(registry: Registry, store: ValueStore, org: str, dataset:
 
 def run_probe(key: str, p: dict, state: dict) -> dict:
     row = {"dataset": p["dataset"], "org": p["org"], "series": p["series"], "type": p["type"],
-           "changed": None, "signal": "", "note": ""}
+           "changed": None, "signal": "", "note": "", "status": "ok"}
     prev = state.get(key, {})
     if p["kind"] == "head":
         sigs, errs = [], []
@@ -220,7 +236,7 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
                 sigs.append(f"{h['last_modified'] or h['etag'] or (('len=' + h['content_length']) if h.get('content_length') else '')}")
         row["signal"] = " / ".join(sorted(set(sigs)))
         if errs:
-            row["note"] = "probe 失敗: " + errs[0]
+            _fail(row, "probe 失敗: " + errs[0])
         if sigs:
             row["changed"] = (prev.get("signal") != row["signal"]) if prev.get("signal") else None
             state[key] = {"signal": row["signal"], "checked_at": datetime.now().isoformat(timespec="seconds")}
@@ -233,10 +249,10 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
             latest = qe_update.discover()
         except Exception as e:  # noqa: BLE001
             latest = None
-            row["note"] = f"probe 失敗: {e}"
+            _fail(row, f"probe 失敗: {e}")
         cur = p.get("edition", "")
         if latest is None:
-            row["note"] = row["note"] or "probe 失敗: 年次索引（toukei_{年}.html）を取得・解析できない"
+            _fail(row, row["note"] or "probe 失敗: 年次索引（toukei_{年}.html）を取得・解析できない")
         else:
             row["changed"] = latest["edition"] != cur
             row["signal"] = f"最新 {latest['edition']}（{latest['label']}）／収録 {cur}"
@@ -262,20 +278,25 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
             if row["changed"] is None:
                 row["note"] = "初回記録（次回から差分判定）"
         except Exception as e:  # noqa: BLE001
-            row["note"] = f"probe 失敗: {e}"
+            _fail(row, f"probe 失敗: {e}")
     elif p["kind"] == "eurostat":
+        import urllib.parse as _up
+
+        from stats.ingest.eurostat import API as EUROSTAT_API
         try:
-            ds0 = sorted(p.get("datasets_q", {""}))[0]
-            d = get_json(f"https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/{ds0}?format=JSON&lang=en&lastTimePeriod=1&geo=DE"
-                         + ("&coicop=CP00&unit=RCH_A" if ds0.startswith("prc_hicp") else "&s_adj=SA&age=TOTAL&sex=T&unit=PC_ACT"))
-            latest = max(d["dimension"]["time"]["category"]["index"].keys()) if d else ""
-            row["signal"] = f"最新 {latest}（{ds0}）"
+            sigs = []
+            for ds, (params, geo) in sorted(p.get("queries", {}).items()):
+                q = [("format", "JSON"), ("lang", "en"), ("lastTimePeriod", "1"), ("geo", geo)] + sorted((k, str(v)) for k, v in params.items())
+                d = get_json(EUROSTAT_API + ds + "?" + _up.urlencode(q))
+                latest = max(d["dimension"]["time"]["category"]["index"].keys()) if d else ""
+                sigs.append(f"最新 {latest}（{ds}）")
+            row["signal"] = " / ".join(sigs)
             row["changed"] = (prev.get("signal") != row["signal"]) if prev.get("signal") else None
             state[key] = {"signal": row["signal"], "checked_at": datetime.now().isoformat(timespec="seconds")}
             if row["changed"] is None:
                 row["note"] = "初回記録（次回から差分判定）"
         except Exception as e:  # noqa: BLE001
-            row["note"] = f"probe 失敗: {e}"
+            _fail(row, f"probe 失敗: {e}")
     elif p["kind"] == "estat_catalog":
         from stats.ingest.shokugyo import discover as _sk_discover
         try:
@@ -287,7 +308,7 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
             if row["changed"] is None:
                 row["note"] = "初回記録（次回から差分判定）"
         except Exception as e:  # noqa: BLE001
-            row["note"] = f"probe 失敗: {e}"
+            _fail(row, f"probe 失敗: {e}")
     elif p["kind"] == "mitoshi":
         from stats.ingest.cao_mitoshi import discover as _mt_discover
         try:
@@ -300,7 +321,7 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
             if row["changed"]:
                 row["note"] = "seed_registry の MITOSHI_EDITION／SHISAN_EDITION を更新して再取込（版が変わると first_period も動く）"
         except Exception as e:  # noqa: BLE001
-            row["note"] = f"probe 失敗: {e}"
+            _fail(row, f"probe 失敗: {e}")
     elif p["kind"] == "cao_gap":
         from stats.ingest.cao_gap import discover_file
         from stats.ingest._base import today as _today
@@ -312,13 +333,13 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
             if row["changed"] is None:
                 row["note"] = "初回記録（次回から差分判定）"
         except Exception as e:  # noqa: BLE001
-            row["note"] = f"probe 失敗: {e}"
+            _fail(row, f"probe 失敗: {e}")
     elif p["kind"] == "estat":
         from stats.ingest.estat import BASE, load_app_id
         try:
             app_id = load_app_id()
         except Exception as e:  # noqa: BLE001
-            row["note"] = f"ESTAT_APP_ID なし（{e}）"
+            _fail(row, f"ESTAT_APP_ID なし（{e}）", status="config_missing")
             return row
         latest = ""
         for sid in sorted(p.get("statsDataIds", set())):
@@ -329,7 +350,7 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
                 cls = tobj["CLASS"] if isinstance(tobj["CLASS"], list) else [tobj["CLASS"]]
                 latest = max(latest, max(str(c.get("@code", "")) for c in cls))
             except Exception:  # noqa: BLE001
-                row["note"] = f"getMetaInfo 解析失敗（statsDataId={sid}）"
+                _fail(row, f"getMetaInfo 解析失敗（statsDataId={sid}）")
         row["signal"] = f"最新 time コード {latest}" if latest else ""
         if latest:
             row["changed"] = prev.get("signal") != row["signal"] if prev.get("signal") else None
@@ -345,7 +366,7 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
                 jp = d["values"][ind]["JPN"]
                 years.append(max(jp.keys()))
             except Exception:  # noqa: BLE001
-                row["note"] = f"IMF 解析失敗（{ind}）"
+                _fail(row, f"IMF 解析失敗（{ind}）")
         if years:
             row["signal"] = f"最新 {max(years)}"  # changed 判定は main の「収録との比較」で行う
     elif p["kind"] == "wb":
@@ -355,7 +376,7 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
             try:
                 row["signal"] = f"最新 {d[1][0]['date']}"
             except Exception:  # noqa: BLE001
-                row["note"] = f"世銀 解析失敗（{ind}）"
+                _fail(row, f"世銀 解析失敗（{ind}）")
     elif p["kind"] == "oecd":
         from stats.ingest.intl import OECD_BASE
         import csv as _csv, io as _io
@@ -369,7 +390,7 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
                 periods = [x.get("TIME_PERIOD", "") for x in rows_ if x.get("REF_AREA") == "JPN"] or                           [x.get("TIME_PERIOD", "") for x in rows_]
                 row["signal"] = f"最新 {max(periods)}" if periods else ""
             except Exception as e:  # noqa: BLE001
-                row["note"] = f"OECD 解析失敗（{e}）"
+                _fail(row, f"OECD 解析失敗（{e}）")
     elif p["kind"] == "soumu_next":
         from stats.ingest.soumu_hakusho import BASE, EDITIONS
         prefix, year = EDITIONS[0]
@@ -381,8 +402,11 @@ def run_probe(key: str, p: dict, state: dict) -> dict:
         else:
             row["signal"] = f"次版 {nxt[0]}（{nxt[1]}）公開あり"
             row["changed"] = True
+    elif p["kind"] == "excluded":
+        row["note"] = f"自動確認の対象外（{p.get('excluded_reason', '')}）"
+        row["status"] = "excluded"
     else:
-        row["note"] = "unsupported（手動確認）"
+        _fail(row, "unsupported（手動確認）")
     return row
 
 
@@ -445,10 +469,13 @@ def main(argv=None) -> int:
 
     changed = [r for r in rows if r["changed"]]
     pending = [r for r in rows if r["pending_since"]]
-    errors = [r for r in rows if r["note"].startswith(("probe 失敗", "unsupported")) or "解析失敗" in r["note"]]
+    errors = [r for r in rows if r["status"] == "error"]
+    unconfigured = [r for r in rows if r["status"] == "config_missing"]
+    excluded = [r for r in rows if r["status"] == "excluded"]
     if a.json:
         print(json.dumps({"checked_at": datetime.now().isoformat(timespec="seconds"),
-                          "changed": len(changed), "pending": len(pending), "errors": len(errors), "rows": rows}, ensure_ascii=False, indent=1))
+                          "changed": len(changed), "pending": len(pending), "errors": len(errors),
+                          "config_missing": len(unconfigured), "excluded": len(excluded), "rows": rows}, ensure_ascii=False, indent=1))
     else:
         print("=== stats freshness（取得元の更新の存否確認）===", file=sys.stderr)
         w = max(len(r["dataset"]) for r in rows) if rows else 10
@@ -457,7 +484,8 @@ def main(argv=None) -> int:
             wait = f"（{r['pending_since']} に検知・最終取込 {r['ingested_at'] or '-'}）" if r["pending_since"] else ""
             print(f"  [{mark}] {r['dataset']:<{w}} 収録={r['stored_last'] or '-':<9} 取得元={r['signal'] or '-'}{wait} {r['note']}",
                   file=sys.stderr)
-        print(f"総合: 更新あり {len(changed)}・取込待ち {len(pending)} dataset・probe 不能 {len(errors)}（詳細は --json）", file=sys.stderr)
+        print(f"総合: 更新あり {len(changed)}・取込待ち {len(pending)} dataset・probe 不能 {len(errors)}"
+              f"・設定なし {len(unconfigured)}・対象外 {len(excluded)}（詳細は --json）", file=sys.stderr)
     return 1 if (changed or pending) else (2 if errors else 0)
 
 

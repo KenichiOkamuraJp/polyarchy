@@ -32,6 +32,8 @@ def main() -> int:
     bad = unmatched_companies()
     if bad:
         fails.append(("store", f"業種が無い・語彙の外の会社 {len(bad)} 社（例 {bad[:5]}）"))
+    if not all([qs]):  # 問が 0 件で PASS にしない（作り直しで空になったファイルを見逃さない・2026-10-09）
+        fails.append(("eval", "読み込んだ問が 0 件のファイルがある（評価ファイルが空・読めない）"))
     for i, err in fails[:40]:
         print(f"  FAIL {i}: {err}")
     print(f"{'PASS' if not fails else 'FAIL'}: 業種 {len(qs)} 問・失敗 {len(fails)}")

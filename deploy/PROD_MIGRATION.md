@@ -91,7 +91,8 @@ prod の作業は**導入団体のアカウント・導入団体の PC・導入�
 
 ### 1.2b 日常のデータ更新用の権限（権限 2 段の下段・稼働後）
 稼働後の定型更新（`release.sh`）に要るのは S3 だけ＝[`iam-data-operator-policy.json`](iam-data-operator-policy.json)
-（`data/`・`release/`・`code/` の Put/Delete/Get＋`ops/` の Get＋ListBucket。捕捉ログ `query_log/` は読めない）。
+（`data/`・`release/`・`code/` の Put/Delete/Get＋`ops/` の Get＋ListBucket。捕捉ログは読めない＝`data/*query_log/*` の 1 本の Deny で
+全サービスを拒否・サービスを足しても漏れない〔2026-10-09〜。それまでの 2 本の Deny では後から足したサービスの生ログが読めた＝貼り直す〕）。
 SSO の権限セットか IAM ユーザーのインラインに `<BUCKET>` を置換して貼る。上段（1.2＝PowerUser）は初回構築と障害対応のみ。
 
 ### 1.3 手元にプロファイルを設定
@@ -334,12 +335,9 @@ curl -sS https://recommendations.<導入団体ドメイン>/healthz   # 200（st
 
 ## 6.5 ログ保持期間（プライバシーポリシーの約束を機械で担保）
 
-捕捉ログは **30日保持・以降自動削除**（プライバシーポリシーの約束）。仕組みの正典は [`README.md` §9.5](README.md)。prod でも同じ2点で担保する：
-- **箱**：`polyarchy-logprune.timer`（毎日）→ `scripts/prune_query_log.py`。日数は
-  `systemd/polyarchy-logprune.service` の `LOG_RETENTION_DAYS`（既定30）。
-- **S3**：`terraform/storage.tf` のライフサイクル **2 本**＝`query-log-retention-30d`（`data/query_log/`）と `stats-query-log-retention-30d`（`data/stats/query_log/`）（30日で失効・
-  versioning ON のため旧版も30日）。
-- 両者の日数は**必ず揃える**。合意が変われば両方を直す（片方だけだと約束を守れない）。
+捕捉ログは **30日保持・以降自動削除**（プライバシーポリシーの約束）。仕組み・日数の式・サービスの一覧の正典は
+[`README.md`「捕捉ログの保持」](README.md)（箱 30 日＋S3 の非現行 1 日＋ライフサイクルの遅れ＝S3 の日数を箱と同じ 30 に「揃えない」）。
+prod でも同じ terraform・systemd で担保される（`terraform apply` でライフサイクルが入る）。
 - ★含意：燃料は30日で消えるため、**週次トリアージを30日以内に**回す（恒久資産は `data/eval/`）。
 
 ## 7. ロールバック（失敗しても現状復帰）

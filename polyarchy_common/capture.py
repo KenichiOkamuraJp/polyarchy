@@ -38,7 +38,7 @@ def append_record(path: Path, record: dict, *, logger_name: str = "polyarchy.cap
     """`record` に ts を先頭付与して JSONL に1行 append（best-effort・戻り値=成功可否）。"""
     try:
         rec = {"ts": datetime.now().isoformat(timespec="seconds"), **record}
-        # 認証済み（Access Managed OAuth 経由）なら利用者キーを付与（メールの sha256 先頭16桁・平文なし）。
+        # 認証済み（install_auth が装着した検証を通った要求）なら利用者キーを付与（メールの sha256 先頭16桁・平文なし）。
         # 未認証・stdio では付かない。用途＝契約者数・利用量の把握のみ（プライバシーポリシー記載）。
         try:
             from polyarchy_common.access import user_hash

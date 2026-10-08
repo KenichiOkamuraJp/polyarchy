@@ -2,7 +2,7 @@
 団体（発言主体）の 1 表＝コード・言及語・表示名・正式名・issuer。
 
 リポジトリ内に 8 箇所あった団体リスト（multiquery.ORG_MENTIONS／multistage.ALL_ORGS／
-mcp_server.ORG_CODES＋表示名／app・chat_app.ORG_LABELS／eval 各所の ORG_PREFIXES／
+mcp_server.ORG_CODES＋表示名／旧 Web UI の ORG_LABELS／eval 各所の ORG_PREFIXES／
 qdrant_ingest.ISSUER_OF_ORG）をここに集約した（所見 2026-08-19 段 3・値は既存のものを優先して転記）。
 団体を増やすときはこの表だけを直す（ファイル名プレフィックス・catalog の org 列もこのコードに従う）。
 

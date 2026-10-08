@@ -46,7 +46,7 @@ resource "aws_iam_role_policy_attachment" "cw_agent" {
 locals {
   s3_code_prefix = "${dirname(var.code_s3_key)}/" # 既定 code/
   s3_read_prefixes = [
-    "${var.data_s3_prefix}/*",  # data/**（配布データ。query_log も読める＝sync の比較に無害）
+    "${var.data_s3_prefix}/*",  # data/**（配布データ。query_log も読めるが、bootstrap ⑥ の同期は query_log/ を除外する＝S3 の写しで箱の原本を上書きしない）
     "${local.s3_code_prefix}*", # code/**
     "release/*",                # release/data.json（apply_data_update.sh が固定で参照）
   ]

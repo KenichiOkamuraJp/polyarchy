@@ -22,10 +22,15 @@ def main() -> int:
     if names != ["list_meeting", "search_deliberations"]:
         bad.append(f"ツール {names}")
     for t in tools:
-        if not (t.annotations and t.annotations.readOnlyHint):
-            bad.append(f"{t.name} に readOnlyHint が無い")
+        if not (t.annotations and t.annotations.readOnlyHint) or not t.title:
+            bad.append(f"{t.name} に title／readOnlyHint が無い")
         if "layer" in (t.inputSchema.get("properties") or {}):
             bad.append(f"{t.name} に layer 引数がある（公開固定に反する）")
+    # 説明文の会議体の一覧（手書き）が収録の会議体（ingest.sources.BY_ORG）と揃っている＝会議体を足して説明文を直し忘れない（2026-10-09）
+    from deliberations.ingest.sources import BY_ORG
+    missing = sorted(code for code in BY_ORG if f"{code}=" not in srv.SEARCH_DESC)
+    if missing:
+        bad.append(f"検索の説明文の会議体（orgs）に無いコード {missing}（説明文を直すとコネクタの作り直しが要る）")
     r = srv.search_deliberations("デジタル行財政改革会議の改組と事務局機能の移管", top_k=5)
     if not r["results"]:
         bad.append("検索が空")

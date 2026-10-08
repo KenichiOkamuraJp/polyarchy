@@ -18,6 +18,7 @@ SEG_SECTIONS = {"segment_information", "employees", "capex", "research_and_devel
 MIN_REG_POS, MIN_REG_NEG = 291, 16        # 第 1b 便②（地域別）
 MIN_IND = 13                              # 第 1c 便（業種）
 MIN_SCR_POS, MIN_SCR_NEG, MIN_SCR_Q = 273, 25, 8  # 第 1c 便（横断検索）
+MIN_TREND_POS, MIN_TREND_NEG, MIN_TREND_Q, MIN_TREND_LK = 23, 18, 29, 16  # 第 1e 便（時系列）＝負例・1 社の年ごとは人手の *_manual を含む
 REG_REASONS = {"omitted", "not_tagged", "no_consolidated_statements", "out_of_range", "bad_period", "unknown_company"}
 REG_SECTIONS = {"revenue", "property_plant_and_equipment", "geographic_areas_ifrs"}
 REG_KINDS = {"home", "last_number", "span", "uchi", "multiline", "order", "prose_amount", "omitted_paragraph", "total_two_path", "nested"}
@@ -85,9 +86,24 @@ def main() -> int:
     assert {q["metric"] for q in scr} >= set(PRESETS) | {"overseas_sales_ratio"}, "検証済みの型ごとに正例 1 問以上"
     assert {q["reason"] for q in scr_neg} >= {"input_not_disclosed", "input_not_ingested", "unknown_item", "bad_expression", "standard_changed",
                                             "irregular_period", "nonpositive_denominator", "stale_period", "not_disclosed_loss_year"}, "規則と無い入力の 3 段ごとに負例 1 問以上"
+    # screen_manual（人手・作り直せない）の値の問は期で固定する＝各社の次の有報を取り込んでも書類が動かない（2026-10-09）
+    man = [json.loads(l) for l in (EVAL / "screen_manual.jsonl").read_text().splitlines() if l.strip()]
+    assert all(q.get("period_from") == q.get("period_to") == q["period"] for q in man), "screen_manual の問は period_from=period_to=period で固定する"
+    # 第 1e 便（時系列）＝下限と、除外の理由ごとに負例 1 問以上（2026-10-09 まで下限が無く、0 件でも PASS した）
+    def _lines(*names):
+        return [json.loads(l) for f in names if (EVAL / f).exists() for l in (EVAL / f).read_text().splitlines() if l.strip()]
+    trd, trd_neg = _lines("trend.jsonl"), _lines("trend_fail_closed.jsonl", "trend_manual_fail_closed.jsonl")
+    trd_q, trd_lk = _lines("trend_queries.jsonl"), _lines("trend_lookup.jsonl", "trend_lookup_manual.jsonl")
+    assert (len(trd) >= MIN_TREND_POS and len(trd_neg) >= MIN_TREND_NEG and len(trd_q) >= MIN_TREND_Q and len(trd_lk) >= MIN_TREND_LK), \
+        f"時系列の問が減った: {len(trd)}／{len(trd_neg)}／{len(trd_q)}／{len(trd_lk)}"
+    assert len({q["id"] for q in trd + trd_neg + trd_q + trd_lk}) == len(trd) + len(trd_neg) + len(trd_q) + len(trd_lk), "時系列の問の id の重複"
+    from companies.core.trend import TREND_REASONS
+    missing = set(TREND_REASONS) - {q["reason"] for q in trd_neg}
+    assert not missing, f"時系列の除外の理由ごとに負例 1 問以上（欠け {sorted(missing)}）"
     print(f"PASS: 語彙 {len(ITEMS)} キー／{len(ELEMENT_TO_KEY)} 要素・正例 {len(pos)}・負例 {len(neg)}・発見層 {len(find)}"
           f"・セグメント 正例 {len(seg)}／負例 {len(seg_neg)}・地域別 正例 {len(reg)}／負例 {len(reg_neg)}・業種 {len(ind)}"
-          f"・横断検索 正例 {len(scr)}／負例 {len(scr_neg)}／横断の問 {len(scr_q)}")
+          f"・横断検索 正例 {len(scr)}／負例 {len(scr_neg)}／横断の問 {len(scr_q)}"
+          f"・時系列 正例 {len(trd)}／負例 {len(trd_neg)}／横断の問 {len(trd_q)}／1 社の年ごと {len(trd_lk)}")
     return 0
 
 

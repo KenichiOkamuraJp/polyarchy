@@ -45,7 +45,7 @@ def _seed_collection():
     from qdrant_client import models as qm
 
     from recommendations.core.embeddings import production_embed_model
-    from recommendations.core.qdrant_store import CORPUS_REGISTRY, DENSE_NAME, QdrantCorpusStore
+    from recommendations.core.qdrant_store import CORPUS_REGISTRY, DENSE_NAME, SPARSE_NAME, QdrantCorpusStore
 
     with quiet_stdout():
         embed = production_embed_model()
@@ -69,22 +69,30 @@ def _seed_collection():
     ]
     ids = [str(uuid.uuid5(uuid.NAMESPACE_URL, s)) for s in ("pub1", "sec1")]
     qstore.qc.create_collection(GATE_COLLECTION, vectors_config={
-        DENSE_NAME: qm.VectorParams(size=len(embs[0]), distance=qm.Distance.COSINE)})
+        DENSE_NAME: qm.VectorParams(size=len(embs[0]), distance=qm.Distance.COSINE)},
+        sparse_vectors_config={SPARSE_NAME: qm.SparseVectorParams()})
     qstore.qc.upsert(GATE_COLLECTION, points=[
         qm.PointStruct(id=i, vector={DENSE_NAME: e}, payload={**m, "text": d})
         for i, e, d, m in zip(ids, embs, docs, metas)], wait=True)
     # in-process（A/B）解決用の登録。子プロセス（C）は COLLECTION_NAME の自己写像で解決する。
     CORPUS_REGISTRY[GATE_COLLECTION] = GATE_COLLECTION
+    # BM25 の語彙サイドカーも作る＝A・B・C とも本番と同じ push-down の経路（QdrantBM25）で測る（2026-10-09〜。語彙が無いと
+    # 本番の起動は止まる＝in-memory 版への黙った切り替えはしない。後片付けは _drop_collection が語彙のファイルも消す）
+    from recommendations.core.qdrant_bm25 import build_sparse_bm25
+    with quiet_stdout():
+        build_sparse_bm25(GATE_COLLECTION)
     return qstore, embed
 
 
 def _drop_collection(qstore):
+    from recommendations.core.config import DATA_DIR
     from recommendations.core.qdrant_store import CORPUS_REGISTRY
     try:
         qstore.qc.delete_collection(GATE_COLLECTION)
     except Exception:
         pass
     CORPUS_REGISTRY.pop(GATE_COLLECTION, None)
+    (DATA_DIR / "bm25" / f"{GATE_COLLECTION}_vocab.json.gz").unlink(missing_ok=True)   # 一時の語彙（配布の data/ に残さない）
 
 
 def part_a_service() -> bool:
