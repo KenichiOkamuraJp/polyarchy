@@ -22,10 +22,11 @@ Environment=PYTHONPATH=/opt/polyarchy/polyarchy
 Environment=HF_HOME=/opt/polyarchy/models
 # COLLECTION_NAME / VECTOR_BACKEND は deploy.env（terraform var collection_name / vector_backend）から。ここに固定値を書かない。
 Environment=POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/recommendations/data/query_log/queries.jsonl
-# HF_HUB_OFFLINE は付けない（箱でオフライン化できるかは未実測）。旧い理由「ruri は完全オフラインだと config 解決に
-# 失敗する」の原因は llama_index が HF_HOME でない自前のキャッシュを見ていたこと＝7038ef4 で解消済み（手元では
-# HF_HUB_OFFLINE=1 で読める・2026-10-09）。重みの版（commit）は polyarchy_retrieval/models.py の PINNED_REVISIONS で
-# 固定済み＝読み込み・事前DL とも同じ commit を使う（上流の main が動いても重みは変わらない）。
+# HF_HUB_OFFLINE=1＝実行中に HF Hub へ接続しない（B17 (3)・2026-10-10）。重みは bootstrap ⑤ が S3 の配布物から
+# SHA256SUMS で照合して HF_HOME の snapshots/<commit>/ に置く（版＝polyarchy_retrieval/models.py の PINNED_REVISIONS）。
+# 旧い見送りの理由「ruri は完全オフラインだと config 解決に失敗する」の原因は llama_index が HF_HOME でない自前の
+# キャッシュを見ていたこと＝7038ef4 で解消済み。
+Environment=HF_HUB_OFFLINE=1
 Environment=TOKENIZERS_PARALLELISM=false
 # transport_security は既定 off（トンネル前提・421 回避・§33.5）。ホスト限定するなら↓を設定。
 # Environment=MCP_ALLOWED_HOSTS=recommendations.<domain>,127.0.0.1:8765

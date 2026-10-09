@@ -18,6 +18,8 @@ EnvironmentFile=-/etc/polyarchy/deploy.env
 EnvironmentFile=-/etc/polyarchy/deliberations.env
 Environment=PYTHONPATH=/opt/polyarchy/polyarchy
 Environment=HF_HOME=/opt/polyarchy/models
+# HF_HUB_OFFLINE＝polyarchy-mcp.service を参照（埋め込み・リランカーは政策主張DB と同じ重み）。
+Environment=HF_HUB_OFFLINE=1
 # 審議会DB 専用の Qdrant（qdrant-deliberations.service・:6340）。env 名は DELIB_ 付き＝deploy.env の COLLECTION_NAME（政策主張DB）を拾わない。
 Environment=DELIB_QDRANT_URL=http://127.0.0.1:6340
 Environment=DELIB_COLLECTION=deliberations_v1

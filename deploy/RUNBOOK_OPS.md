@@ -373,4 +373,8 @@ PATH=$P:$PATH bash deploy/scripts/release.sh staging
 - 変更は PR（ロック 2 本＋pyproject）でレビュー＝ゲート全 PASS が採否（CI 化 §2.5 で自動化）。箱は release.sh → 自動適用でロックどおりに入れ替わる。
 - 切り戻し（apply の自動 fail-back）も前回 tar のロックで再解決する。ロック導入前（2026-09-04 以前）の tar へ戻る場合だけ下限指定の解決になる。
 - 出所の固定は Qdrant バイナリ（bootstrap ⑥b の sha256）と同じ思想。モデルの重み（HF）は commit を固定済み（`polyarchy_retrieval/models.py` の `PINNED_REVISIONS`・
-  読み込みと事前 DL の両方・2026-10-09）。重みを配布物に含める／箱を HF に接続させない（オフライン化）は未着手＝残タスク B17 (3)。
+  読み込みと事前 DL の両方・2026-10-09）。重みは配布物に含める（2026-10-10・B17 (3)）＝release.sh の上りが手元の HF キャッシュ（ゲートが測った重み）を
+  S3 `data/models/<org>--<name>/<commit>/`＋SHA256SUMS に置き、箱は bootstrap ⑤ が照合して置く・サービスと箱上 smoke は `HF_HUB_OFFLINE=1`。
+  モデルの版を上げるときも手順は同じ（`PINNED_REVISIONS` を直す→ゲートが新しい重みを手元に落として測る→上りが新しい commit を置く）。
+  ★適用のログに「★S3 に … の重みが無い＝HF から取る」が出たら、上りが重みを置けていない（手元の HF キャッシュに無い等）＝上りのログを見る。
+  ★最初の配布だけ、上りと箱の取得が約 1.6 GB 増える（同じ重みは 2 回目から送り直さない）。箱では旧い取得物（HF の blobs）が残る＝容量に余裕があるので消さない。

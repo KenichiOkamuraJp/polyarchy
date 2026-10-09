@@ -173,13 +173,13 @@ wait_healthz() { # $1=名前 $2=port → 0/1
 }
 smoke() { # 箱上 smoke（recommendations＋stats＋companies〔有効時〕＋deliberations〔有効時〕）＋稼働中の /healthz。戻り値＝合否。訓練フラグがあれば FAIL 扱い
   local ok=1
-  sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR HF_HOME=$HF_HOME COLLECTION_NAME=$COLLECTION_NAME VECTOR_BACKEND=${VECTOR_BACKEND:-qdrant} $PY -m recommendations.eval.mcp_smoke" || ok=0
+  sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR HF_HOME=$HF_HOME HF_HUB_OFFLINE=1 COLLECTION_NAME=$COLLECTION_NAME VECTOR_BACKEND=${VECTOR_BACKEND:-qdrant} $PY -m recommendations.eval.mcp_smoke" || ok=0
   sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR $PY -m stats.eval.mcp_smoke" || ok=0
   if [[ "$COMPANIES_ON" == 1 ]]; then
     sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR $PY -m companies.eval.mcp_smoke" || ok=0
   fi
   if [[ "$DELIB_ON" == 1 ]]; then
-    sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR HF_HOME=$HF_HOME DELIB_QDRANT_URL=http://127.0.0.1:6340 $PY -m deliberations.eval.mcp_smoke" || ok=0
+    sudo -u polyarchy bash -lc "cd $REPO_DIR; PYTHONPATH=$REPO_DIR HF_HOME=$HF_HOME HF_HUB_OFFLINE=1 DELIB_QDRANT_URL=http://127.0.0.1:6340 $PY -m deliberations.eval.mcp_smoke" || ok=0
   fi
   wait_healthz mcp 8765 || ok=0
   if [[ "${ENABLE_STATS_APP:-false}" == "true" ]]; then wait_healthz stats 8766 || ok=0; fi

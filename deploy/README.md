@@ -203,8 +203,8 @@ sudo -u polyarchy -H bash -lc '
   export POLYARCHY_QUERY_LOG=/tmp/gate.jsonl      # 燃料を汚さない
   # 検索ゲートは API キー不要（検索は ruri ローカル＝2026-09-19 にキーのガードを外した）。下の 2 行は、SSM にキーを登録している
   # 環境で回答まで含む評価（eval/full）も回す場合だけ要る＝無ければ空のままでよい。
-  # ※HF_HUB_OFFLINE は付けない（箱でオフライン化できるかは未実測）。旧い理由「ruri は完全オフラインだと config 解決に失敗する」の
-  #   原因は cache_folder の食い違い＝7038ef4 で解消済み（手元では読める）。重みの版は polyarchy_retrieval/models.py の
+  # ※手元のゲートは HF キャッシュの重みで測る＝release.sh の上り（upload_to_s3.sh）がその重みを S3 `data/models/` に置き、
+  #   箱は bootstrap ⑤ が SHA256SUMS で照合して置く（箱は HF Hub に接続しない・B17 (3)）。重みの版は polyarchy_retrieval/models.py の
   #   PINNED_REVISIONS（commit）で固定＝上流の main が動いても重みは変わらない。ゲートの実行は `scripts/release.sh` が自動化済。
   export OPENAI_API_KEY="$(aws ssm get-parameter --region ap-northeast-1 --with-decryption --name /polyarchy/staging/openai_api_key --query Parameter.Value --output text 2>/dev/null || true)"
   export ANTHROPIC_API_KEY="$(aws ssm get-parameter --region ap-northeast-1 --with-decryption --name /polyarchy/staging/anthropic_api_key --query Parameter.Value --output text 2>/dev/null || true)"
@@ -352,7 +352,7 @@ aws s3api get-bucket-lifecycle-configuration --bucket <bucket>   # S3 側の確�
 ## 10. 落とし穴チェックリスト（ロードマップ§6）
 
 - [ ] **fugashi 辞書**（unidic-lite）を導入・`Tagger()` 疎通（bootstrap ④で検証済）。
-- [ ] **HFモデル事前DL**して EBS 固定（bootstrap ⑤。重みの版＝`polyarchy_retrieval/models.py` の `PINNED_REVISIONS`〔commit〕を取る。`HF_HUB_OFFLINE` は付けていない＝箱でのオフライン化は未実測・§6 注記）。
+- [ ] **HFモデルの重み**を S3 から EBS に固定（bootstrap ⑤。S3 `data/models/<org>--<name>/<commit>/`＝上りが手元の HF キャッシュから置く・SHA256SUMS で照合・合わなければ止まる。版＝`polyarchy_retrieval/models.py` の `PINNED_REVISIONS`。サービスと箱上 smoke は `HF_HUB_OFFLINE=1`＝箱は HF Hub に接続しない。S3 にまだ無い commit だけ HF から取る〔★の行〕）。
 - [ ] **CPU 版 torch**（GPU 無し箱。既定 linux wheel は CUDA 同梱で巨大）＝ロックが `+cpu` 版を指す（`lock_deps.sh` が download.pytorch.org/whl/cpu を extra index に）。
 - [ ] **依存はロックからのみ**（`--require-hashes`・2026-09-04）＝pyproject を変えたら `lock_deps.sh` → ゲート → release。ロック無しの tar は bootstrap ③ で止まる。
 - [ ] **Tunnel cred 移設で DNS 変更は不要**（UUID 向きのまま）。**Mac 側は必ず停止**（二重 origin 回避）。

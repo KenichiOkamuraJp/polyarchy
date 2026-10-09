@@ -20,7 +20,8 @@ Environment=PYTHONPATH=/opt/polyarchy/polyarchy
 Environment=HF_HOME=/opt/polyarchy/models
 # COLLECTION_NAME / VECTOR_BACKEND は deploy.env（terraform var collection_name / vector_backend）から。ここに固定値を書かない。
 Environment=POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/recommendations/data/query_log/queries.jsonl
-# HF_HUB_OFFLINE を付けない理由は polyarchy-mcp.service を参照。
+# HF_HUB_OFFLINE＝polyarchy-mcp.service を参照。
+Environment=HF_HUB_OFFLINE=1
 Environment=TOKENIZERS_PARALLELISM=false
 # 127.0.0.1 バインド＝トンネル経由のみ到達（直露出しない）。st.table 不可等は §32.3（コード側で対処済）。
 ExecStart=/opt/miniconda/envs/polyarchy/bin/streamlit run recommendations/serving/chat_app.py --server.port 8502 --server.address 127.0.0.1 --server.headless true --browser.gatherUsageStats false

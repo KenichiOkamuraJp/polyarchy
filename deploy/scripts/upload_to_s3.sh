@@ -75,6 +75,15 @@ echo "[upload] データ同期 → s3://$BUCKET/$DATA_PREFIX/ （Qdrant/BM25語�
   --exclude "eval/results/*" --exclude "stats/*" --exclude "companies/*" --exclude "deliberations/*" --exclude "query_log/*" \
   --exclude "cache/*"  # 箱で作る（新着チェックの結果 等）＝手元の古い値を S3 に載せると bootstrap の同期が箱の最新を上書きする（2026-10-02）
 
+# HF モデルの重み＝S3 `data/models/<org>--<name>/<commit>/`（＋SHA256SUMS）。手元の HF キャッシュ＝ゲートが測った重みを
+# そのまま上げる（測るもの＝配るもの）。版は polyarchy_retrieval/models.py の PINNED_REVISIONS。箱は bootstrap ⑤ が照合して
+# 置き、HF Hub に接続しない（B17 (3)・2026-10-10）。上りの sync は symlink の先を送る・同じ重みは送り直さない。
+echo "[upload] HF モデルの重み → s3://$BUCKET/$DATA_PREFIX/models/"
+MSTAGE="$(mktemp -d -t polyarchy-models.XXXXXX)"
+"${PYTHON:-python}" "$REPO_DIR/deploy/bootstrap/prefetch_models.py" --stage-upload "$MSTAGE"
+"${AWS[@]}" s3 sync "$MSTAGE/" "s3://$BUCKET/$DATA_PREFIX/models/" --region "$REGION"
+rm -rf "$MSTAGE"
+
 # stats（統計参照DB）のデータ＝S3 `data/stats/`（共通契約 §4）。registry（git 追跡・2MB）＋values（88MB）＋eval を運ぶ。
 # cache/（原本 1.2GB・取込時のみ使用）・values_archive/・query_log/（箱で生成する燃料）は運ばない。
 echo "[upload] stats データ同期 → s3://$BUCKET/$DATA_PREFIX/stats/ （registry/values/eval）"

@@ -118,11 +118,18 @@ print("[bootstrap] fugashi OK:", [w.surface for w in tagger("日本語形態素�
 PY
 fi
 
-# ── ⑤ HFモデル事前DL（EBS 固定・初回起動の外部依存を消す）─────────────────────
+# ── ⑤ HFモデルの重みを S3 から配置（EBS 固定・箱を HF Hub に接続させない＝B17 (3)・2026-10-10）──────────
+# 重みは release.sh の上り（upload_to_s3.sh）が手元の HF キャッシュ＝ゲートが測った重みを S3 `data/models/` に置く。
+# ここでは S3 → $HF_HOME/s3_models/ に同期し、prefetch_models.py が SHA256SUMS で照合して HF キャッシュの
+# snapshots/<commit>/ に hardlink で置く（合わなければ止まる）。サービスと箱上 smoke は HF_HUB_OFFLINE=1 で読む。
+# S3 にまだ無い commit（上りの前の環境）だけは HF から取る（★の行が出る）。
 if [[ ",$PIP_EXTRAS," == *",recommendations,"* ]]; then
-echo "[bootstrap] ⑤ HFモデル事前DL → $HF_HOME"
+echo "[bootstrap] ⑤ HFモデルの重みを S3 から配置 s3://$S3_BUCKET/$DATA_S3_PREFIX/models/ → $HF_HOME"
+mkdir -p "$HF_HOME/s3_models"
+aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/models/" "$HF_HOME/s3_models/" --region "$AWS_REGION" --exact-timestamps --only-show-errors
+chown -R "$SVC_USER:$SVC_USER" "$HF_HOME"
 sudo -u "$SVC_USER" env HF_HOME="$HF_HOME" "$ENV_PY" \
-  "$REPO_DIR/deploy/bootstrap/prefetch_models.py"
+  "$REPO_DIR/deploy/bootstrap/prefetch_models.py" --staged "$HF_HOME/s3_models"
 fi
 
 # ── ⑥ データを S3 から取得（Qdrant/BM25 語彙/eval/catalog 等。捕捉ログ query_log と cache は箱で生まれるもの＝戻さない）──
@@ -136,7 +143,8 @@ mkdir -p "$APP_DIR/data"
 # query_log/ も箱で作る（S3 の data/query_log/ は fuelsync の保護コピー＝最長 1 時間前）＝戻すと自動適用のたびに
 #   箱の原本の追記分が消える（cache/ と同じ機構・2026-10-09）。箱で生まれるものの除外は test_common が全同期で検査する。
 # deliberations/ は審議会DB の束（S3 `data/deliberations/`）＝フラグに関係なく除外する（政策主張DB の data/ に紛れ込ませない）。
-aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exact-timestamps --exclude "stats/*" --exclude "companies/*" --exclude "deliberations/*" --exclude "cache/*" --exclude "query_log/*"
+# models/ は HF モデルの重み＝⑤ が $HF_HOME へ置く（同じく除外）。
+aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/" "$APP_DIR/data/" --region "$AWS_REGION" --exact-timestamps --exclude "stats/*" --exclude "companies/*" --exclude "deliberations/*" --exclude "models/*" --exclude "cache/*" --exclude "query_log/*"
 # .streamlit/config.toml は code tar に同梱済（fileWatcherType=none・§32.3）。
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR/data"
 # stats（統計参照DB）のデータ＝S3 `data/stats/` → `stats/data/`（共通契約 §4）。tar は */data を除外するので
