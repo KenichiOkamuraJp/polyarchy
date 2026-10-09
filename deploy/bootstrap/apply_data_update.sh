@@ -223,7 +223,9 @@ apply_new() { # 各段は失敗したら即 return 1（set +e の下で呼ぶた
   extract_code "$REL_DIR/next.tar.gz" || { warn "tar 再展開に失敗"; return 1; }
   # ★Qdrant ストレージは新旧セグメント混在を許せない＝ミラー同期（--delete）を apply が自前で行う
   #   （bootstrap ⑥ の --delete なし同期は捕捉ログ温存のための仕様＝qdrant には適用不可。2026-09-03 実測の恒久対策）
-  #   --exact-timestamps＝大きさが同じで中身の違うファイル（固定長のページ等・箱の qdrant が実行中に触ったもの）も取り直す（B28）
+  #   --exact-timestamps＝S3 の方が新しい同じ大きさのファイルも取り直す（B28）。既定の download は手元の方が新しいときだけ取り直す
+  #   ＝箱の qdrant が触ったファイルは既定でも取り直すが、配布元の qdrant-dev の停止・再開で時刻だけ新しくなって送り直された
+  #   ファイル（中身の変わった固定長のページを含みうる）を取りこぼしていた（2026-10-09 の適用では bootstrap ⑥ が 53 本を取り直した）
   aws s3 sync "s3://$S3_BUCKET/$DATA_S3_PREFIX/qdrant/" "$APP_DIR/data/qdrant/" --delete --exact-timestamps --region "$AWS_REGION" --only-show-errors \
     || { warn "qdrant 同期に失敗"; return 1; }
   chown -R polyarchy:polyarchy "$APP_DIR/data"
