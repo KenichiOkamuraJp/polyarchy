@@ -62,7 +62,7 @@ bash deploy/scripts/release.sh <env>                # 配る前の確認→全�
 
 ## 6. セッションの振る舞い
 
-- 指示なく `git commit`・`git push`・`release.sh`・`terraform apply`・`deploy.sh` を実行しない。利用（ドッグフーディング）セッションでは実装もしない＝気づきは残タスクへ。
+- 指示なく `git commit`・`git push`・`release.sh`・`terraform apply`・`deploy.sh`・`cloudflare-guard.sh apply`／`remove` を実行しない（ガードの規則の変更は運営者がターミナルで＝RUNBOOK §1「公開 URL」。`status`・`test` は読み取り）。利用（ドッグフーディング）セッションでは実装もしない＝気づきは残タスクへ。
 - found=false・results 空は「正しい答え」であって直す対象ではない。勝手に取込を実装したり他の情報源で補ったりしない。
 - 新しい収録・機能は「計画＋評価問＋実装」を 1 つの変更にする（評価問を先に立てる）。
 - AI の記憶（memory）は PC とフォルダごとに別系統で、引き継がれない。**次の人に残すべき地雷は本書か各フォルダの CLAUDE.md に書く**（地雷に限り、複数の規約への重複を許す）。

@@ -14,6 +14,8 @@
 #     「既存ルールの式にあるホスト ∪ MCP_HOST」を自動で引き継ぐ（2026-09-22〜。それ以前は MCP_HOST だけに
 #     置き換わり、新サービスで apply すると既存ホストがレート制限から外れる事故があった＝staging 実測）。
 #     ホストを外したいときだけ RL_HOSTS を明示する。apply 後は status でレート制限の式を確認する。
+#   ★WAF カスタムルールは Free プランで 5 本まで＝パスの規則はサービスごとに 1 本（IP_ALLOWLIST=on ならもう 1 本）。
+#     サービスを足して 5 本になる変更のときに、ホストをまとめた 1 本の式にする（残タスク B37。上限を超えたときの apply の動きは未確認）。
 #   ★パスの規則は SSM の値で決まる（2026-10-10〜）：
 #     秘密パス（`/mcp-<乱数>`）  … そのパスで始まるもの以外をエッジで遮断（従来どおり）。
 #     値として `/mcp`           … 秘密パスなしで公開する構成＝`/mcp`（と `/mcp/`）以外をエッジで遮断（無関係なパスを箱に届かせない）。
@@ -199,18 +201,23 @@ cmd_apply() {
   MODE="${1:-connector}"
   [[ "$MODE" == "strict" || "$MODE" == "connector" ]] || die "モードは strict か connector"
   zone_info; rate_params; load_mcp_path
-  local ips; ips="$(allow_list)"
-
-  log "zone=${ZONE_NAME} plan=${ZONE_PLAN} mode=${MODE}"
-  log "許可IP: ${ips}"
-  log "レート制限: ${RL_REQS} req / ${RL_PERIOD}s（≒ ${RATE_PER_MIN}/分）"
-  if [[ "$MODE" == "connector" ]]; then
-    warn "connector モード＝Anthropic レンジを許可。claude.ai/Desktop のコネクタで疎通する一方、"
-    warn "  「Claude 経由なら第三者も到達しうる」点は導入団体へ必ず共有すること（組織限定にはならない）。"
+  # 許可IP・モードの説明は IP_ALLOWLIST=on のときだけ出す（off＝既定では IP の規則を作らない＝出すと作られたと読める・2026-10-10）。
+  local ips=""
+  if [[ "${IP_ALLOWLIST:-off}" == "off" ]]; then
+    log "zone=${ZONE_NAME} plan=${ZONE_PLAN}"
   else
-    warn "strict モード＝組織IPのみ。claude.ai/Desktop のカスタムコネクタは**繋がらない**"
-    warn "  （Anthropic 経由のため）。Claude Code 等の直接接続のみ疎通する。"
+    ips="$(allow_list)"
+    log "zone=${ZONE_NAME} plan=${ZONE_PLAN} mode=${MODE}"
+    log "許可IP: ${ips}"
+    if [[ "$MODE" == "connector" ]]; then
+      warn "connector モード＝Anthropic レンジを許可。claude.ai/Desktop のコネクタで疎通する一方、"
+      warn "  「Claude 経由なら第三者も到達しうる」点は導入団体へ必ず共有すること（組織限定にはならない）。"
+    else
+      warn "strict モード＝組織IPのみ。claude.ai/Desktop のカスタムコネクタは**繋がらない**"
+      warn "  （Anthropic 経由のため）。Claude Code 等の直接接続のみ疎通する。"
+    fi
   fi
+  log "レート制限: ${RL_REQS} req / ${RL_PERIOD}s（≒ ${RATE_PER_MIN}/分）"
 
   # ① WAF カスタムルール（許可IP以外を block ／ 秘密パス以外を block）
   # ★IP_ALLOWLIST=off で IP 許可ルールを作らない（既存の同名ルールも除去される）。
