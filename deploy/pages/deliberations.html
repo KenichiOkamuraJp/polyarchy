@@ -20,14 +20,16 @@ a{color:var(--accent)}
 <nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/companies">companies（企業情報DB）</a><a href="/deliberations">deliberations（審議会議事録DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
 
 <h1>deliberations — 審議会議事録DB（Polyarchy）</h1>
-<p>更新日：2026-10-07</p>
+<p>更新日：2026-10-10</p>
 <p>政府の会議体の<strong>過程文書</strong>＝回ごとの配布資料・議事録・議事要旨を、<strong>誰が出した資料か・誰の発言か</strong>を添えて Claude から検索するためのリモート MCP サーバです。
 会議で<strong>決まった内容</strong>（取りまとめ・基本計画など）は <a href="/recommendations">recommendations（政策主張DB）</a>に、<strong>決まるまでの資料と議論</strong>はこちらに入っています。該当がなければ結果は空で返ります。</p>
 <p class="note">民間議員・有識者・外部の団体の資料や発言は、その人・団体の見解であって、会議や政府の決定ではありません。返り値の区分（role）と注記（notes）で必ず区別して返します。発言者・提出者は記録と資料に書かれたとおりで、書かれていなければ「不明」と返します（推定しません）。</p>
 
 <h2>接続</h2>
 <ol>
-<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy deliberations</code>、URL は利用者ごとに個別にご案内します（当面は招待制。利用にはログインが必要です）。</li>
+<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy deliberations</code>、URL <code>https://deliberations.polyarchy.net/mcp</code>。</li>
+<li>「Connect」→ ブラウザで開くログイン画面でサインイン。初回はメールアドレスとパスワードでアカウントを登録します（登録のときに 6 桁の確認コードがメールで届きます）。現在は無償で提供しています（料金については<a href="/terms">利用規約</a>をご覧ください）。</li>
+<li>Claude Code：<code>claude mcp add --transport http polyarchy-deliberations https://deliberations.polyarchy.net/mcp</code>。</li>
 <li>会話の中で「審議会議事録DB で」と書くと確実に呼ばれます。</li>
 </ol>
 

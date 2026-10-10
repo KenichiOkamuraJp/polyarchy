@@ -20,16 +20,16 @@ a{color:var(--accent)}
 <nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/companies">companies（企業情報DB）</a><a href="/deliberations">deliberations（審議会議事録DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
 
 <h1>companies — 企業情報DB（Polyarchy）</h1>
-<p>更新日：2026-10-01</p>
+<p>更新日：2026-10-10</p>
 <p>日本の有価証券報告書（EDINET・金融庁）に書かれた企業の数値を、<strong>公表どおりの値・出典つき</strong>で Claude から参照するためのリモート MCP サーバです。
 「主張（政策提言）↔ 事実」の突き合わせの<strong>企業側の事実</strong>として作られており、<strong>該当する開示がなければ「ない」と返します</strong>（別の連結／単体の別・隣の項目・近い決算期の値で埋めません）。</p>
 <p class="note">出典：EDINET（金融庁）の有価証券報告書。本サービスは XBRL から値を抽出・加工して提供しています（公共データ利用規約 第 1.0 版）。値は各提出会社の開示に帰属し、本サービスは値を保証しません（原典で確認してください）。</p>
 
 <h2>接続</h2>
 <ol>
-<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy companies</code>、URL は利用者ごとに個別にご案内します（当面は招待制。利用希望は下記連絡先へ）。</li>
-<li>「Connect」→ ブラウザで開くログイン画面でサインイン。許可された利用者のみ接続できます。</li>
-<li>Claude Code：<code>claude mcp add --transport http polyarchy-companies &lt;URL&gt;</code>。</li>
+<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy companies</code>、URL <code>https://companies.polyarchy.net/mcp</code>。</li>
+<li>「Connect」→ ブラウザで開くログイン画面でサインイン。初回はメールアドレスとパスワードでアカウントを登録します（登録のときに 6 桁の確認コードがメールで届きます）。現在は無償で提供しています（料金については<a href="/terms">利用規約</a>をご覧ください）。</li>
+<li>Claude Code：<code>claude mcp add --transport http polyarchy-companies https://companies.polyarchy.net/mcp</code>。</li>
 </ol>
 
 <h2>ツール（すべて読み取り専用）</h2>

@@ -19,7 +19,7 @@ e-Stat API クレジット文・サポート連絡先）** の原稿。箱（EC2
 ## 埋めた値（2026-08-19）
 - 運営者＝岡村 健一（個人運営）・連絡先＝kenichi.okamura.jp@gmail.com（サポート＝脆弱性報告窓口兼用）。変える場合は全 HTML のフッタと各ページの連絡先を一括置換。
 - 料金＝「別途定める・当面無償」。
-- 接続 URL（stats/recommendations とも）＝**ページに書かない**＝個別案内（秘密パス込み URL・ログイン必須〔案 B・2026-09-02〕）。コネクタのディレクトリ掲載をする段で正式 URL 記載を再検討。
+- 接続 URL＝**各サービスのページに書く**（2026-10-10〜＝秘密パスなしで公開する構成にしたため。`https://<サービス>.<ドメイン>/mcp`・ログイン必須・初回は登録と確認コード）。それ以前は「ページに書かない＝個別案内（秘密パス込み URL）」だった。★秘密パスありで運用するインスタンスは、URL をページに書かず個別に案内する。料金の書き方は利用規約 6 に揃える（現在は無償・有償化は事前に告知）。
 
 ## 配置（Cloudflare Pages・direct upload）＝2026-08-19 初回配置済
 トークン＝Keychain `cloudflare-access-token`（Cloudflare Pages:Edit・Account Settings:Read・User Memberships:Read・Zone DNS:Edit ほか）。更新のたびに下を実行：

@@ -20,16 +20,16 @@ a{color:var(--accent)}
 <nav><a href="/">Polyarchy</a><a href="/stats">stats（統計参照DB）</a><a href="/recommendations">recommendations（政策主張DB）</a><a href="/companies">companies（企業情報DB）</a><a href="/deliberations">deliberations（審議会議事録DB）</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
 
 <h1>stats — 統計参照DB（Polyarchy）</h1>
-<p>更新日：2026-10-02</p>
+<p>更新日：2026-10-10</p>
 <p>日本の公的統計と国際機関統計の値を、<strong>公表どおりの値・出典つき</strong>で Claude から参照するためのリモート MCP サーバです。
 「主張（政策提言）↔ 事実（統計）」の突き合わせのために作られており、<strong>該当するデータがなければ「ない」と返します</strong>（近い年・隣の指標・補間値を返しません）。</p>
 <p class="note">このサービスは、政府統計総合窓口(e-Stat)のAPI機能を使用していますが、サービスの内容は国によって保証されたものではありません。</p>
 
 <h2>接続</h2>
 <ol>
-<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy stats</code>、URL は利用者ごとに個別にご案内します（当面は招待制。利用希望は下記連絡先へ）。</li>
-<li>「Connect」→ ブラウザで開くログイン画面でサインイン（初回はアカウント登録）。許可された利用者のみ接続できます（利用希望は下記連絡先へ）。</li>
-<li>Claude Code：<code>claude mcp add --transport http polyarchy-stats &lt;URL&gt;</code>。</li>
+<li>claude.ai → Customize → Connectors → <em>Add custom connector</em>。名前 <code>Polyarchy stats</code>、URL <code>https://stats.polyarchy.net/mcp</code>。</li>
+<li>「Connect」→ ブラウザで開くログイン画面でサインイン。初回はメールアドレスとパスワードでアカウントを登録します（登録のときに 6 桁の確認コードがメールで届きます）。現在は無償で提供しています（料金については<a href="/terms">利用規約</a>をご覧ください）。</li>
+<li>Claude Code：<code>claude mcp add --transport http polyarchy-stats https://stats.polyarchy.net/mcp</code>。</li>
 </ol>
 
 <h2>ツール（すべて読み取り専用）</h2>
