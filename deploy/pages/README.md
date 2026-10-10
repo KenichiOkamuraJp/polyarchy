@@ -14,6 +14,7 @@ e-Stat API クレジット文・サポート連絡先）** の原稿。箱（EC2
 | `deliberations.html` | `/deliberations` | deliberations（審議会議事録DB）のドキュメント：接続方法・ツール 2 本・利用例 3 つ・結果の見方（区分・発言の型・提出者の根拠）・収録範囲・**取得元と利用条件（PDL1.0／第三者の著作物）**。**箱で deliberations を有効にしてから公開する**（2026-10-04 staging で有効化の後に移した） |
 | `stats.html` | `/stats` | stats（統計参照DB）のドキュメント：接続方法・ツール・**利用例 3 つ**・**e-Stat API クレジット文**・license の見方・取得元一覧 |
 | `recommendations.html` | `/recommendations` | recommendations（政策主張DB）のドキュメント：接続方法・ツールの引数と返り値・収録範囲（発行体別文書数・分野タグ 21 分類・帰属の注意）・**利用例 5 つ**・結果の見方・収集する情報・制限・サポート（2026-08-19 claims セッションで作成・2026-08-27 改名） |
+| `icons/polyarchy-<サービス>.png`・`.svg` | `/icons/…` | サービスごとのアイコン（512px・同じ印で地色だけ違う）。コネクタのディレクトリの掲載でアイコンの URL に使う（入口の規則で `/mcp` 以外を遮断しているため、サーバのホストからファビコンは取れない＝公開ページに置く・2026-10-10）。★掲載に使っている間は URL を変えない |
 | `claims.html` | `/claims` | 旧 URL の転送スタブ（改名 claims → recommendations・2026-08-27）。`/recommendations` へ meta refresh |
 
 ## 埋めた値（2026-08-19）
