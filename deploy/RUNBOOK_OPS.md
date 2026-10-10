@@ -242,6 +242,7 @@ env ファイルを読ませるのは `release.sh` と同じ変数で走らせ�
 - ★ **`qdrant-dev` のマウント元は配布用のクローンに置く**：`release.sh` は `qdrant-dev` を止めて `recommendations/data/qdrant` を S3 へ**ミラー（--delete）**する。
   マウント元が別のフォルダ・空・古いと、その内容で箱の索引を上書きする。開発用のフォルダのゲートは同じ `qdrant-dev` に HTTP（:6333）でつながるので、Qdrant の実体は 1 つでよい。
 - Python の editable install は**最後に `pip install -e` したフォルダ**を指す。リポジトリ root 以外を cwd にして動くスクリプトは、その向き先のコードを import する＝フォルダごとに env を分ける。
+- ★ **`git pull` でパッケージが増えたら（`pyproject.toml` の `include`）、env に `pip install --no-deps --no-build-isolation -e .` を入れ直す**：editable install の対応づけは入れた時点のパッケージだけを持つ。ゲートはリポジトリ root を cwd にした `python -m` で回る＝対応づけが古くても cwd 経由で読めて通り、パス指定で起動するスクリプト（upload の重みの段）だけがゲートの後で止まる（2026-10-10 staging＝試走で検知）。配る前の確認が cwd を外して全パッケージの向き先を照合する＝古ければゲートの前に止まる（開発用の env・他のクローンでも同じ）。
 
 ### 手元の製作環境（初回のみ・運用者を引き継ぐ人が最初に整える）
 
@@ -365,7 +366,7 @@ conda create -y -n polyarchy-lock -c conda-forge --override-channels python=3.12
 python deploy/scripts/lock_mac_variant.py                     # → /tmp/lock-mac.txt
 P=$HOME/miniconda3/envs/polyarchy-lock/bin            # 自分の conda の envs パスに読み替え
 $P/pip install --require-hashes -r /tmp/lock-mac.txt
-$P/pip install --no-deps --no-build-isolation -e .
+$P/pip install --no-deps --no-build-isolation -e .       # ★パッケージが増えた git pull の後も入れ直す（§5・配る前の確認が照合する）
 # ③ 全ゲート＋配布＝release.sh を「PATH の python をロック env に向けて」回す（ロックとの一致は release.sh の配る前の確認が照合する）。数値が README「品質の担保」と一致することが採否の基準。
 #    依存を上げて数値が動いたら**上げずに現行版で固定**（目的は固定であって更新ではない）
 PATH=$P:$PATH bash deploy/scripts/release.sh staging

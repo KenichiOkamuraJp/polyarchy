@@ -19,6 +19,7 @@
 #   e. ゲートを回す python の依存＝箱のロック（check_lock.py）
 #   f. 政策主張DB の BM25 語彙の n_docs＝qdrant-dev の点数（語彙と索引が同じ時点）
 #   g. コードの範囲（*/data/ 以外）に未コミットの差分が無い（tar は HEAD から作る＝測ったコードと配るコードを揃える）
+#   h. pyproject の全パッケージが、cwd に頼らずにこのフォルダから読める（editable install の向き先と対応づけ）
 # ═══════════════════════════════════════════════════════════════════════════
 
 PF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # このスクリプトの置き場（check_lock.py を並べて置く）
@@ -85,6 +86,32 @@ PYEOF
   echo "  ✓ BM25 語彙と索引が一致（${COLLECTION_NAME}・${out} 点）"
 }
 
+pf_packages() { # editable install がこのフォルダの全パッケージを指しているか（cwd を外して確かめる）
+  # ゲートは root を cwd にした python -m で回る＝editable が古くても cwd 経由で読めてしまう。パス指定で起動する
+  # スクリプト（upload の重みの段の prefetch_models.py）はゲートの後で止まる（2026-10-10 staging＝env を作った後に
+  # 増えたパッケージが対応づけに無かった）。名前は pyproject から拾う＝一覧を手で写さない
+  local out
+  out="$(cd / && python - "$REPO_DIR" 2>&1 <<'PYEOF'
+import importlib.util, os, sys, tomllib
+repo = os.path.realpath(sys.argv[1])
+with open(os.path.join(repo, "pyproject.toml"), "rb") as f:
+    names = [p.rstrip("*") for p in tomllib.load(f)["tool"]["setuptools"]["packages"]["find"]["include"]]
+bad = []
+for n in names:
+    spec = importlib.util.find_spec(n)
+    locs = [os.path.realpath(p) for p in (spec.submodule_search_locations or [])] if spec else []
+    if not locs:
+        bad.append(f"{n}: 読めない")
+    elif os.path.join(repo, n) not in locs:
+        bad.append(f"{n}: {locs[0]} を指している")
+if bad:
+    sys.exit("・".join(bad))
+print(len(names))
+PYEOF
+)" || { pf_fail "ゲートを回す python の editable install がこのフォルダの全パッケージを指していない（${out}）＝このフォルダで pip install --no-deps --no-build-isolation -e . を入れ直す（RUNBOOK §7）"; return 1; }
+  echo "  ✓ 全パッケージが cwd に頼らずこのフォルダから読める（${out} 個）"
+}
+
 preflight() {
   echo "── ⓪ 配る前の確認（測るもの＝配るもの）"
   : "${REPO_DIR:?}" "${AWS_PROFILE:?}"
@@ -113,6 +140,8 @@ preflight() {
   pf_tuning || return 1
   # e. ロック
   python "$PF_DIR/check_lock.py" "$REPO_DIR/deploy/requirements/lock-recommendations-stats.txt" || { pf_fail "ゲートを回す python の依存が箱のロックと違う"; return 1; }
+  # h. editable install の向き先と対応づけ（依存の次に見る）
+  pf_packages || return 1
   # f. 語彙と索引
   pf_vocab || return 1
   # g. コードの範囲の未コミット（data/ 配下の差分＝update.sh が書き換える catalog.csv 等は止めない）

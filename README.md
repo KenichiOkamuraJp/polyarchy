@@ -98,7 +98,7 @@ polyarchy/
 
 ## 運用（人手の箱操作ゼロ・2026-09-03〜）
 
-- **配布**＝`bash deploy/scripts/release.sh <env>`（配る前の確認〔マウント元・ロック・語彙・コレクション名・調整値の混入・未コミットのコード〕→ 下記「品質の担保」の全ゲート PASS のときだけ S3 へ upload〔コードは git の追跡ファイルだけ〕→ マニフェスト）。提言の定型更新は `update.sh`、燃料の週次トリアージは `triage.sh`。
+- **配布**＝`bash deploy/scripts/release.sh <env>`（配る前の確認〔マウント元・ロック・editable install の向き先・語彙・コレクション名・調整値の混入・未コミットのコード〕→ 下記「品質の担保」の全ゲート PASS のときだけ S3 へ upload〔コードは git の追跡ファイルだけ〕→ マニフェスト）。提言の定型更新は `update.sh`、燃料の週次トリアージは `triage.sh`。
 - **箱**＝15 分毎の自動適用（コード tar 再展開・データ同期・smoke と稼働中の /healthz・**失敗時は旧版へ自動切り戻し**）・毎日の更新チェック・毎時のダッシュボード（S3 `ops/dashboard/`）・アラーム→メール。
 - **CI 化（計画）**＝ゲートを公開リポジトリの PR／main に紐づけ（GitHub Actions）、release も CI から行う＝運用者の仕事は「PR をマージ」になる。段階と現在地＝[docs/運用設計.md](docs/運用設計.md) §2.5。
 - 手順＝[deploy/RUNBOOK_OPS.md](deploy/RUNBOOK_OPS.md) §5・設計＝[docs/運用設計.md](docs/運用設計.md) §0/§2.4・監査＝[docs/導入団体側_監査ガイド.md](docs/導入団体側_監査ガイド.md) §4b。
