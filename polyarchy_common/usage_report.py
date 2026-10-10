@@ -58,7 +58,9 @@ HEALTHZ_DELIBERATIONS = "http://localhost:8768/healthz"
 LOW_HIT = 3   # recommendations の低ヒット閾値（coverage_warning と同じ count<3）
 # 捕捉レコードの tool の既知の値（サービスごと）。ここに無い tool は unknown_tools に数える＝ツールが増えたときの
 # 数え漏れを黙らせない（2026-10-09＝stats の lookup_panel と companies の found=false が集計から漏れていた）。
-# recommendations は tool を持たない（source の mcp／mcp_sweep で区別＝recommendations/docs/共通契約.md）。
+# recommendations は tool を持たない（source の mcp／mcp_sweep／mcp_list_orgs で区別＝recommendations/docs/共通契約.md）。
+# 引数の無い一覧のツールは問いではない＝回数を別に数え（recommendations_list・stats_catalog・companies_list・deliberations_list）、
+# 0 件率・低ヒット率の母数に入れない。
 KNOWN_TOOLS = {
     "stats": {"find_statistics", "lookup_statistic", "lookup_panel", "list_datasets", "list_sources"},
     "companies": {"find_company", "list_items", "lookup_company_facts", "lookup_segments", "lookup_regions",
@@ -126,6 +128,7 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
             "week": key, "week_start": monday, "total": 0, "recommendations": 0, "stats": 0,
             "by_source": Counter(), "users": 0,
             "recommendations_zero": 0, "recommendations_low": 0, "recommendations_orgs_filter": 0, "recommendations_period_filter": 0,
+            "recommendations_list": 0, "companies_list": 0,
             "stats_find": 0, "stats_find_zero": 0, "stats_find_filtered": 0,
             "stats_lookup": 0, "stats_found_true": 0, "stats_found_false": 0,
             "stats_nf_reasons": Counter(), "stats_catalog": 0, "stats_panel": 0, "stats_panel_found_false": 0,
@@ -141,7 +144,9 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
             users.setdefault(key, set()).add(rec["user_hash"])
         if svc in KNOWN_TOOLS and str(rec.get("tool", "")) not in KNOWN_TOOLS[svc]:
             w["unknown_tools"][f"{svc}:{rec.get('tool')}"] += 1
-        if svc == "recommendations":
+        if svc == "recommendations" and rec.get("source") == "mcp_list_orgs":
+            w["recommendations_list"] += 1   # 一覧の呼び出し＝検索の 0 件・低ヒット・絞り込みには数えない
+        elif svc == "recommendations":
             n = rec.get("result_count")
             if isinstance(n, int):
                 if n == 0:
@@ -162,6 +167,8 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
                 w["companies_screen"] += 1
             elif rec.get("tool") == "screen_trend":  # 時系列の横断検索（第 1e 便）
                 w["companies_trend"] += 1
+            elif rec.get("tool") in ("list_items", "list_metrics"):
+                w["companies_list"] += 1
             # 参照層の found=false＝取込・語彙の改善候補（ツール別・理由別。companies の捕捉は found/reason を全ツールで持つ）
             if rec.get("found") is False:
                 w["companies_found_false"] += 1
@@ -290,10 +297,12 @@ def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at:
 <b>検索語・ヒット文書名・個人を特定する情報は含まない</b>（数字のみ＝恒久蓄積可・プライバシーポリシー整合）。</p>"""
     parts = [head]
     if latest:
+        rec_search = latest['recommendations'] - latest.get('recommendations_list', 0)   # 一覧の呼び出しは率の母数に入れない
         parts.append(f"""<h2>直近週（{e(latest['week'])}・{e(latest['week_start'])} 週）</h2>
 <p>クエリ {latest['total']} 件（recommendations {latest['recommendations']}・stats {latest['stats']}）／
 識別利用者 {latest['users']} 人（user_hash・authless 分は数えない）／
-recommendations 0 件率 {e(pct(latest['recommendations_zero'], latest['recommendations']))}・低ヒット率(&lt;{LOW_HIT}) {e(pct(latest['recommendations_low'], latest['recommendations']))}／
+recommendations 0 件率 {e(pct(latest['recommendations_zero'], rec_search))}・低ヒット率(&lt;{LOW_HIT}) {e(pct(latest['recommendations_low'], rec_search))}（母数＝検索 {rec_search} 件）／
+一覧の呼び出し recommendations {latest.get('recommendations_list', 0)}・stats {latest.get('stats_catalog', 0)}・companies {latest.get('companies_list', 0)}（引数の無い一覧も含む・2026-10-10〜。一覧だけで先へ進まなかった利用は、欲しい情報が無かった手がかり＝生ログの user_hash と時刻で追う）／
 stats lookup found=false {latest['stats_found_false']} 件・パネル {latest.get('stats_panel', 0)} 件のうち found=false {latest.get('stats_panel_found_false', 0)} 件（拡充候補の一次情報）／
 companies {latest.get('companies', 0)} 件（横断検索 {latest.get('companies_screen', 0)}・時系列 {latest.get('companies_trend', 0)}）・使えなかった入力
 {e("・".join(f"{k} {v}" for k, v in (latest.get('companies_unavailable') or {}).items()) or "—")}（未収録・開示なし＝取込の改善候補／unknown_aggregate:aggregate＝語彙に無い集約を求められた回数）／

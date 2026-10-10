@@ -211,6 +211,13 @@ async def main() -> int:
             p12 = _result_payload(r12)
             ok = ok and len(p12.get("fields", [])) == 21
 
+    # 13) 捕捉ログ：list_orgs も 1 行残す（2026-10-10＝一覧だけ引いて先へ進まなかった利用は、欲しい情報が無かった手がかり）。
+    #     検索の行と混ざらない形＝source="mcp_list_orgs"・query なし・result_count は団体の数（0 件・低ヒットに数えられない）
+    rows = [json.loads(l) for l in tmp_log.read_text(encoding="utf-8").splitlines() if l.strip()] if tmp_log.exists() else []
+    list_rows = [x for x in rows if x.get("source") == "mcp_list_orgs"]
+    print(f"[13] 捕捉ログ: {len(rows)} 行（うち list_orgs {len(list_rows)} 行）")
+    ok = ok and len(list_rows) == 2 and all(not x.get("query") and (x.get("result_count") or 0) > 0 for x in list_rows)
+
     print("=" * 60)
     print(f"総合: {'PASS ✅' if ok else 'FAIL ❌'}  "
           f"（MCP 疎通・公開ツール・層公開固定・stdout クリーン・収録範囲明示・"

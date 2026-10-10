@@ -178,6 +178,10 @@ async def main() -> int:
     fam_rows = [x for x in rows if x.get("tool") == "find_statistics" and x.get("family_count")]
     print(f"[5b] 捕捉ログ family_count: 畳み記録 {len(fam_rows)} 行（例 collapsed={fam_rows[0].get('collapsed') if fam_rows else None}）")
     ok &= bool(fam_rows) and all(isinstance(x.get("collapsed"), int) and x["collapsed"] > 0 for x in fam_rows)
+    # 引数の無い一覧（list_sources）も 1 行残す（2026-10-10＝一覧だけ引いて先へ進まなかった利用は、欲しい情報が無かった手がかり）
+    src_rows = [x for x in rows if x.get("tool") == "list_sources"]
+    print(f"[5c] 捕捉ログ list_sources: {len(src_rows)} 行（例 result_count={src_rows[0].get('result_count') if src_rows else None}）")
+    ok &= bool(src_rows) and all(isinstance(x.get("result_count"), int) and x["result_count"] > 0 for x in src_rows)
     print("=" * 60)
     print("総合: PASS ✅（疎通・fail-closed・層公開固定・stdout クリーン・捕捉配線）" if ok else "総合: FAIL ✗")
     return 0 if ok else 1

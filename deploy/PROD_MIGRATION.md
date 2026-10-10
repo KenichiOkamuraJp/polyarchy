@@ -224,6 +224,11 @@ aws ssm put-parameter --overwrite --type SecureString \
 > resource URL 自体は bootstrap が `TUNNEL_HOST_<SVC>＋SSM の秘密パス`から合成する（env に書くのは AUD だけ）。
 > 秘密パスを差し替えたら **WorkOS の Resource indicator と `AUTH_AUD_<SVC>` も同時に更新**すること（三点一致）。
 
+> **IdP の環境をまたぐとき（実測 2026-10-10・検証用の環境 → Production 環境）**：設定（上の 2）と利用者は引き継がれない＝
+> 利用者は新規登録から入り直す。`user_hash` はメールアドレス由来なので、同じメールアドレスで登録し直せば捕捉ログ上は同じ利用者として続く。
+> Production 環境では登録時のメールアドレスの確認（コードの入力）が必須だった＝利用者への案内に入れる。
+> 検証用の環境で使えていたログイン方法が Production 環境でも使えるかは、切り替えの前に Production 側で確かめる。
+
 ---
 
 ## 3. env/prod.env を用意

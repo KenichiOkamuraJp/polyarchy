@@ -677,6 +677,8 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
             c["series_count"] += 1
             if store.has_data(s.series_id):
                 c["with_values"] += 1
+        # 一覧の呼び出しも 1 行残す（2026-10-10）＝一覧だけ引いて先へ進まなかった利用は、欲しい情報が収録に無かった手がかり
+        _capture({"tool": "list_sources", "result_count": len(counts), "source": "mcp"})
         return {"sources": sorted(counts.values(), key=lambda x: x["code"]),
                 "note": "層は常に公開固定。値の参照は lookup_statistic（完全一致のみ）。"}
 

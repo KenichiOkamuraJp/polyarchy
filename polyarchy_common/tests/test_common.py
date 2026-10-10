@@ -177,6 +177,12 @@ def test_oidc_middleware_user_context():
         assert seen["hash"] == user_hash("sub:user_01ABC") and len(seen["hash"]) == 16
         assert current_user() is None and user_hash() is None  # 終了後は消える
         assert (await call([], path="/other"))[0]["status"] == 200  # 保護対象外は素通し
+        # 守る範囲は前方一致（`protect_path` 配下）＝/mcp/・/mcpx もトークンなしでは 401（狭い側に倒さない）。
+        # トークンが通れば内側のアプリが答える（実サーバでは /mcp 以外は 404）。PRM は RFC 9728 の末尾つきの形でも配る
+        for p in ("/mcp/", "/mcpx", "/mcp/extra"):
+            assert (await call([], path=p))[0]["status"] == 401, p
+            assert (await call([(b"authorization", b"Bearer good")], path=p))[0]["status"] == 200, p
+        assert (await call([], path="/.well-known/oauth-protected-resource/mcp"))[0]["status"] == 200
 
     asyncio.run(run())
 
@@ -315,12 +321,18 @@ def test_usage_report_aggregate():
                        "found": False, "reason": "item_not_disclosed"}),
         ("deliberations", {"ts": "2026-08-19T13:02:00", "tool": "search_deliberations", "query": secret, "hits": 0}),
         ("stats", {"ts": "2026-08-19T13:03:00", "tool": "lookup_newtool", "source": "mcp"}),   # 集計が知らない tool
+        # 引数の無い一覧のツール（2026-10-10〜捕捉）＝問いではないので 0 件率・低ヒット率の母数に入れず、回数を別に数える
+        ("recommendations", {"ts": "2026-08-19T14:00:00", "query": None, "result_count": 13, "source": "mcp_list_orgs"}),
+        ("stats", {"ts": "2026-08-19T14:01:00", "tool": "list_sources", "result_count": 13, "source": "mcp"}),
+        ("companies", {"ts": "2026-08-19T14:02:00", "tool": "list_items", "args": {}, "found": None, "reason": None}),
+        ("companies", {"ts": "2026-08-19T14:03:00", "tool": "list_metrics", "args": {}, "found": None, "reason": None}),
     ]
     rows = aggregate(recs)
     assert len(rows) == 1 and rows[0]["week"] == "2026-W34"
     w = rows[0]
-    assert w["total"] == 11 and w["recommendations"] == 2 and w["stats"] == 5 and w["companies"] == 3 and w["users"] == 1
-    assert w["by_source"] == {"app_chat": 1, "mcp": 6, "unknown": 4}
+    assert w["total"] == 15 and w["recommendations"] == 3 and w["stats"] == 6 and w["companies"] == 5 and w["users"] == 1
+    assert w["by_source"] == {"app_chat": 1, "mcp": 7, "mcp_list_orgs": 1, "unknown": 6}
+    assert w["recommendations_list"] == 1 and w["companies_list"] == 2
     assert w["stats_panel"] == 1 and w["stats_panel_found_false"] == 1
     assert w["companies_found_false"] == 1 and w["companies_nf_reasons"] == {"lookup_company_facts:item_not_disclosed": 1}
     assert w["deliberations"] == 1 and w["deliberations_zero"] == 1
@@ -329,18 +341,20 @@ def test_usage_report_aggregate():
     assert w["companies_unavailable"] == {"input_not_ingested:gross_profit": 1, "input_not_ingested:operating_profit": 1}
     assert w["recommendations_zero"] == 1 and w["recommendations_low"] == 1 and w["recommendations_orgs_filter"] == 1 and w["recommendations_period_filter"] == 1
     assert w["stats_find"] == 1 and w["stats_find_filtered"] == 1 and w["stats_lookup"] == 1
-    assert w["stats_found_false"] == 1 and w["stats_nf_reasons"] == {"no_values": 1, "panel:no_series": 1} and w["stats_catalog"] == 1
+    assert w["stats_found_false"] == 1 and w["stats_nf_reasons"] == {"no_values": 1, "panel:no_series": 1} and w["stats_catalog"] == 2
     # 検索語は集計行にも HTML にも現れない（数字のみ＝恒久蓄積できる根拠）
     import json as _json
     page = render_html(rows, {}, [], "2026-08-21T00:00:00")
     assert secret not in _json.dumps(rows, ensure_ascii=False) and secret not in page
     assert "2026-W34" in page
+    # 0 件率の母数は検索（一覧の呼び出しを除く）＝検索 2 件のうち 0 件 1 件
+    assert "recommendations 0 件率 50%" in page, "0 件率の母数に一覧の呼び出しが入っている"
 
     # マージ：同じ週は再計算で置換。ただし total が痩せた再計算（ログ 30 日削除起因）は既存を残す
     old = [{"week": "2026-W30", "total": 100}, {"week": "2026-W34", "total": 3}]
     merged = merge_weekly(old, rows)
     assert [r["week"] for r in merged] == ["2026-W30", "2026-W34"]
-    assert merged[1]["total"] == 11                                    # 増えた再計算は置換
+    assert merged[1]["total"] == 15                                    # 増えた再計算は置換
     shrunk = merge_weekly(merged, [{"week": "2026-W30", "total": 2}])
     assert shrunk[0]["total"] == 100                                   # 痩せた再計算は既存優先
 
@@ -430,6 +444,34 @@ def test_box_s3_pull_exact_timestamps():
     assert len(pulls) >= 5, pulls   # bootstrap の 4 本＋apply の qdrant のミラー
     bad = [c for c in pulls if "--exact-timestamps" not in c]
     assert not bad, bad
+
+
+def test_guard_path_rule():
+    """入口ガードの「正しいパス以外をエッジで遮断」の式（deploy/scripts/cloudflare-guard.sh の path_rule_expr）。
+    秘密パスあり＝そのパスで始まるもの以外を遮断／値として `/mcp` を入れた構成（秘密パスなしで公開）＝`/mcp` と `/mcp/` 以外を遮断
+    （2026-10-10＝それまでは `/mcp` のとき規則を作らず、無関係なパスも旧い秘密パスも箱まで届いていた）／値が無い＝規則を作らない
+    （SSM の取得に失敗したときに「`/mcp` 以外は遮断」を作ると、秘密パスで動いている箱の正規の要求が全部止まる）。
+    どの式も認証の生命線 3 つ（/.well-known/・/cdn-cgi/・/healthz）を除外する。"""
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+
+    def expr(path: str) -> str:
+        r = subprocess.run(["bash", "-c", 'source deploy/scripts/cloudflare-guard.sh; path_rule_expr'], cwd=root,
+                           capture_output=True, text=True, timeout=30,
+                           env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "MCP_HOST": "svc.example.com",
+                                "ZONE_NAME": "example.com", "MCP_PATH": path})
+        assert r.returncode == 0, r.stderr
+        return r.stdout.strip()
+
+    keep = ('not starts_with(http.request.uri.path, "/.well-known/")', 'not starts_with(http.request.uri.path, "/cdn-cgi/")',
+            'not http.request.uri.path eq "/healthz"')
+    public = expr("/mcp")
+    assert 'http.host eq "svc.example.com"' in public and 'not http.request.uri.path in {"/mcp" "/mcp/"}' in public, public
+    assert all(k in public for k in keep) and "starts_with(http.request.uri.path, \"/mcp\")" not in public, public
+    secret = expr("/mcp-0123abcd")
+    assert 'not starts_with(http.request.uri.path, "/mcp-0123abcd")' in secret and all(k in secret for k in keep), secret
+    assert expr("") == ""
 
 
 def test_capture_log_services_aligned():

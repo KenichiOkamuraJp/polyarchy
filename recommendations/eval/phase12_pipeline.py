@@ -111,6 +111,8 @@ def cmd_triage(args: argparse.Namespace) -> int:
 
     # フィルタ（idx は「全体での位置＝時系列」で安定させ、絞り込み後も元 idx を保持）。
     indexed = list(enumerate(rows, 1))
+    n_list = sum(1 for r in rows if not r.get("query"))   # 一覧のツールの呼び出し（source=mcp_list_orgs）＝問いではない
+    indexed = [(i, r) for i, r in indexed if r.get("query")]
     if args.zero:
         indexed = [(i, r) for i, r in indexed if not r.get("result_count")]
     if args.org:
@@ -123,6 +125,7 @@ def cmd_triage(args: argparse.Namespace) -> int:
 
     print(f"捕捉クエリ {len(indexed)}/{len(rows)} 件"
           + (f"（フィルタ: {_filter_desc(args)}）" if _filter_desc(args) else "")
+          + (f"（ほかに一覧の呼び出し {n_list} 件）" if n_list else "")
           + f"  ログ={QUERY_LOG_PATH}")
     print("凡例: cnt=返却チャンク数（0=棄却/未ヒット候補）・orgs=返却団体・#idx は scaffold --from-log で参照")
     print("-" * 88)

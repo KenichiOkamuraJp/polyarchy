@@ -442,6 +442,9 @@ def build_server(service):
         発行日（YYYYMMDD）。文書本文や件数は返さない。
         """
         log.info("団体一覧の要求")
+        # 【捕捉点】一覧の呼び出しも 1 行残す（2026-10-10）＝一覧だけ引いて検索へ進まなかった利用は、欲しい情報が
+        # 収録に無かった手がかり。検索の行と混ざらないよう source で分ける（query なし・result_count＝団体の数）。
+        capture_query(None, result_count=len(ORG_CODES), source="mcp_list_orgs")
         return {"orgs": [{"code": c, "name": ORG_DESCRIPTIONS[c],
                           **freshness_all.get(c, {})} for c in ORG_CODES],
                 "fields": list(POLICY_TAGS),

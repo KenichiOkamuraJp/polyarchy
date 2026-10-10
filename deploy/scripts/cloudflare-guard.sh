@@ -14,6 +14,12 @@
 #     「既存ルールの式にあるホスト ∪ MCP_HOST」を自動で引き継ぐ（2026-09-22〜。それ以前は MCP_HOST だけに
 #     置き換わり、新サービスで apply すると既存ホストがレート制限から外れる事故があった＝staging 実測）。
 #     ホストを外したいときだけ RL_HOSTS を明示する。apply 後は status でレート制限の式を確認する。
+#   ★パスの規則は SSM の値で決まる（2026-10-10〜）：
+#     秘密パス（`/mcp-<乱数>`）  … そのパスで始まるもの以外をエッジで遮断（従来どおり）。
+#     値として `/mcp`           … 秘密パスなしで公開する構成＝`/mcp`（と `/mcp/`）以外をエッジで遮断（無関係なパスを箱に届かせない）。
+#     値が無い・取得できない     … 規則を作らない（「`/mcp` 以外は遮断」を作ると、秘密パスで動いている箱の正規の要求が全部止まるため）。
+#     どの規則も /.well-known/・/cdn-cgi/・/healthz を除外する。
+#     ★秘密パスを外す・付けるときは「箱が新しいパスで待ち受けてから apply」＝先に apply すると、箱が切り替わるまで全部 403 になる。
 #   bash cloudflare-guard.sh remove              本スクリプトが作ったルールだけ削除
 #   bash cloudflare-guard.sh test                この端末から到達できるか確認
 #
@@ -81,6 +87,27 @@ load_mcp_path() {
   # 末尾を必ず成功で終える（`[[ ]] && ...` が偽だと戻り値1になり set -e で静かに落ちるため）。
   [[ "$MCP_PATH" == "None" ]] && MCP_PATH="" || true
   return 0
+}
+
+# 「正しいパス以外を遮断」の式を stdout に（MCP_HOST・MCP_PATH から。規則を作らないときは何も出さない）。
+# ★除外 3 つ（2026-08-28 実測で追加）：
+#   /.well-known/ … OAuth ディスカバリ（AS metadata/PRM）。WAF は Access より先に評価されるため、
+#     ここを塞ぐと Claude のコネクタ登録（Anthropic サーバからの取得）が失敗する（Managed OAuth の前提）。
+#   /cdn-cgi/    … Cloudflare 内部＝Access のログイン/コールバック（ブラウザが app ホスト経由で
+#     認証 Cookie を張る）。塞ぐと OTP ログインが「Sorry, you have been blocked」で死ぬ（実測）。
+#   /healthz     … 外形監視用（運用設計 §1.1。WAF から除外＝認証不要で 200が、
+#     Bypass ポリシーを足す将来に備えて WAF では通す）。
+path_rule_expr() {
+  local keep match
+  [[ -n "${MCP_PATH:-}" ]] || return 0
+  if [[ "$MCP_PATH" == "/mcp" ]]; then
+    # 秘密パスなしで公開する構成＝完全一致（前方一致にすると /mcpx・旧い秘密パス /mcp-… が箱まで届く）。/mcp/ は箱が /mcp へ転送する。
+    match="http.request.uri.path in {\"/mcp\" \"/mcp/\"}"
+  else
+    match="starts_with(http.request.uri.path, \"${MCP_PATH}\")"
+  fi
+  keep="not starts_with(http.request.uri.path, \"/.well-known/\") and not starts_with(http.request.uri.path, \"/cdn-cgi/\") and not http.request.uri.path eq \"/healthz\""
+  printf '(http.host eq "%s" and not %s and %s)' "$MCP_HOST" "$match" "$keep"
 }
 
 cf_ok() { # stdin=response → success なら 0。失敗時はエラーを表示。
@@ -199,29 +226,29 @@ cmd_apply() {
         '[{action:"block", expression:$expr, description:($tag + "-ip-allowlist"), enabled:true}]')"
   fi
 
-  # 秘密パス（SSM 由来）。設定されていればエッジで「正しいパス以外」を遮断＝origin に届かせない。
-  # ★除外 3 つ（2026-08-28 実測で追加）：
-  #   /.well-known/ … OAuth ディスカバリ（AS metadata/PRM）。WAF は Access より先に評価されるため、
-  #     ここを塞ぐと Claude のコネクタ登録（Anthropic サーバからの取得）が失敗する（Managed OAuth の前提）。
-  #   /cdn-cgi/    … Cloudflare 内部＝Access のログイン/コールバック（ブラウザが app ホスト経由で
-  #     認証 Cookie を張る）。塞ぐと OTP ログインが「Sorry, you have been blocked」で死ぬ（実測）。
-  #   /healthz     … 外形監視用（運用設計 §1.1。WAF から除外＝認証不要で 200が、
-  #     Bypass ポリシーを足す将来に備えて WAF では通す）。
-  if [[ -n "$MCP_PATH" && "$MCP_PATH" != "/mcp" ]]; then
-    local expr_path
-    expr_path="(http.host eq \"${MCP_HOST}\" and not starts_with(http.request.uri.path, \"${MCP_PATH}\") and not starts_with(http.request.uri.path, \"/.well-known/\") and not starts_with(http.request.uri.path, \"/cdn-cgi/\") and not http.request.uri.path eq \"/healthz\")"
+  # パスの規則（SSM 由来）＝エッジで「正しいパス以外」を遮断＝origin に届かせない。式と除外 3 つは path_rule_expr。
+  local expr_path path_rule="なし"
+  expr_path="$(path_rule_expr)"
+  if [[ -n "$expr_path" ]]; then
     add_rules="$(jq -n --argjson a "$add_rules" --arg expr "$expr_path" --arg tag "$TAG" \
         '$a + [{action:"block", expression:$expr, description:($tag + "-secret-path"), enabled:true}]')"
-    log "秘密パス: 設定あり（エッジで正しいパス以外を遮断・値は表示しない）"
+    if [[ "$MCP_PATH" == "/mcp" ]]; then
+      path_rule="/mcp 以外を遮断"
+      log "パス: /mcp（秘密パスなしで公開する構成）＝エッジで /mcp 以外を遮断。入口の防御はログインとレート制限"
+    else
+      path_rule="秘密パス以外を遮断"
+      log "秘密パス: 設定あり（エッジで正しいパス以外を遮断・値は表示しない）"
+    fi
   else
-    warn "秘密パス未設定（既定 /mcp）＝推測可能。SSM の mcp_http_path を設定して再適用を推奨。"
+    warn "パスの値が無い（SSM に未設定か取得に失敗）＝パスの規則を作らない（既存の規則は消える）。"
+    warn "  秘密パスを使うなら SSM に設定して再適用。秘密パスなしで公開するなら SSM に値として /mcp を入れて再適用。"
   fi
 
   rules_now="$(get_rules http_request_firewall_custom)"
   rules_new="$(jq -n --argjson now "$rules_now" --argjson add "$add_rules" --arg tag "$TAG" '
       ($now | map(select((.description // "") | startswith($tag + "-") | not))) + $add')"
   put_rules http_request_firewall_custom "$rules_new"
-  if [[ "${IP_ALLOWLIST:-off}" == "off" ]]; then log "✅ 秘密パスルールを適用（IP 許可は作らない）"; else log "✅ IP 許可リスト（＋秘密パス）を適用"; fi
+  if [[ "${IP_ALLOWLIST:-off}" == "off" ]]; then log "✅ WAF カスタムルールを適用（パスの規則＝${path_rule}・IP 許可は作らない）"; else log "✅ IP 許可リストを適用（パスの規則＝${path_rule}）"; fi
 
   # ② レート制限（anti-flood）＝1 本を作り直す。RL_HOSTS 未指定なら既存ルールのホストを引き継ぐ（置き換え事故の防止）
   local expr_rl rl_now rl_new hosts
@@ -262,12 +289,26 @@ probe() { # $1=path → HTTP コード
 
 cmd_test() {
   load_mcp_path
-  local ip c_old c_secret
+  local ip c_old c_secret c_other
   ip="$(curl -sS -m 10 https://api.ipify.org 2>/dev/null || echo '不明')"
   log "この端末のグローバルIP: ${ip}"
+  if [[ "$MCP_PATH" == "/mcp" ]]; then
+    # 秘密パスなしで公開する構成＝/mcp は箱まで届いて認証が 401 を返す・それ以外はエッジが 403 で止める
+    c_old="$(probe /mcp)"
+    c_other="$(probe /mcp-guard-probe)"
+    log "/mcp                    → HTTP ${c_old}   （401 が正＝箱まで届き、ログインを求められる）"
+    log "/mcp 以外（/mcp-guard-probe） → HTTP ${c_other}   （403 が正＝エッジで遮断）"
+    echo ""
+    if [[ "$c_old" == "401" && "$c_other" == "403" ]]; then log "✅ /mcp だけが箱に届いている"
+    elif [[ "$c_old" == "403" ]]; then warn "⚠ /mcp がエッジで遮断されている＝古い秘密パスの規則が残っている（apply し直す）"
+    elif [[ "$c_other" != "403" ]]; then warn "⚠ /mcp 以外が箱まで届いている＝パスの規則が未適用（apply 直後なら伝播に数十秒）"
+    else log "（/mcp=${c_old}：箱が応答していない可能性）"; fi
+    log "※ 利用者側ネットワークからの疎通確認は別途必要（この端末からは検証できない）。"
+    return 0
+  fi
   c_old="$(probe /mcp)"
   log "旧パス /mcp             → HTTP ${c_old}   （403/404 が正・誰でも試せる入口が塞がったか）"
-  if [[ -n "$MCP_PATH" && "$MCP_PATH" != "/mcp" ]]; then
+  if [[ -n "$MCP_PATH" ]]; then
     c_secret="$(probe "$MCP_PATH")"
     log "秘密パス（値は非表示）   → HTTP ${c_secret}   （この端末が許可外なら 403 が正）"
   fi
@@ -295,6 +336,8 @@ guard_consistency() {
   return 0
 }
 
+# source されたときは関数の定義だけ（test_common が path_rule_expr を呼ぶ）。
+[[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 case "${1:-}" in
   status) cmd_status ;;
   apply)  guard_consistency; cmd_apply "${2:-connector}" ;;

@@ -178,6 +178,7 @@ def list_metrics() -> dict:
     派生項目・検証済みの型(名前つきの指標＝式と注)・未収録の項目(まだ使えない＝使うと input_not_ingested)・業種(EDINET の提出者業種)・
     除外の理由の一覧・式の書き方。screen_companies を使う前に引く。
     """
+    _capture("list_metrics", {}, {})   # 一覧の呼び出しも 1 行残す（2026-10-10＝一覧だけ引いて先へ進まなかった利用の手がかり）
     return screen.list_metrics()
 
 
@@ -244,6 +245,7 @@ def list_items() -> dict:
 
     1 つのキーに束ねているのは同じ概念の会計基準違い(日本基準/IFRS/米国基準)だけ。売上高/売上収益/営業収益/経常収益、経常利益/税引前利益は別のキー。
     """
+    _capture("list_items", {}, {})   # 一覧の呼び出しも 1 行残す（list_metrics と同じ）
     return {"items": [{"item": k, "label": label, "elements": [f"jpcrp_cor:{e}" for e in els]} for k, (label, els) in ITEMS.items()],
             "n_companies": len(store.registry()), "source": "EDINET 有価証券報告書(金融庁)", "license": "公共データ利用規約(PDL1.0)"}
 

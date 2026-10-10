@@ -41,6 +41,7 @@ journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep -E " 50[0-9] "
 アプリ例外なら Traceback が直前に出ている。データ破損疑い（qdrant）なら §3 の復元。
 
 ### アラーム「401 急増」
+- ★**このアラームは、いまの配線では認証の拒否で鳴らない**（2026-10-10 に判明＝数える対象はアクセスログの行だが、アクセスログは認証の内側にあり、拒否された要求は行にならない。残タスク B35）。設定壊れの疑いは、鳴るのを待たずに警告の行で確かめる：`journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep -c "IdP トークン検証失敗"`（トークンを出したのに通らない＝aud・発行者の食い違い）。「Bearer 欠如」は新しい接続の最初の 1 回に必ず出る＝正常。
 - **認証必須（案 B・2026-09-02〜）のため 401 は正常系にも出る**（未認証プローブ・期限切れトークンの再取得前）。急増の主因候補＝①攻撃/スキャンの試行（レート制限が効いているか＝§1「公開 URL」の `cloudflare-guard.sh status`）②**設定壊れ＝aud 不一致**（利用者全員が繋がらない）。
 - 案 B の照合（三点一致）：SSM `auth_issuer`／`auth_aud_<svc>` と WorkOS の Resource indicator と実 URL（ホスト＋秘密パス）が一致しているか。壊れていたら SSM を直して箱で `bootstrap.sh` 再走行 → restart。issuer 変更（テナント差し替え）時は利用者は再ログインになる。
 - （旧・案 A の照合＝`access-oauth.sh status` は Access 併用時のみ・現行は未使用）。
@@ -108,7 +109,7 @@ sudo systemctl start qdrant polyarchy-mcp
 | 何 | 手順 |
 |---|---|
 | 秘密パス（mcp/stats） | `aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/<env>/{mcp,stats}_http_path --value "/mcp-$(openssl rand -hex 16)"` → 箱の `/etc/polyarchy/{mcp,stats}.env` の MCP_HTTP_PATH を更新（bootstrap 再走行 or sed）→ サービス restart → guard を該当 SERVICE・`IP_ALLOWLIST=off` で再適用 → 利用者に新 URL を配布。★WAF ルールはエッジ伝播に数十秒かかる（直後の 403 は慌てない）。★**案 B 認証ホストでは秘密パスは原則回転しない**＝PRM で公開されるため「漏洩時の締め出し」効果が無く、回すと三点一致（WorkOS Resource indicator・`AUTH_AUD_<SVC>`・SSM）の3か所同時更新＋全利用者再登録が要る（PROD_MIGRATION §2.3b）。回転が意味を持つのは authless ホストのみ。参考＝claude.ai は URL 単位で旧 OAuth 設定を記憶する（2026-08-28 実測）＝認証方式を変えるときは URL も変えるのが安全 |
-| **案 B（auth_issuer/auth_aud_<svc>）** | IdP テナント差し替え・resource URL 変更時：`deploy/env/<env>.env` の `AUTH_*` を更新 → `deploy.sh <env> secrets` → 箱で bootstrap 再走行 → restart。WorkOS 側（Resource indicator・Default・JWT テンプレート）も同時に＝三点一致（PROD_MIGRATION §2.5） |
+| **案 B（auth_issuer/auth_aud_<svc>）** | IdP テナント・環境の差し替え、resource URL 変更時：`deploy/env/<env>.env` の `AUTH_*` を更新 → `deploy.sh <env> secrets`（`auth_*` 以外の秘密も同じ値で書き直す＝SSM の版が 1 つ進むだけ）→ **箱への反映は配布に乗せる**（`release.sh <env>`＝自動適用の中の bootstrap 再走行が `/etc/polyarchy/*.env` を書き直し、再起動・smoke・`/healthz` まで行って監査線に残る。2026-10-10 にこの経路で発行者とパスを同時に切り替えた）。急ぐときだけ箱で bootstrap 再走行 → restart（`systemd-cat -t polyarchy-dataapply` を挟む＝§5）。WorkOS 側（Resource indicator・Default・JWT テンプレート）も同時に＝三点一致（PROD_MIGRATION §2.5）。★切り替えの間は接続が切れる（自動適用の再起動の数分）。★発行者か resource URL が変わると、利用者はコネクタを作り直す（発行者が変われば新規登録から＝PROD_MIGRATION §2.5 の注） |
 | Access AUD（旧・案 A） | Access アプリを作り直したら `access-oauth.sh status` で AUD → SSM `access_aud_stats` 更新 → bootstrap 再走行 |
 | Cloudflare API トークン | ダッシュボードで再発行 → Keychain `cloudflare-api-token`（WAF）/`cloudflare-access-token`（Access/DNS/Pages）を更新 |
 | cloudflared 資格情報 | トンネル作り直し時のみ。`deploy.sh <env> secrets` が SSM へ再登録 |

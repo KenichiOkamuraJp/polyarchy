@@ -20,7 +20,8 @@ stderr ログとは別に **追記専用 JSONL** へ残す。これが Phase 12 
   result_count : 返却チャンク数（0＝棄却/未ヒット候補のシグナル）
   top_files    : 返却チャンクのファイル名（順序保持・重複排除）
   top_orgs     : 返却チャンクの団体（重複排除）
-  source       : 捕捉元（既定 "mcp"）
+  source       : 捕捉元（既定 "mcp"・団体横断は "mcp_sweep"・一覧のツール list_orgs は "mcp_list_orgs"＝query なし・
+                 result_count は団体の数。問いではないので triage・品質候補は拾わない）
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ QUERY_LOG_PATH = Path(os.environ.get("POLYARCHY_QUERY_LOG") or (QUERY_LOG_DIR / 
 
 
 def capture_query(
-    query: str,
+    query: Optional[str],
     *,
     orgs: Optional[Sequence[str]] = None,
     since: Optional[int] = None,

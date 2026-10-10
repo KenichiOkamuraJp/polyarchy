@@ -96,6 +96,9 @@ async def run() -> list[str]:
             errs.append("[21] 語彙に無い語（利用者が書いた語）が恒久集計向けの unavailable_vocab に入った")
         if not any(u.get("term") == "secret_word_xyz" for x in scr for u in x.get("unavailable") or []):
             errs.append("[22] 語彙に無い語が捕捉ログ（30 日）に残らない＝triage で拾えない")
+        # 引数の無い一覧（list_items・list_metrics）も 1 行ずつ残す（2026-10-10＝一覧だけ引いて先へ進まなかった利用の手がかり）
+        if not {"list_items", "list_metrics"} <= {x.get("tool") for x in recs}:
+            errs.append("[37] 一覧のツール（list_items・list_metrics）が捕捉ログに残らない")
         if "横断" not in INSTRUCTIONS[0]:
             errs.append("[23] サーバの説明に横断検索（派生値を計算する唯一の入口）が無い")
         # 第 1e 便（時系列）：集約の語彙はツールの説明に書かず list_metrics に（足しても定義が変わらない）
