@@ -26,7 +26,8 @@ from polyarchy_common.capture import append_record  # noqa: E402
 configure_quiet_logging()
 log = get_logger("polyarchy.companies")
 QUERY_LOG = Path(os.getenv("COMPANIES_QUERY_LOG") or Path(__file__).resolve().parent.parent / "data" / "query_log" / "queries.jsonl")
-READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+def read_only(title: str) -> ToolAnnotations:  # 注釈にも title を入れる（ディレクトリのポータルが見るのは annotations.title＝最上位の title だけでは「title が無い」と指摘される・2026-10-10）
+    return ToolAnnotations(title=title, readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 
 SERVER_INSTRUCTIONS = (
     "Polyarchy 企業情報DB(companies)。日本の有価証券報告書(EDINET・金融庁)の「主要な経営指標等の推移」と従業員の状況を、"
@@ -68,7 +69,7 @@ def _vocab_only(unavailable: list[dict]) -> list[dict]:
             if u.get("level") in ("input_not_ingested", "input_not_disclosed") and u.get("term") in fixed]
 
 
-@mcp.tool(title="企業を同定する", annotations=READ_ONLY)
+@mcp.tool(title="企業を同定する", annotations=read_only("企業を同定する"))
 def find_company(query: str) -> dict:
     """社名(一部でも可)・証券コード(4桁)・EDINET コード(E+5桁)から、有価証券報告書の提出会社を同定する。
 
@@ -81,7 +82,7 @@ def find_company(query: str) -> dict:
     return r
 
 
-@mcp.tool(title="企業の開示値を参照する", annotations=READ_ONLY)
+@mcp.tool(title="企業の開示値を参照する", annotations=read_only("企業の開示値を参照する"))
 def lookup_company_facts(company: str, period: str, item: str | None = None, element: str | None = None,
                          basis: str | None = None, doc_id: str | None = None,
                          accounting_standard: str | None = None) -> dict:
@@ -110,7 +111,7 @@ def lookup_company_facts(company: str, period: str, item: str | None = None, ele
     return r
 
 
-@mcp.tool(title="セグメント別の値を参照する", annotations=READ_ONLY)
+@mcp.tool(title="セグメント別の値を参照する", annotations=read_only("セグメント別の値を参照する"))
 def lookup_segments(company: str, period: str | None = None, basis: str | None = None, doc_id: str | None = None,
                     period_from: str | None = None, period_to: str | None = None, elements: list[str] | None = None) -> str:
     """企業×決算期のセグメント別の値を、有価証券報告書に書かれたとおりに表ごと返す(完全一致参照)。期間を指定すれば年ごとに並べる。
@@ -146,7 +147,7 @@ def lookup_segments(company: str, period: str | None = None, basis: str | None =
     return _compact_json(r)
 
 
-@mcp.tool(title="地域別の表を参照する", annotations=READ_ONLY)
+@mcp.tool(title="地域別の表を参照する", annotations=read_only("地域別の表を参照する"))
 def lookup_regions(company: str, period: str | None = None, basis: str | None = None, doc_id: str | None = None,
                    period_from: str | None = None, period_to: str | None = None) -> str:
     """企業×決算期の地域別(国・地域ごと)の売上高・有形固定資産(IFRS は売上収益・非流動資産)の欄を、有価証券報告書に書かれたとおりに返す。
@@ -172,7 +173,7 @@ def lookup_regions(company: str, period: str | None = None, basis: str | None = 
     return _compact_json(r)
 
 
-@mcp.tool(title="横断検索の項目と型を見る", annotations=READ_ONLY)
+@mcp.tool(title="横断検索の項目と型を見る", annotations=read_only("横断検索の項目と型を見る"))
 def list_metrics() -> dict:
     """screen_companies・screen_trend の条件・並べ方に使える語の一覧＝集約の語彙(aggregates・screen_trend)・＝項目のキー(開示値)・仮の項目(top_line=最上段の収益/bottom_line=当期純利益)・
     派生項目・検証済みの型(名前つきの指標＝式と注)・未収録の項目(まだ使えない＝使うと input_not_ingested)・業種(EDINET の提出者業種)・
@@ -182,7 +183,7 @@ def list_metrics() -> dict:
     return screen.list_metrics()
 
 
-@mcp.tool(title="条件で会社を絞り込み並べる", annotations=READ_ONLY)
+@mcp.tool(title="条件で会社を絞り込み並べる", annotations=read_only("条件で会社を絞り込み並べる"))
 def screen_companies(conditions: list[dict], order_by: str | None = None, order: str = "desc", industries: list[str] | None = None,
                      manufacturing: bool | None = None, basis: str | None = None, period_from: str | None = None,
                      period_to: str | None = None, limit: int = 20) -> dict:
@@ -209,7 +210,7 @@ def screen_companies(conditions: list[dict], order_by: str | None = None, order:
     return r
 
 
-@mcp.tool(title="複数年の条件で会社を絞り込み並べる", annotations=READ_ONLY)
+@mcp.tool(title="複数年の条件で会社を絞り込み並べる", annotations=read_only("複数年の条件で会社を絞り込み並べる"))
 def screen_trend(conditions: list[dict], order_by: str | None = None, order: str = "desc", industries: list[str] | None = None,
                  manufacturing: bool | None = None, basis: str | None = None, period_from: str | None = None,
                  period_to: str | None = None, limit: int = 20, companies: list[str] | None = None, detail: bool = False) -> str:
@@ -239,7 +240,7 @@ def screen_trend(conditions: list[dict], order_by: str | None = None, order: str
     return _compact_json(r)
 
 
-@mcp.tool(title="項目の語彙を見る", annotations=READ_ONLY)
+@mcp.tool(title="項目の語彙を見る", annotations=read_only("項目の語彙を見る"))
 def list_items() -> dict:
     """lookup_company_facts の item に使えるキーの一覧(キー・日本語の呼び名・対応する標準タクソノミの要素)。
 

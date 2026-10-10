@@ -80,7 +80,7 @@ def _tuple(x) -> tuple:
 
 
 @mcp.tool(name="search_deliberations", title="審議会議事録DB：資料・議事録の検索", description=SEARCH_DESC,
-          annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+          annotations=ToolAnnotations(title="審議会議事録DB：資料・議事録の検索", readOnlyHint=True, openWorldHint=False))
 def search_deliberations(query: str, orgs: list[str] | None = None, since: int | None = None,
                          until: int | None = None, doc_kinds: list[str] | None = None,
                          roles: list[str] | None = None, top_k: int = 5) -> dict:
@@ -105,7 +105,7 @@ def search_deliberations(query: str, orgs: list[str] | None = None, since: int |
 
 
 @mcp.tool(name="list_meeting", title="審議会議事録DB：回の資料と記録の一覧", description=LIST_DESC,
-          annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+          annotations=ToolAnnotations(title="審議会議事録DB：回の資料と記録の一覧", readOnlyHint=True, openWorldHint=False))
 def list_meeting(org: str, session_no: int) -> dict:
     from deliberations.core.search import list_meeting as _list
     from deliberations.ingest.sources import BY_ORG

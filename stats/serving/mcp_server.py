@@ -72,14 +72,15 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
     log = get_logger("polyarchy.stats")
     mcp = FastMCP(SERVER_NAME, instructions=SERVER_INSTRUCTIONS, log_level="WARNING")
     # 公式コネクタの審査要件：全ツールに title と readOnlyHint（読み取り専用）。
-    RO = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
+    def ro(title: str) -> ToolAnnotations:  # 注釈にも title を入れる（ディレクトリのポータルが見るのは annotations.title＝最上位の title だけでは「title が無い」と指摘される・2026-10-10）
+        return ToolAnnotations(title=title, readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     configure_quiet_logging()
     store = store or ValueStore()
 
     def _capture(rec: dict) -> None:
         append_record(QUERY_LOG_PATH, rec, logger_name="polyarchy.stats.capture")
 
-    @mcp.tool(title="統計系列を探す（発見層）", annotations=RO)
+    @mcp.tool(title="統計系列を探す（発見層）", annotations=ro("統計系列を探す（発見層）"))
     def find_statistics(query: str = "", tags: Optional[list[str]] = None, org: Optional[str] = None,
                         sector: Optional[str] = None, kind: Optional[str] = None,
                         freq: Optional[str] = None, dataset: Optional[str] = None,
@@ -226,7 +227,7 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                                "に影響が入りうる。規模間・業種間の比率比較では脚注を付ける")
         return q
 
-    @mcp.tool(title="統計値を厳密参照する（参照層）", annotations=RO)
+    @mcp.tool(title="統計値を厳密参照する（参照層）", annotations=ro("統計値を厳密参照する（参照層）"))
     def lookup_statistic(series_id: str, period: str, region: str = "JP") -> dict:
         """統計の値を**厳密に参照**する（参照層）。
 
@@ -394,7 +395,7 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                 **({"projection_by": s.projection_by or s.org_name, "edition": s.edition or v.vintage, "scenario": s.scenario,
                     "note_projection": "推計・予測値（観測値ではない）"} if kind == "projection" else {})}
 
-    @mcp.tool(title="複数系列×期間を一括参照する（参照層・パネル）", annotations=RO)
+    @mcp.tool(title="複数系列×期間を一括参照する（参照層・パネル）", annotations=ro("複数系列×期間を一括参照する（参照層・パネル）"))
     def lookup_panel(period: str, series_ids: Optional[list[str]] = None, id_pattern: Optional[str] = None,
                      dims: Optional[dict] = None, region: str = "JP", verbose: bool = True) -> dict:
         """複数の系列を**1 回で**参照する（参照層のパネル版）。lookup_statistic を系列ごとに繰り返すのと同じ値・同じ fail-closed。
@@ -633,7 +634,7 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                for k in keys for v in (dims.get(k) or []) if v not in seen_slugs[k]]
         return sorted(out), bad
 
-    @mcp.tool(title="統計の目録（発見層の入口）", annotations=RO)
+    @mcp.tool(title="統計の目録（発見層の入口）", annotations=ro("統計の目録（発見層の入口）"))
     def list_datasets(sector: Optional[str] = None, org: Optional[str] = None, scope: Optional[str] = None) -> dict:
         """利用できる統計の**目録**（発見層の入口）。「どんなデータがあるか」と聞かれたら**まずこれ**を呼ぶ。
 
@@ -668,7 +669,7 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                 "sectors": list(SECTORS), "scopes": {"jp": "日本の統計（全国・都道府県）", "intl": "国際比較（国別 ISO3・IMF/OECD/世銀）"},
                 "note": "目録。値は lookup_statistic（完全一致のみ）。派生（derived）は値を持たず構成系列を返す。"}
 
-    @mcp.tool(title="調査主体コードの一覧", annotations=RO)
+    @mcp.tool(title="調査主体コードの一覧", annotations=ro("調査主体コードの一覧"))
     def list_sources() -> dict:
         """登録済みの調査主体コード（org）ごとの系列数・値ありの系列数を返す。"""
         counts: dict[str, dict] = {}

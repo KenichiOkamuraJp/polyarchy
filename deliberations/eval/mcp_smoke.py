@@ -22,8 +22,8 @@ def main() -> int:
     if names != ["list_meeting", "search_deliberations"]:
         bad.append(f"ツール {names}")
     for t in tools:
-        if not (t.annotations and t.annotations.readOnlyHint) or not t.title:
-            bad.append(f"{t.name} に title／readOnlyHint が無い")
+        if not (t.annotations and t.annotations.readOnlyHint and t.annotations.title) or not t.title:
+            bad.append(f"{t.name} に title／readOnlyHint／注釈の title（annotations.title）が無い")
         if "layer" in (t.inputSchema.get("properties") or {}):
             bad.append(f"{t.name} に layer 引数がある（公開固定に反する）")
     # 説明文の会議体の一覧（手書き）が収録の会議体（ingest.sources.BY_ORG）と揃っている＝会議体を足して説明文を直し忘れない（2026-10-09）

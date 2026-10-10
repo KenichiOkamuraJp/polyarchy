@@ -36,8 +36,8 @@ async def main() -> int:
                 if any("layer" in p.lower() for p in props):
                     print(f"    ✗ {t.name} に layer 引数がある"); ok = False
                 # 入口の契約（ルート README §2）＝全ツールに title と readOnlyHint（companies の smoke と同じ検査・2026-10-09）
-                if not (t.annotations and t.annotations.readOnlyHint) or not t.title:
-                    print(f"    ✗ {t.name} に title／readOnlyHint が無い"); ok = False
+                if not (t.annotations and t.annotations.readOnlyHint and t.annotations.title) or not t.title:
+                    print(f"    ✗ {t.name} に title／readOnlyHint／注釈の title（annotations.title）が無い"); ok = False
             print("    layer 引数: なし（機密は要求不可）・全ツールに title と readOnlyHint")
 
             r = _payload(await session.call_tool("lookup_statistic",

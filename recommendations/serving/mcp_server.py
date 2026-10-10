@@ -12,7 +12,7 @@ Phase 10：MCP サーバ（retrieval-as-a-tool）。本番検索を MCP ツー�
 - `list_orgs()`  … コーパスの団体コードと鮮度（多段検索で「団体ごとに叩く」ための一覧）。
 
 ■ 公式コネクタ要件（docs/公式コネクタ要件.md §0 #5・#7）
-全ツールに `title`＋`ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)`、
+全ツールに `title`＋`ToolAnnotations(title=同じ文字列, readOnlyHint=True, destructiveHint=False, openWorldHint=False)`、
 サーバに `instructions`（何を返し・何を返さないか）。説明文は「何をするか・いつ使うか」だけに保つ
 （利用者 Claude への振る舞い指示・他ツールへの干渉・宣伝は書かない＝審査で却下される）。
 
@@ -115,7 +115,8 @@ def build_server(service):
     from mcp.types import ToolAnnotations
 
     # 公式コネクタ要件：全ツールに title＋readOnlyHint（読み取り専用・破壊なし・閉世界＝自前 DB のみ）。
-    RO = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
+    def ro(title: str) -> ToolAnnotations:  # 注釈にも title を入れる（ディレクトリのポータルが見るのは annotations.title＝最上位の title だけでは「title が無い」と指摘される・2026-10-10）
+        return ToolAnnotations(title=title, readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 
     log = get_logger("polyarchy.mcp")
     # log_level="WARNING": FastMCP は __init__ の configure_logging で root を INFO＋RichHandler に
@@ -132,7 +133,7 @@ def build_server(service):
              " ".join(f"{o}={v['last_ingested']}" for o, v in freshness_all.items()) or "catalog なし",
              COVERAGE_WARN_MIN_COUNT)
 
-    @mcp.tool(title="政策文書の横断検索（recommendations）", annotations=RO)
+    @mcp.tool(title="政策文書の横断検索（recommendations）", annotations=ro("政策文書の横断検索（recommendations）"))
     def search_policy_docs(
         query: str,
         orgs: Optional[list[str]] = None,
@@ -269,7 +270,7 @@ def build_server(service):
     SWEEP_PER_ORG_MAX = 5
     SWEEP_RESULTS_MAX = 15
 
-    @mcp.tool(title="政策文書の団体横断スイープ（多段検索・recommendations）", annotations=RO)
+    @mcp.tool(title="政策文書の団体横断スイープ（多段検索・recommendations）", annotations=ro("政策文書の団体横断スイープ（多段検索・recommendations）"))
     def sweep_policy_docs(
         query: str,
         mode: str = "auto",
@@ -431,7 +432,7 @@ def build_server(service):
         payload.update(extra)
         return payload
 
-    @mcp.tool(title="収録団体の一覧（recommendations）", annotations=RO)
+    @mcp.tool(title="収録団体の一覧（recommendations）", annotations=ro("収録団体の一覧（recommendations）"))
     def list_orgs() -> dict:
         """コーパスに収録されている団体・政府のコードと名称を返す。
 

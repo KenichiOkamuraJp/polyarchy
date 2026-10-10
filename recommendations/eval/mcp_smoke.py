@@ -77,8 +77,8 @@ async def main() -> int:
             for t in tools.tools:
                 if any("layer" in p.lower() or "機密" in p for p in (t.inputSchema or {}).get("properties", {})):
                     contract.append(f"{t.name} に layer 引数がある（層は公開固定）")
-                if not (t.annotations and t.annotations.readOnlyHint) or not t.title:
-                    contract.append(f"{t.name} に title／readOnlyHint が無い")
+                if not (t.annotations and t.annotations.readOnlyHint and t.annotations.title) or not t.title:
+                    contract.append(f"{t.name} に title／readOnlyHint／注釈の title（annotations.title）が無い")
             print(f"[1b] 入口の契約: {'OK' if not contract else contract}")
             ok = ok and not contract
 
