@@ -297,7 +297,7 @@ sudo systemctl start polyarchy-mcp polyarchy-stats
 
 | 層 | 内容 |
 |---|---|
-| ① 秘密パス | `MCP_HTTP_PATH=/mcp-<128bit乱数>` 以外のパスをエッジで block（値は SSM のみ・repo に持たない。除外＝/.well-known/・/cdn-cgi/・/healthz）|
+| ① 秘密パス | `MCP_HTTP_PATH=/mcp-<128bit乱数>` 以外のパスをエッジで block（値は SSM のみ・repo に持たない。除外＝/.well-known/・/cdn-cgi/・/healthz） 接続 URL を公開する前提なら、秘密パスなしの構成を選べる＝下の「秘密パスなしで公開する構成」|
 | ② レート制限 | per-IP。無料プランは 10 秒窓のため 1200/分 → **200 req/10s** に自動換算 |
 | ③ 層公開固定 | 従来どおり（機密は物理遮断・`search_api`）|
 | （廃止）IP 許可 | **2026-08-27/28 に廃止**＝ChatGPT egress は列挙不能・OAuth のディスカバリ/ログインはレンジ外から来る。guard は `IP_ALLOWLIST=off` で適用（経緯の正典＝[`PROD_MIGRATION.md`](PROD_MIGRATION.md) §2.3）|
@@ -311,6 +311,25 @@ aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/staging/
 ```
 → 箱で `bootstrap.sh` を再走行（または `/etc/polyarchy/mcp.env` を更新して `systemctl restart polyarchy-mcp`）
 → `bash scripts/cloudflare-guard.sh apply connector` で WAF ルールも更新 → 新URLを利用者へ再配布。
+
+### 秘密パスなしで公開する構成（接続 URL を公開するとき・2026-10-10 に staging で採用）
+既定は秘密パスあり（上の表・導入団体向けの手順 [`PROD_MIGRATION.md`](PROD_MIGRATION.md) もこちら）。**接続 URL そのものを公開する**前提に変えるとき
+（例＝コネクタのディレクトリへの掲載）は、秘密パスが意味を失うので、全サービスのパスを既定の `/mcp` にして公開できる。コードの変更は無い＝
+SSM のパスの値・`AUTH_AUD_<SVC>`・IdP の Resource indicator・ガードの差し替えだけ。
+
+| 層 | 秘密パスあり（既定） | 秘密パスなし |
+|---|---|---|
+| ① パス | 秘密パスで始まるもの以外をエッジで block | **`/mcp`（と `/mcp/`）以外をエッジで block**（完全一致＝`/mcpx`・旧い秘密パスも止める。除外 3 つは同じ）|
+| ② レート制限 | per-IP | 同じ。★コネクタ経由の利用者はベンダーのサーバの IP から来る＝**利用者ごとの上限にはならない**（要るならサーバ側の実装）|
+| 認証 | ログイン必須（外部 IdP） | 同じ＝**防壁の本体はここ**。誰が登録できるか（招待制・ドメイン制限・開放）は IdP 側の設定で決める |
+| ③ 層公開固定 | 従来どおり | 同じ |
+
+- ガードは SSM のパスの値を見て規則を作り分ける＝値が `/mcp` なら「`/mcp` 以外を遮断」・秘密パスなら従来どおり・**値が無い（取得できない）ときは規則を作らない**
+  （式は `cloudflare-guard.sh` の `path_rule_expr`＝`test_common` が固定）。秘密パスを外すときは SSM のパラメータを消さず、値として `/mcp` を入れる。
+- 失うもの＝既定のパスを叩く無差別のスキャナをエッジで落とす層（`/mcp` は箱まで届き、認証が 401 を返す）。残るもの＝ログイン・レート制限・`/mcp` 以外の遮断。
+- ★**URL を公開した後は、発行者（IdP）・ホスト名・パスを変えない**（公開した URL と利用者の接続がそこに紐づく＝変えると全員がコネクタを作り直す）。箱を建て直す・別の基盤へ移すときも同じ値で。
+- 公開ページ（接続の説明・料金・プライバシーポリシー）を、公開する内容と揃えてから URL を公開する。
+- 切り替えの手順と順（箱が `/mcp` で待ち受けてからガードをかけ直す）＝[`RUNBOOK_OPS.md`](RUNBOOK_OPS.md) §4「秘密パスを外す」。
 
 ### 捕捉ログの保持＝30日で自動削除（**この節が正典**。他文書はここへリンク）
 プライバシーポリシーの約束（30 日）を機械で担保する。**箱と S3 の両方・捕捉ログを持つ全サービス**で担保する。

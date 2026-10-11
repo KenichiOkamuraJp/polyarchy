@@ -116,6 +116,27 @@ sudo systemctl start qdrant polyarchy-mcp
 | Cloudflare API トークン | ダッシュボードで再発行 → Keychain `cloudflare-api-token`（WAF）/`cloudflare-access-token`（Access/DNS/Pages）を更新 |
 | cloudflared 資格情報 | トンネル作り直し時のみ。`deploy.sh <env> secrets` が SSM へ再登録 |
 
+### 秘密パスを外す（既定の `/mcp` で公開する構成へ・2026-10-10 に staging で実走）
+
+いつ使うか＝接続 URL を公開する前提に変えるとき（例＝コネクタのディレクトリへの掲載。URL が公開されるので秘密パスは意味を失う）。構成の説明と、入口の防御がどう変わるかは [README §9.5「秘密パスなしで公開する構成」](README.md)。
+★**URL（ホスト＋パス）が変わる＝利用者は全員コネクタを作り直す**（三点一致の文字列が変わるため。上の表の案 B の行と同じ）。全サービスを同じ日に替える。★**順を守る＝箱が `/mcp` で待ち受けてからガードをかけ直す**（先にガードをかけ直すと、エッジが `/mcp` 以外を止める＝まだ秘密パスで待ち受けている箱への正規の要求が全部 403 になる）。
+
+1. **IdP**：各サービスの新しい URL `https://<ホスト>/mcp` を Resource indicator に登録する（Default の指定も＝PROD_MIGRATION §2.5 の 2・3）。
+2. **env と SSM**：`deploy/env/<env>.env` の `AUTH_AUD_<SVC>` を同じ文字列 `https://<ホスト>/mcp` に書き換え、`deploy.sh <env> secrets`。パスは SSM に**値として `/mcp` を入れる**（パラメータを消さない）：
+   ```bash
+   aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/<env>/<svc>_http_path --value "/mcp"   # recommendations は mcp_http_path
+   ```
+   - 消すと、箱は既定の `/mcp` で起動するが、ガードは値を読めず**パスの規則を作らない**（無関係なパスが箱まで届く。値が無いときに「`/mcp` 以外を遮断」を作らないのは、秘密パスで動いている箱を止めないため）。
+   - SSM の値は次の自動適用で箱に入る＝書いたら同じ作業の中で 3 まで進める。
+3. **配布**：`release.sh <env>` → 自動適用の中の bootstrap 再走行が `/etc/polyarchy/*.env` を書き直して再起動する。APPLIED と箱上 smoke PASS を待つ。この時点で箱は `/mcp` で待ち受けるが、**エッジには旧い秘密パスの規則が残っている＝`/mcp` は 403**（次の 4 まで外からつながらない＝続けて行う）。
+4. **ガードのかけ直し**（運営者がターミナルで＝§1「公開 URL」）：全サービスで `cloudflare-guard.sh apply` → `test`。正＝`/mcp` は 401（箱まで届き、ログインを求められる）・それ以外（`/mcpx`・旧い秘密パス・`/`）はエッジで 403・`/.well-known/` と `/healthz` は 200。直後の食い違いはエッジの伝播（数十秒）を待つ。
+5. **確認**：使っている経路ごとに、新しい URL でコネクタを作り直す → ログイン → ツール実行 → 捕捉ログに利用者キーつきの行。Default でない Resource indicator のサービスでも 1 回通す。
+6. **案内**：利用者へ新しい URL と作り直しの手順を伝え、公開ページの接続の説明を新しい構成に揃える。
+
+- 箱は `/mcp` で始まるパスすべてに、トークンなしで 401 を返す（守る範囲が前方一致＝意図どおり。`/mcpx` などはエッジが先に止める）。
+- IdP の環境も同じ日に替えるなら、発行者（`AUTH_ISSUER`）も 2 で一緒に書き換える＝利用者は新規登録から（PROD_MIGRATION §2.5 の注）。
+- 秘密パスを付け直すときも順は同じ（箱が新しいパスで待ち受けてからガード）。★ただし URL を公開した後（掲載の後）は、発行者・ホスト名・パスを変えない＝掲載の URL と利用者の接続がそこに紐づく。
+
 ## 5. データ更新（公開ページの約束）
 
 **何を更新すべきかは毎日の更新チェックが教える**＝ダッシュボード③の「提言の新着 N 件」「stats 取得元の変化 N 件」「stats 取込待ち N 件」
