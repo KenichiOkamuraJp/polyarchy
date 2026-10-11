@@ -330,6 +330,12 @@ SSM のパスの値・`AUTH_AUD_<SVC>`・IdP の Resource indicator・ガード�
 - ★**URL を公開した後は、発行者（IdP）・ホスト名・パスを変えない**（公開した URL と利用者の接続がそこに紐づく＝変えると全員がコネクタを作り直す）。箱を建て直す・別の基盤へ移すときも同じ値で。
 - 公開ページ（接続の説明・料金・プライバシーポリシー）を、公開する内容と揃えてから URL を公開する。
 - 切り替えの手順と順（箱が `/mcp` で待ち受けてからガードをかけ直す）＝[`RUNBOOK_OPS.md`](RUNBOOK_OPS.md) §4「秘密パスを外す」。
+- **掲載先によるドメインの確認**（OpenAI のプラグインのディレクトリ）＝掲載先の画面が発行する文字列を、サービスのホストの
+  `/.well-known/openai-apps-challenge` でそのまま返す。SSM `openai_apps_challenge_<svc>`（recommendations は `_mcp`）に文字列を入れて配布すると、
+  bootstrap がそのサービスの env に渡し、サービスが返すようになる（無ければ 404 のまま＝既定。ガードは `/.well-known/` を除外しているので箱まで届く）。
+  手順＝掲載先の画面で文字列を得る → `aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/<env>/openai_apps_challenge_<svc> --value "<文字列>"`
+  → `release.sh <env>` → `curl https://<ホスト>/.well-known/openai-apps-challenge` が文字列だけを返すのを見てから、掲載先の画面で確認を押す。
+  文字列は秘密ではない（公開して確かめさせる値）。掲載のあいだは消さない（掲載先が後から確かめ直すことがある）。
 
 ### 捕捉ログの保持＝30日で自動削除（**この節が正典**。他文書はここへリンク）
 プライバシーポリシーの約束（30 日）を機械で担保する。**箱と S3 の両方・捕捉ログを持つ全サービス**で担保する。

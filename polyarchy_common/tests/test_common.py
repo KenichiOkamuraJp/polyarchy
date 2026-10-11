@@ -289,6 +289,51 @@ def test_httplog_and_healthz():
     asyncio.run(run())
 
 
+def test_domain_challenge():
+    """掲載先によるドメインの確認の口：文字列があればそのパスだけ素の文字列で返す（JSON にしない・改行を足さない・認証の外）・
+    無い／形が想定外なら装着しない（従来どおり内側へ＝404）・入口（mcp_http）が env から装着し、bootstrap が SSM から env に渡す。"""
+    import asyncio
+
+    from polyarchy_common.httplog import OPENAI_APPS_CHALLENGE_PATH, domain_challenge_middleware
+
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 404, "headers": []})
+        await send({"type": "http.response.body", "body": b"Not Found"})
+
+    async def call(app, path, method="GET"):
+        out = []
+
+        async def send(msg):
+            out.append(msg)
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await app({"type": "http", "path": path, "method": method, "headers": []}, receive, send)
+        return out
+
+    assert OPENAI_APPS_CHALLENGE_PATH == "/.well-known/openai-apps-challenge"
+    for empty in (None, "", "  "):
+        assert domain_challenge_middleware(inner, empty) is inner                 # 無ければ装着しない
+    for bad in ("tok en-with-space", "line1\nline2xx", '{"token":"abcdefgh"}', "short"):
+        assert domain_challenge_middleware(inner, bad) is inner, bad               # 形が想定外＝返さない
+    app = domain_challenge_middleware(inner, " abcDEF123_-.~xyz \n")
+    out = asyncio.run(call(app, OPENAI_APPS_CHALLENGE_PATH))
+    assert out[0]["status"] == 200 and out[1]["body"] == b"abcDEF123_-.~xyz"       # 前後の空白は落とし、文字列だけ
+    assert dict(out[0]["headers"])[b"content-type"].startswith(b"text/plain")
+    assert asyncio.run(call(app, OPENAI_APPS_CHALLENGE_PATH, "HEAD"))[1]["body"] == b""
+    assert asyncio.run(call(app, OPENAI_APPS_CHALLENGE_PATH, "POST"))[0]["status"] == 404
+    assert asyncio.run(call(app, OPENAI_APPS_CHALLENGE_PATH + "/x"))[0]["status"] == 404   # 完全一致だけ
+    assert asyncio.run(call(app, "/mcp"))[0]["status"] == 404                      # 他パスは素通し
+
+    root = Path(__file__).resolve().parents[2]
+    serve = (root / "polyarchy_common/mcp_http.py").read_text(encoding="utf-8")
+    assert 'domain_challenge_middleware(app, os.environ.get("MCP_OPENAI_APPS_CHALLENGE")' in serve
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    assert 'ssm_get "openai_apps_challenge_${svc}"' in boot and "MCP_OPENAI_APPS_CHALLENGE=%s" in boot
+    # ガードの除外（/.well-known/）がこの口をエッジで止めない＝test_guard_path_rule が式を固定している
+
+
 def test_usage_report_aggregate():
     """週次集計＝数字のみ（検索語を含まない）・週キー・recommendations/stats の分類・マージ規則（痩せた週は既存優先）。"""
     from polyarchy_common.usage_report import aggregate, merge_weekly, render_html, week_key

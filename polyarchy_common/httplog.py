@@ -1,8 +1,8 @@
 """
-HTTP 入口の運用部品（全サービス共通・純 ASGI）：アクセスログと /healthz。
+HTTP 入口の運用部品（全サービス共通・純 ASGI）：アクセスログと /healthz・掲載先によるドメインの確認の口。
 
 設計＝docs/運用設計.md §1.1・§1.2。`mcp_http.serve_streamable_http` が自動装着する。
-ラップ順（外→内）：healthz → （認証＝access.install_auth）→ アクセスログ → MCP アプリ。
+ラップ順（外→内）：ドメインの確認（env があるときだけ）→ healthz → （認証＝access.install_auth）→ アクセスログ → MCP アプリ。
 - healthz は最外＝認証不要・内側が壊れていても応答できる（生き死にの判定はここ）。
 - アクセスログは認証の内側＝認証済みリクエストに `user_hash` が付く
   （未認証の拒否は access 側が warning を出す）。認証を装着しないローカル開発では全リクエストが対象。
@@ -13,6 +13,7 @@ CloudWatch Logs に載せた後のメトリクスフィルタ（5xx 率・レイ
 deploy/terraform/monitoring.tf と RUNBOOK を同時に。保持はプライバシーポリシーどおり 30 日（Logs 側の設定）。
 """
 import json
+import re
 import time
 from typing import Callable, Optional
 
@@ -76,6 +77,40 @@ def healthz_middleware(app, health_check: Callable[[], dict], *, service: str,
                           ensure_ascii=False).encode()
         await send({"type": "http.response.start", "status": 200 if ok else 503,
                     "headers": [(b"content-type", b"application/json; charset=utf-8"),
+                                (b"cache-control", b"no-store")]})
+        await send({"type": "http.response.body", "body": b"" if scope.get("method") == "HEAD" else body})
+
+    return middleware
+
+
+# 掲載先（ディレクトリ）によるドメインの確認＝確認用の文字列を決まったパスでそのまま返す口。
+OPENAI_APPS_CHALLENGE_PATH = "/.well-known/openai-apps-challenge"
+_CHALLENGE_TOKEN_RE = re.compile(r"[A-Za-z0-9._~+/=-]{8,512}")
+
+
+def domain_challenge_middleware(app, token: Optional[str], *, path: str = OPENAI_APPS_CHALLENGE_PATH,
+                                logger_name: str = "polyarchy.http"):
+    """GET/HEAD <path> に `token` だけを text/plain で返す（認証不要・最外に置く）。
+
+    掲載先がホストの持ち主を確かめるための口（文字列は掲載先の画面が発行する＝秘密ではなく、公開して確かめさせる値）。
+    `token` が空なら装着しない（そのパスは従来どおり 404）。形が想定外（空白・改行・記号）のときも装着せず警告だけ出す
+    ＝env の書き損じを外へ返さない。返すのは文字列そのもの（JSON にしない・改行を足さない）。
+    """
+    token = (token or "").strip()
+    if not token:
+        return app
+    log = get_logger(logger_name)
+    if not _CHALLENGE_TOKEN_RE.fullmatch(token):
+        log.warning("ドメイン確認の文字列の形が想定外＝返さない（%s は 404 のまま）", path)
+        return app
+    body = token.encode("ascii")
+
+    async def middleware(scope, receive, send):
+        if scope.get("type") != "http" or scope.get("path") != path \
+                or scope.get("method") not in ("GET", "HEAD"):
+            return await app(scope, receive, send)
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": [(b"content-type", b"text/plain; charset=utf-8"),
                                 (b"cache-control", b"no-store")]})
         await send({"type": "http.response.body", "body": b"" if scope.get("method") == "HEAD" else body})
 

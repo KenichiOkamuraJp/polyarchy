@@ -33,8 +33,9 @@ async def run() -> list[str]:
         for t in tools.values():
             if "layer" in (t.inputSchema.get("properties") or {}):
                 errs.append(f"[2] {t.name} に layer 引数がある（層は公開固定）")
-            if not (t.annotations and t.annotations.readOnlyHint and t.annotations.title) or not t.title:
-                errs.append(f"[3] {t.name} に title／readOnlyHint／注釈の title（annotations.title）が無い")
+            if not (t.annotations and t.annotations.readOnlyHint and t.annotations.title
+                    and t.annotations.destructiveHint is False and t.annotations.openWorldHint is False) or not t.title:
+                errs.append(f"[3] {t.name} に title／注釈の title（annotations.title）／注釈の 3 つの明示（readOnlyHint=True・destructiveHint=False・openWorldHint=False）が無い")
         # 「合計して」と頼まれると区分から足し直した値を先に出した（2026-09-23 staging・ChatGPT）＝会社の計を答えにするよう説明で案内する
         if "合計を問われたら、会社が表に書いた計・合計を答えにする" not in (getattr(tools.get("lookup_segments"), "description", "") or ""):
             errs.append("[11] lookup_segments の説明に、会社の計・合計を答えにする案内が無い")

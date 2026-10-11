@@ -294,13 +294,17 @@ auth_env_lines() { # $1=サービス名（ログ用） $2=秘密パス $3=Access
   fi
 }
 write_service_env() { # $1=サービス名 $2=env ファイル $3=秘密パス $4=Access AUD $5=IdP AUD $6=公開ホスト → 内容があれば 600 で書く・無ければ削除
-  local svc="$1" f="$2" p="$3" auth
+  local svc="$1" f="$2" p="$3" auth challenge
   auth="$(auth_env_lines "$svc" "$p" "$4" "${5:-}" "${6:-}")" || exit 1
-  if [[ -z "$p" && -z "$auth" ]]; then rm -f "$f"; return 0; fi
+  # 掲載先によるドメインの確認（任意）＝SSM openai_apps_challenge_<svc> があれば、そのサービスが確認用の文字列を返す
+  #   （polyarchy_common.httplog.domain_challenge_middleware。無ければ行を書かない＝そのパスは 404 のまま）。
+  challenge="$(ssm_get "openai_apps_challenge_${svc}")"
+  if [[ -z "$p" && -z "$auth" && -z "$challenge" ]]; then rm -f "$f"; return 0; fi
   umask 077
   : > "$f"
   [[ -n "$p" ]] && printf 'MCP_HTTP_PATH=%s\n' "$p" >> "$f"
   [[ -n "$auth" ]] && printf '%s\n' "$auth" >> "$f"
+  [[ -n "$challenge" ]] && printf 'MCP_OPENAI_APPS_CHALLENGE=%s\n' "$challenge" >> "$f"
   chown "$SVC_USER:$SVC_USER" "$f"; chmod 600 "$f"; umask 022
 }
 write_service_env mcp /etc/polyarchy/mcp.env "$MCP_PATH" "$(ssm_get access_aud_mcp)" "$(ssm_get auth_aud_mcp)" "${TUNNEL_HOST_MCP:-}"

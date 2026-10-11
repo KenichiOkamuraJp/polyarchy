@@ -9,6 +9,8 @@ Bearer 検証）＋秘密パス＋エッジのレート制限で守る構成の"
 環境変数（サービス横断で同名）：
 - `MCP_ALLOWED_HOSTS`      … 設定時は DNS リバインディング保護 ON＋許可ホスト限定
                               （例 "recommendations.example.com,127.0.0.1:8765"）。未設定＝保護 OFF（トンネル前提）。
+- `MCP_OPENAI_APPS_CHALLENGE` … 掲載先（OpenAI のプラグインのディレクトリ）が発行するドメイン確認の文字列。設定時だけ
+                              GET `/.well-known/openai-apps-challenge` がその文字列を返す（認証不要）。未設定＝404 のまま。
 - 認証の env（`MCP_ACCESS_*`＝案 A・`MCP_AUTH_*`＝案 B）は `access.install_auth` が読む（装着点はそこ 1 か所。
   契約と差し替えの約束は同関数の docstring・`docs/個人認証_案B設計.md`）。
 """
@@ -48,9 +50,9 @@ def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, pat
              "許可ホスト限定" if _allowed else "off(トンネル前提)")
 
     # ASGI は常に自前で組む（mcp.run(streamable-http) と同じ uvicorn 経路）。
-    # ラップ順（外→内）：healthz →（認証：install_auth）→ アクセスログ → MCP アプリ。
+    # ラップ順（外→内）：ドメインの確認（env があるときだけ）→ healthz →（認証：install_auth）→ アクセスログ → MCP アプリ。
     import uvicorn
-    from polyarchy_common.httplog import access_log_middleware, healthz_middleware
+    from polyarchy_common.httplog import access_log_middleware, domain_challenge_middleware, healthz_middleware
     app = access_log_middleware(mcp.streamable_http_app(), logger_name=logger_name)
 
     # 認証は access.install_auth の 1 か所で装着する（env を見て案 A／案 B・差し替え点もそこ）。
@@ -59,4 +61,8 @@ def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, pat
     if health_check is not None:
         app = healthz_middleware(app, health_check, service=logger_name, logger_name=logger_name)
         log.info("healthz=有効（GET /healthz・認証不要）")
+    challenged = domain_challenge_middleware(app, os.environ.get("MCP_OPENAI_APPS_CHALLENGE"), logger_name=logger_name)
+    if challenged is not app:
+        app = challenged
+        log.info("ドメインの確認の口=有効（GET /.well-known/openai-apps-challenge・認証不要）")
     uvicorn.run(app, host=host, port=port, log_level="warning")
