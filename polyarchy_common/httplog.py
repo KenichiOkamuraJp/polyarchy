@@ -12,12 +12,38 @@ HTTP 入口の運用部品（全サービス共通・純 ASGI）：アクセス�
 CloudWatch Logs に載せた後のメトリクスフィルタ（5xx）はこの形式に依存する＝変えるときは
 deploy/terraform/observability.tf と RUNBOOK を同時に（認証の失敗は、この行ではなく access 側の警告の行の目印を数える）。保持はプライバシーポリシーどおり 30 日（Logs 側の設定）。
 """
+import contextvars
 import json
 import re
 import time
 from typing import Callable, Optional
 
 from polyarchy_common.logsetup import get_logger
+
+# ── 接続元のクライアントの種別（捕捉ログの `client`・2026-10-12）────────────────────
+# 本番と同じ stateless の設定では、ツールの呼び出しのたびに新しいセッションが作られ、MCP の clientInfo は付いてこない
+# （届くのは別の要求の initialize だけ）＝呼び出しごとに経路を知る手がかりは HTTP の User-Agent だけ。
+# 残すのは決まったラベルだけ＝User-Agent の文字列そのものは捕捉ログにもアクセスログにも残さない。
+# ラベルは実測したものだけ（2026-10-12・エッジの記録で確認）：Claude のコネクタ（Web・アプリ・claude.ai のコネクタを使う
+# Claude Code＝Anthropic のサーバ経由）は `Claude-User`、ChatGPT は `openai-mcp/<版>`。それ以外（サーバを直に登録した
+# クライアント等）は other。★User-Agent は送る側が名乗る値＝利用の内訳を読む目安であって、不正利用の判定には使わない。
+# ラベルを足すときは実測してから・公開のプライバシーページ（deploy/pages/privacy.html）の記述も同じ変更で。
+CLIENT_LABELS = ("claude", "chatgpt", "other")
+_current_client: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("polyarchy_current_client", default=None)
+
+
+def client_label(user_agent: Optional[str]) -> str:
+    ua = (user_agent or "").strip().lower()
+    if ua == "claude-user" or ua.startswith("claude-user/"):
+        return "claude"
+    if ua.startswith("openai-mcp/"):
+        return "chatgpt"
+    return "other"
+
+
+def current_client() -> Optional[str]:
+    """この要求の接続元のクライアントの種別（`CLIENT_LABELS` のどれか）。HTTP の要求の外（stdio・集計の実行）では None。"""
+    return _current_client.get()
 
 
 def access_log_middleware(app, logger_name: str = "polyarchy.http"):
@@ -29,6 +55,9 @@ def access_log_middleware(app, logger_name: str = "polyarchy.http"):
             return await app(scope, receive, send)
         t0 = time.monotonic()
         status = {"code": 0}
+        headers = dict(scope.get("headers") or [])
+        # 捕捉ログが読む（利用者の contextvar と同じ渡し方）。User-Agent はここでラベルに丸め、文字列は持ち回らない。
+        tok = _current_client.set(client_label((headers.get(b"user-agent") or b"").decode("latin-1")))
 
         async def send_wrap(msg):
             if msg.get("type") == "http.response.start":
@@ -38,8 +67,8 @@ def access_log_middleware(app, logger_name: str = "polyarchy.http"):
         try:
             return await app(scope, receive, send_wrap)
         finally:
+            _current_client.reset(tok)
             ms = (time.monotonic() - t0) * 1000
-            headers = dict(scope.get("headers") or [])
             ray = (headers.get(b"cf-ray") or b"-").decode("latin-1")
             try:
                 from polyarchy_common.access import user_hash

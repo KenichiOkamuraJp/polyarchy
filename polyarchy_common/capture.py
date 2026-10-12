@@ -10,6 +10,8 @@
 - ログの置き場所はサービスが決める（環境変数 or 既定パス）。ここは受け取るだけ。
 - `ts` は本関数が付与（ISO 8601・秒精度）＝全サービスで同じ時刻表現。
 - 認証済みリクエスト（`polyarchy_common.access` の contextvar）では `user_hash` を自動付与（メール平文は残さない）。
+- HTTP の要求では `client`（接続元のクライアントの種別＝`polyarchy_common.httplog.CLIENT_LABELS` のどれか）を自動付与
+  （2026-10-12・User-Agent の文字列は残さない）。記録する項目を足すときは公開のプライバシーページも同じ変更で。
 """
 from __future__ import annotations
 
@@ -45,6 +47,15 @@ def append_record(path: Path, record: dict, *, logger_name: str = "polyarchy.cap
             uh = user_hash()
             if uh and "user_hash" not in rec:
                 rec["user_hash"] = uh
+        except Exception:
+            pass
+        # HTTP の要求の中なら、接続元のクライアントの種別（決まったラベル＝httplog.CLIENT_LABELS）を付与。User-Agent の
+        # 文字列は残さない。用途＝どの経路から使われているかの把握（プライバシーポリシー記載）。stdio では付かない。
+        try:
+            from polyarchy_common.httplog import current_client
+            cl = current_client()
+            if cl and "client" not in rec:
+                rec["client"] = cl
         except Exception:
             pass
         path.parent.mkdir(parents=True, exist_ok=True)

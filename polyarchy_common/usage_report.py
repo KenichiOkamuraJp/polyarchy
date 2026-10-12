@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from polyarchy_common.capture import load_records
+from polyarchy_common.httplog import CLIENT_LABELS
 from polyarchy_common.logsetup import configure_quiet_logging, get_logger
 
 configure_quiet_logging()
@@ -131,13 +132,19 @@ def week_key(ts: str) -> Optional[tuple[str, str]]:
     return f"{y}-W{w:02d}", date.fromisocalendar(y, w, 1).isoformat()
 
 
-def _people_view(calls: list[tuple[str, str, bool, date]], seen_before: Optional[set]) -> dict:
-    """1 週分の (利用者, サービス, 一覧か, 日付) から、人数と件数だけの集計を作る（利用者ハッシュは返さない）。
-    `seen_before`＝直前 3 週に現れた利用者（遡る分のログが無ければ None＝新規は数えない）。"""
-    per_user = Counter(u for u, _, _, _ in calls)
+def _people_view(calls: list[tuple], seen_before: Optional[set]) -> dict:
+    """1 週分の (利用者, サービス, 一覧か, 日付, 経路) から、人数と件数だけの集計を作る（利用者ハッシュは返さない）。
+    `seen_before`＝直前 3 週に現れた利用者（遡る分のログが無ければ None＝新規は数えない）。
+    経路別（clients）＝経路の付いた記録だけ（2026-10-12 から記録）・記録のあるラベルだけを載せる。"""
+    per_user = Counter(c[0] for c in calls)
+    clients = {}
+    for label in CLIENT_LABELS:
+        mine = [c[0] for c in calls if c[4] == label]
+        if mine:
+            clients[label] = {"calls": len(mine), "users": len(set(mine))}
     services = {}
     for svc in SERVICES:
-        mine = [(u, is_list) for u, s_, is_list, _ in calls if s_ == svc]
+        mine = [(c[0], c[2]) for c in calls if c[1] == svc]
         us = {u for u, _ in mine}
         services[svc] = {"calls": len(mine), "users": len(us),
                          "list_only_users": sum(1 for u in us if all(is_list for u2, is_list in mine if u2 == u))}
@@ -145,7 +152,7 @@ def _people_view(calls: list[tuple[str, str, bool, date]], seen_before: Optional
             "users_new": None if seen_before is None else sum(1 for u in per_user if u not in seen_before),
             "user_calls_max": max(per_user.values(), default=0),
             "user_calls_median": float(statistics.median(per_user.values())) if per_user else 0.0,
-            "services": services}
+            "clients": clients, "services": services}
 
 
 def aggregate(records: Iterable[tuple[str, dict]], operator_hashes: Iterable[str] = ()) -> list[dict]:
@@ -164,7 +171,8 @@ def aggregate(records: Iterable[tuple[str, dict]], operator_hashes: Iterable[str
         day = datetime.fromisoformat(str(rec["ts"])).date()
         oldest = day if oldest is None or day < oldest else oldest
         if rec.get("user_hash"):
-            calls.setdefault(key, []).append((rec["user_hash"], svc, is_list_call(svc, rec), day))
+            client = rec.get("client") if rec.get("client") in CLIENT_LABELS else None
+            calls.setdefault(key, []).append((rec["user_hash"], svc, is_list_call(svc, rec), day, client))
         w = weeks.setdefault(key, {
             "week": key, "week_start": monday, "total": 0, "recommendations": 0, "stats": 0,
             "by_source": Counter(), "users": 0,
@@ -252,7 +260,7 @@ def aggregate(records: Iterable[tuple[str, dict]], operator_hashes: Iterable[str
         since = start - timedelta(days=NEW_LOOKBACK_DAYS)
         complete = oldest is not None and oldest <= since   # 遡る 3 週分のログが残っている週だけ新規を数える
         mine = calls.get(key, [])
-        before = {u for u, _, _, d in everyone if since <= d < start} if complete else None
+        before = {c[0] for c in everyone if since <= c[3] < start} if complete else None
         w["people"] = _people_view(mine, before)
         w["people_ext"] = (_people_view([c for c in mine if c[0] not in operator],
                                         None if before is None else before - operator) if operator else None)
@@ -342,28 +350,32 @@ def people_cells(v: Optional[dict], *, detail: bool) -> str:
     """利用者の集計 1 つ分のセル（人数と件数だけ）。`detail`＝偏りと一覧だけの列も出す。集計の無い行は「—」。"""
     by = lambda k: "・".join(str(v["services"][s_][k]) for s_ in SERVICES) if v else "—"   # noqa: E731
     if not v:
-        return "<td>—</td>" * (7 if detail else 4)
+        return "<td>—</td>" * (7 if detail else 5)
+    cl = v.get("clients") or {}
+    via = "・".join(str(cl.get(label, {}).get("users", 0)) for label in CLIENT_LABELS) if cl else "—"   # 経路の記録が無い週は「—」
     if detail:
         return (f"<td>{v['users']}</td><td>{_num(v['users_new'])}</td><td>{by('users')}</td><td>{_num(v['user_calls_median'])}</td>"
-                f"<td>{html.escape(pct(v['user_calls_max'], v['calls']))}</td><td>{by('list_only_users')}</td>")
-    return f"<td>{v['calls']}</td><td>{v['users']}</td><td>{_num(v['users_new'])}</td><td>{by('users')}</td>"
+                f"<td>{html.escape(pct(v['user_calls_max'], v['calls']))}</td><td>{by('list_only_users')}</td><td>{via}</td>")
+    return f"<td>{v['calls']}</td><td>{v['users']}</td><td>{_num(v['users_new'])}</td><td>{by('users')}</td><td>{via}</td>"
 
 
 def people_table(rows: list[dict]) -> str:
     e = html.escape
     order = "・".join(SERVICES)
     parts = [f"""<h2>利用者（人数と件数のみ）</h2><div class="wrap"><table>
-<tr><th>週</th><th>利用者</th><th>うち新規</th><th>サービス別の利用者</th><th>1 人あたりの件数（中央値）</th><th>最多の 1 人の割合</th><th>一覧だけで終わった人</th>
-<th>除: 件数</th><th>除: 利用者</th><th>除: うち新規</th><th>除: サービス別の利用者</th></tr>"""]
+<tr><th>週</th><th>利用者</th><th>うち新規</th><th>サービス別の利用者</th><th>1 人あたりの件数（中央値）</th><th>最多の 1 人の割合</th><th>一覧だけで終わった人</th><th>経路別の利用者</th>
+<th>除: 件数</th><th>除: 利用者</th><th>除: うち新規</th><th>除: サービス別の利用者</th><th>除: 経路別の利用者</th></tr>"""]
     for r in reversed(rows):
         v = r.get("people")
-        left = people_cells(v, detail=True) if v else f"<td>{r.get('users', 0)}</td>" + "<td>—</td>" * 5
+        left = people_cells(v, detail=True) if v else f"<td>{r.get('users', 0)}</td>" + "<td>—</td>" * 6
         parts.append(f"<tr><td>{e(r['week'])}</td>{left}{people_cells(r.get('people_ext'), detail=False)}</tr>")
     parts.append(f"""</table></div>
 <p class="note">利用者＝利用者ハッシュのある記録の人数（ハッシュそのものは載せない）。サービス別・一覧だけの並び＝{e(order)}。
 新規＝直前 3 週（{NEW_LOOKBACK_DAYS} 日）に現れていない利用者（生ログは 30 日で消える＝それより前は遡れない。31 日以上空けて戻った人も新規に数える）。
 遡る分のログが無い週は「—」。最多の 1 人の割合＝1 人の件数の最大 ÷ 利用者つきの件数（偏りの目安）。
 一覧だけで終わった人＝そのサービスで一覧のツールしか呼ばなかった人（欲しい情報が収録に無かった手がかり）。
+経路別の利用者の並び＝{e("・".join(CLIENT_LABELS))}（接続元のクライアントの種別＝User-Agent から丸めたラベル。claude＝Claude のコネクタ〔Web・アプリ・claude.ai のコネクタを使う Claude Code〕・
+chatgpt＝ChatGPT・other＝それ以外〔サーバを直に登録したクライアント等〕。送る側が名乗る値＝目安。同じ人が 2 つの経路を使えば両方に数える。記録は 2026-10-12 の版から＝それより前の週は「—」）。
 除:＝運営者自身の利用を除いた数字（除く利用者ハッシュを渡した実行だけ・渡していなければ「—」）。</p>""")
     return "\n".join(parts)
 

@@ -422,9 +422,10 @@ def test_usage_report_people():
     recs = [rec("stats", "2026-07-27T09:00:00", U1, tool="find_statistics", result_count=3, source="mcp")]     # W31＝W34 の 3 週前
     recs += [rec("stats", f"2026-08-17T09:0{i}:00", OP, tool="find_statistics", result_count=3, source="mcp") for i in range(4)]
     recs += [rec("recommendations", f"2026-08-17T10:0{i}:00", OP, query="q", result_count=5, source="mcp") for i in range(2)]
-    recs += [rec("stats", "2026-08-18T09:00:00", U1, tool="find_statistics", result_count=3, source="mcp"),
-             rec("stats", "2026-08-18T09:01:00", U1, tool="lookup_statistic", found=True, source="mcp"),
-             rec("companies", "2026-08-19T09:00:00", U2, tool="list_items", args={}),                         # 一覧だけで終わった
+    # 経路（client）は 2026-10-12 から記録＝付いている記録だけを経路別に数える（U1 は Claude・U2 は ChatGPT・ほかは記録なし）
+    recs += [rec("stats", "2026-08-18T09:00:00", U1, tool="find_statistics", result_count=3, source="mcp", client="claude"),
+             rec("stats", "2026-08-18T09:01:00", U1, tool="lookup_statistic", found=True, source="mcp", client="claude"),
+             rec("companies", "2026-08-19T09:00:00", U2, tool="list_items", args={}, client="chatgpt"),       # 一覧だけで終わった
              rec("recommendations", "2026-08-20T09:00:00", U3, query="q", result_count=5, source="mcp"),
              rec("deliberations", "2026-08-20T09:01:00", U3, tool="list_meeting", hits=8),                    # 審議会DB は一覧だけ
              rec("stats", "2026-08-21T09:00:00", None, tool="find_statistics", result_count=1, source="mcp")]  # 利用者ハッシュなし
@@ -434,12 +435,14 @@ def test_usage_report_people():
     assert w["total"] == 12 and w["users"] == 4                      # 既存の数字は運営者を含む（変えない）
     assert w["people"] == {
         "calls": 11, "users": 4, "users_new": 3, "user_calls_max": 6, "user_calls_median": 2.0,
+        "clients": {"claude": {"calls": 2, "users": 1}, "chatgpt": {"calls": 1, "users": 1}},   # 経路つきの記録だけ（下の 3 件）
         "services": {"recommendations": {"calls": 3, "users": 2, "list_only_users": 0},
                      "stats": {"calls": 6, "users": 2, "list_only_users": 0},
                      "companies": {"calls": 1, "users": 1, "list_only_users": 1},
                      "deliberations": {"calls": 1, "users": 1, "list_only_users": 1}}}, w["people"]
     assert w["people_ext"] == {
         "calls": 5, "users": 3, "users_new": 2, "user_calls_max": 2, "user_calls_median": 2.0,
+        "clients": {"claude": {"calls": 2, "users": 1}, "chatgpt": {"calls": 1, "users": 1}},
         "services": {"recommendations": {"calls": 1, "users": 1, "list_only_users": 0},
                      "stats": {"calls": 2, "users": 1, "list_only_users": 0},
                      "companies": {"calls": 1, "users": 1, "list_only_users": 1},
@@ -460,8 +463,8 @@ def test_usage_report_people():
         assert h not in dump and h not in page and h not in dash, "利用者ハッシュが出力に出ている"
     assert "直近の完了した週（2026-W34" in page                       # 月曜の朝の生成で、始まったばかりの週を見出しにしない
     assert "今週（途中・2026-W34" in render_html([w], {}, [], "2026-08-21T00:00:00")                    # 完了した週が無ければ今週
-    assert "<td>2026-W34</td><td>4</td><td>3</td><td>2・2・1・1</td><td>2</td><td>55%</td><td>0・0・1・1</td><td>5</td><td>3</td><td>2</td><td>1・1・1・1</td>" in page, page
-    assert "<td>2026-W31</td><td>1</td><td>—</td>" in page
+    assert "<td>2026-W34</td><td>4</td><td>3</td><td>2・2・1・1</td><td>2</td><td>55%</td><td>0・0・1・1</td><td>1・1・0</td><td>5</td><td>3</td><td>2</td><td>1・1・1・1</td><td>1・1・0</td>" in page, page
+    assert "<td>2026-W31</td><td>1</td><td>—</td>" in page and "<th>経路別の利用者</th>" in page
     assert "<th>companies</th><th>deliberations</th>" in page and "<th>companies</th><th>deliberations</th>" in dash
     assert "<td>2026-W34</td><td>12</td><td>3</td><td>7</td><td>1</td><td>1</td><td>4</td><td>5</td><td>3</td>" in dash, dash
     old_style = [{"week": "2026-W20", "week_start": "2026-05-11", "total": 9, "recommendations": 4, "stats": 5, "users": 1, "by_source": {},
@@ -496,6 +499,58 @@ def test_usage_operator_hashes_wiring():
     assert "rm -f /etc/polyarchy/usage.env" in boot              # SSM から消したら箱からも消える
     assert "source /etc/polyarchy/usage.env" in weekly
     assert 'os.environ.get("USAGE_OPERATOR_HASHES"' in report
+
+
+def test_client_label_capture():
+    """経路の記録（2026-10-12・B43 第 2 便）＝捕捉ログに接続元のクライアントの種別（決まったラベル）を足す。User-Agent の
+    文字列そのものは残さない。ラベルは実測した 2 つ（Claude のコネクタ＝Claude-User・ChatGPT＝openai-mcp/…）とそれ以外。
+    stateless の設定ではツールの呼び出しに clientInfo が付かない＝手がかりは User-Agent だけ（送る側が名乗る値＝目安）。"""
+    import asyncio
+    import re
+    import tempfile
+    from pathlib import Path
+    from polyarchy_common import httplog
+    from polyarchy_common.capture import append_record, load_records
+
+    assert httplog.CLIENT_LABELS == ("claude", "chatgpt", "other")
+    cases = {"Claude-User": "claude", "claude-user/1.0": "claude", "openai-mcp/1.0.0": "chatgpt", "OpenAI-MCP/2": "chatgpt",
+             "polyarchy-edge-probe/1": "other", "Mozilla/5.0 (Macintosh)": "other", "curl/8.4.0": "other", "": "other", None: "other",
+             "x-Claude-User": "other", "not-openai-mcp/1": "other"}
+    for ua, want in cases.items():
+        assert httplog.client_label(ua) == want, (ua, want)
+    assert httplog.current_client() is None                            # 要求の外（stdio・集計の実行）では付かない
+
+    d = Path(tempfile.mkdtemp())
+    log_path = d / "q.jsonl"
+
+    async def inner(scope, receive, send):                             # ツールの中で捕捉する（各サービスの MCP と同じ位置）
+        append_record(log_path, {"tool": "t", "query": "q"})
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    app = httplog.access_log_middleware(inner, logger_name="polyarchy.test_client")
+
+    async def call(ua):
+        async def send(_):
+            pass
+        headers = [(b"user-agent", ua.encode())] if ua is not None else []
+        await app({"type": "http", "path": "/mcp", "method": "POST", "headers": headers}, None, send)
+
+    ua_secret = "openai-mcp/1.0.0 (build 12345; trace abcdef)"
+    for ua in ("Claude-User", ua_secret, "SomeAgent/9", None):
+        asyncio.run(call(ua))
+    append_record(log_path, {"tool": "t"})                             # 要求の外
+    recs = load_records(log_path)
+    assert [r.get("client") for r in recs] == ["claude", "chatgpt", "other", "other", None], recs
+    raw = log_path.read_text(encoding="utf-8")
+    assert "build 12345" not in raw and "SomeAgent" not in raw and "user-agent" not in raw.lower()   # 文字列そのものは残さない
+    assert httplog.current_client() is None                            # 要求が終われば消える
+
+    # 記録する項目を足したら、公開のプライバシーページの「収集する情報」にも書く（同じ変更で）
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "deploy/pages/privacy.html").read_text(encoding="utf-8")
+    row = re.search(r"<tr><td>利用記録（捕捉ログ）</td><td>(.*?)</td>", page, re.S)
+    assert row and "接続元のクライアントの種別" in row.group(1) and "利用者ハッシュ" in row.group(1), row and row.group(1)
 
 
 def test_ops_dashboard_memory_and_fuelsync():
