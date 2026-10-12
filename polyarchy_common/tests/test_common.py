@@ -405,6 +405,99 @@ def test_usage_report_aggregate():
 
 
 
+def test_usage_report_people():
+    """利用者の見え方（2026-10-12・B43 第 1 便）＝サービスごとの利用者数・新規と継続・偏り（最多の 1 人の件数・1 人あたりの
+    中央値）・一覧だけで終わった人数・運営者を除いた数字。恒久に残すのは人数と件数だけ＝利用者ハッシュは集計にも HTML にも
+    ダッシュボードにも出さない。新規＝直前 3 週に現れていない利用者（生ログは 30 日＝4 週は遡れない）で、遡る分のログが
+    残っていない週は数えない（None）＝後の再計算が前に数えた値を消さない。"""
+    import json as _json
+    from polyarchy_common import ops_dashboard as od
+    from polyarchy_common.usage_report import aggregate, merge_weekly, render_html
+
+    OP, U1, U2, U3 = "a" * 16, "1" * 16, "2" * 16, "3" * 16
+
+    def rec(svc, ts, user, **kw):
+        return (svc, {"ts": ts, **kw, **({"user_hash": user} if user else {})})
+
+    recs = [rec("stats", "2026-07-27T09:00:00", U1, tool="find_statistics", result_count=3, source="mcp")]     # W31＝W34 の 3 週前
+    recs += [rec("stats", f"2026-08-17T09:0{i}:00", OP, tool="find_statistics", result_count=3, source="mcp") for i in range(4)]
+    recs += [rec("recommendations", f"2026-08-17T10:0{i}:00", OP, query="q", result_count=5, source="mcp") for i in range(2)]
+    recs += [rec("stats", "2026-08-18T09:00:00", U1, tool="find_statistics", result_count=3, source="mcp"),
+             rec("stats", "2026-08-18T09:01:00", U1, tool="lookup_statistic", found=True, source="mcp"),
+             rec("companies", "2026-08-19T09:00:00", U2, tool="list_items", args={}),                         # 一覧だけで終わった
+             rec("recommendations", "2026-08-20T09:00:00", U3, query="q", result_count=5, source="mcp"),
+             rec("deliberations", "2026-08-20T09:01:00", U3, tool="list_meeting", hits=8),                    # 審議会DB は一覧だけ
+             rec("stats", "2026-08-21T09:00:00", None, tool="find_statistics", result_count=1, source="mcp")]  # 利用者ハッシュなし
+
+    rows = {r["week"]: r for r in aggregate(recs, operator_hashes={OP})}
+    w = rows["2026-W34"]
+    assert w["total"] == 12 and w["users"] == 4                      # 既存の数字は運営者を含む（変えない）
+    assert w["people"] == {
+        "calls": 11, "users": 4, "users_new": 3, "user_calls_max": 6, "user_calls_median": 2.0,
+        "services": {"recommendations": {"calls": 3, "users": 2, "list_only_users": 0},
+                     "stats": {"calls": 6, "users": 2, "list_only_users": 0},
+                     "companies": {"calls": 1, "users": 1, "list_only_users": 1},
+                     "deliberations": {"calls": 1, "users": 1, "list_only_users": 1}}}, w["people"]
+    assert w["people_ext"] == {
+        "calls": 5, "users": 3, "users_new": 2, "user_calls_max": 2, "user_calls_median": 2.0,
+        "services": {"recommendations": {"calls": 1, "users": 1, "list_only_users": 0},
+                     "stats": {"calls": 2, "users": 1, "list_only_users": 0},
+                     "companies": {"calls": 1, "users": 1, "list_only_users": 1},
+                     "deliberations": {"calls": 1, "users": 1, "list_only_users": 1}}}, w["people_ext"]
+    assert rows["2026-W31"]["people"]["users_new"] is None            # 遡る分のログが無い週は数えない
+    assert aggregate(recs)[-1]["people_ext"] is None                  # 運営者の指定なし＝除いた数字は作らない
+
+    weekly = list(rows.values())
+    dump = _json.dumps(weekly, ensure_ascii=False)
+    page = render_html(weekly, {}, [], "2026-08-24T00:20:00")
+    saved = od.recent_weeks
+    try:
+        od.recent_weeks = lambda n=4: weekly
+        dash = od.render("2026-08-24T09:05:00+09:00", "test")
+    finally:
+        od.recent_weeks = saved
+    for h in (OP, U1, U2, U3):
+        assert h not in dump and h not in page and h not in dash, "利用者ハッシュが出力に出ている"
+    assert "直近の完了した週（2026-W34" in page                       # 月曜の朝の生成で、始まったばかりの週を見出しにしない
+    assert "今週（途中・2026-W34" in render_html([w], {}, [], "2026-08-21T00:00:00")                    # 完了した週が無ければ今週
+    assert "<td>2026-W34</td><td>4</td><td>3</td><td>2・2・1・1</td><td>2</td><td>55%</td><td>0・0・1・1</td><td>5</td><td>3</td><td>2</td><td>1・1・1・1</td>" in page, page
+    assert "<td>2026-W31</td><td>1</td><td>—</td>" in page
+    assert "<th>companies</th><th>deliberations</th>" in page and "<th>companies</th><th>deliberations</th>" in dash
+    assert "<td>2026-W34</td><td>12</td><td>3</td><td>7</td><td>1</td><td>1</td><td>4</td><td>5</td><td>3</td>" in dash, dash
+    old_style = [{"week": "2026-W20", "week_start": "2026-05-11", "total": 9, "recommendations": 4, "stats": 5, "users": 1, "by_source": {},
+                  "recommendations_zero": 0, "recommendations_low": 0, "recommendations_orgs_filter": 0, "recommendations_period_filter": 0,
+                  "stats_find": 0, "stats_find_zero": 0, "stats_find_filtered": 0, "stats_lookup": 0, "stats_found_false": 0,
+                  "stats_nf_reasons": {}, "stats_catalog": 0}]
+    assert "<td>2026-W20</td><td>1</td><td>—</td>" in render_html(old_style, {}, [], "2026-08-24T00:20:00")   # 足す前に蓄積した行
+
+    # マージ＝遡る分のログが消えた後の再計算（新規が None）・運営者の指定なしの再計算は、前に数えた値を消さない
+    later = aggregate([r for r in recs if r[1]["ts"] >= "2026-08-17"])
+    assert later[0]["people"]["users_new"] is None and later[0]["people_ext"] is None
+    merged = merge_weekly([w], later)[0]
+    assert merged["people"]["users_new"] == 3 and merged["people_ext"]["users_new"] == 2 and merged["people_ext"]["users"] == 3
+
+
+def test_usage_operator_hashes_wiring():
+    """運営者を除いた数字の配線（2026-10-12）＝SSM usage_operator_hashes → bootstrap が形を確かめて /etc/polyarchy/usage.env →
+    週次レポートのシェルが読む → usage_report が env から受け取る。値（運営者の利用者ハッシュ）をリポジトリに書かない。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    read = lambda p: (root / p).read_text(encoding="utf-8")   # noqa: E731
+    boot, weekly, report = read("deploy/bootstrap/bootstrap.sh"), read("deploy/bootstrap/usage_report_weekly.sh"), read("polyarchy_common/usage_report.py")
+    assert '"$(ssm_get usage_operator_hashes)"' in boot
+    m = re.search(r'\[\[ "\$OP_HASHES" =~ (\S+) \]\]', boot)
+    assert m, "bootstrap が値の形を確かめていない"
+    pat = re.compile(m.group(1))
+    assert pat.fullmatch("a" * 16) and pat.fullmatch("a" * 16 + "," + "0123456789abcdef")
+    for bad in ("", "abc", "a" * 16 + ",", "a" * 16 + " " + "b" * 16, "$(reboot)", "A" * 16):
+        assert not pat.fullmatch(bad), bad                       # env ファイルは source される＝形の外は書かない
+    assert "printf 'USAGE_OPERATOR_HASHES=%s\\n' \"$OP_HASHES\" > /etc/polyarchy/usage.env" in boot
+    assert "rm -f /etc/polyarchy/usage.env" in boot              # SSM から消したら箱からも消える
+    assert "source /etc/polyarchy/usage.env" in weekly
+    assert 'os.environ.get("USAGE_OPERATOR_HASHES"' in report
+
+
 def test_ops_dashboard_memory_and_fuelsync():
     """ダッシュボード①のメモリ（サービスごとの現在と起動からの最大・箱全体）と捕捉ログの S3 同期（2026-10-01）。
     箱の Ubuntu 22.04 の systemd 249 には MemoryPeak が無い＝最大は cgroup v2 の memory.peak を読む。

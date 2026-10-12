@@ -7,6 +7,8 @@ set -euo pipefail
 source /etc/polyarchy/deploy.env
 cd "$REPO_DIR"
 PY=/opt/miniconda/envs/polyarchy/bin/python
+# 運営者自身の利用を除いた数字も作る（任意）＝除く利用者ハッシュは SSM usage_operator_hashes → /etc/polyarchy/usage.env（bootstrap ⑪）。
+if [[ -f /etc/polyarchy/usage.env ]]; then set -a; source /etc/polyarchy/usage.env; set +a; fi
 PYTHONPATH="$REPO_DIR" ENABLE_COMPANIES_APP="${ENABLE_COMPANIES_APP:-false}" ENABLE_DELIBERATIONS_APP="${ENABLE_DELIBERATIONS_APP:-false}" "$PY" -m polyarchy_common.usage_report
 aws s3 cp ops/usage/usage_report.html "s3://$S3_BUCKET/ops/report/usage_report.html" --region "$AWS_REGION"
 aws s3 cp ops/usage/weekly.jsonl "s3://$S3_BUCKET/ops/report/weekly.jsonl" --region "$AWS_REGION"

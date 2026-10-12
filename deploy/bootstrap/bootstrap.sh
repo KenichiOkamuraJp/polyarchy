@@ -467,6 +467,17 @@ fi
 
 install -m 755 "$REPO_DIR/deploy/bootstrap/health_metric.sh" /usr/local/bin/polyarchy-health-metric
 install -m 755 "$REPO_DIR/deploy/bootstrap/usage_report_weekly.sh" /usr/local/bin/polyarchy-usage-report
+# 週次利用レポートで運営者自身の利用を除くための利用者ハッシュ（任意・SSM usage_operator_hashes＝16 桁の 16 進をカンマ区切り）
+# → /etc/polyarchy/usage.env（週次レポートが読む）。無ければ消す＝除いた数字は作らない。形の外の値は書かない（env は source される）。
+OP_HASHES="$(ssm_get usage_operator_hashes)"
+if [[ "$OP_HASHES" =~ ^[0-9a-f]{16}(,[0-9a-f]{16})*$ ]]; then
+  umask 077; printf 'USAGE_OPERATOR_HASHES=%s\n' "$OP_HASHES" > /etc/polyarchy/usage.env
+  chown "$SVC_USER:$SVC_USER" /etc/polyarchy/usage.env; chmod 600 /etc/polyarchy/usage.env; umask 022
+  echo "[bootstrap] 週次利用レポート: 運営者の利用者ハッシュを SSM から設定（usage.env・値はログに出さない）"
+else
+  [[ -z "$OP_HASHES" ]] || echo "[bootstrap] ⚠ SSM usage_operator_hashes の形が想定外＝使わない（16 桁の 16 進をカンマ区切り）" >&2
+  rm -f /etc/polyarchy/usage.env
+fi
 install -m 755 "$REPO_DIR/deploy/bootstrap/ops_dashboard.sh" /usr/local/bin/polyarchy-dashboard
 install -m 755 "$REPO_DIR/deploy/bootstrap/update_check.sh" /usr/local/bin/polyarchy-update-check
 install -m 755 "$REPO_DIR/deploy/bootstrap/apply_data_update.sh" /usr/local/bin/polyarchy-data-apply

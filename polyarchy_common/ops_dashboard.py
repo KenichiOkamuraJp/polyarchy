@@ -437,12 +437,17 @@ def render(generated_at: str, env_name: str) -> str:
     # ④ 利用（直近 4 週）
     parts.append("<h2>④ 利用（直近 4 週・詳細は ops/report/usage_report.html）</h2>")
     if weeks:
-        parts.append("<table><tr><th>週</th><th>計</th><th>recommendations</th><th>stats</th><th>利用者</th><th>found=false</th><th>0件率(c)</th></tr>")
+        parts.append("<table><tr><th>週</th><th>計</th><th>recommendations</th><th>stats</th><th>companies</th><th>deliberations</th>"
+                     "<th>利用者</th><th>除: 件数</th><th>除: 利用者</th><th>found=false</th><th>0件率(c)</th></tr>")
         for r in reversed(weeks):
+            ext = r.get("people_ext") or {}
             parts.append(f"<tr><td>{e(r['week'])}</td><td>{r['total']}</td><td>{r['recommendations']}</td>"
-                         f"<td>{r['stats']}</td><td>{r['users']}</td><td>{r['stats_found_false']}</td>"
-                         f"<td>{e(pct(r['recommendations_zero'], r['recommendations']))}</td></tr>")
-        parts.append("</table>")
+                         f"<td>{r['stats']}</td><td>{r.get('companies', 0)}</td><td>{r.get('deliberations', 0)}</td>"
+                         f"<td>{r['users']}</td><td>{ext.get('calls', '—')}</td><td>{ext.get('users', '—')}</td>"
+                         f"<td>{r['stats_found_false']}</td>"
+                         f"<td>{e(pct(r['recommendations_zero'], r['recommendations'] - r.get('recommendations_list', 0)))}</td></tr>")
+        parts.append("</table><p class=\"note\">除:＝運営者自身の利用を除いた数字（除く利用者ハッシュを渡していなければ「—」）。"
+                     "新規と継続・偏り・一覧だけで終わった人は週次レポート。</p>")
     else:
         parts.append("<p class=\"note\">週次集計なし（usage_report 未実行）</p>")
 

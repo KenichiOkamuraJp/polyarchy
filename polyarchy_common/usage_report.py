@@ -12,6 +12,9 @@
   ② `ops/usage/usage_report.html` … 静的 HTML 1 枚（git 外・①から何度でも再生成できる）。
 
 ★検索語（query 文字列）・ヒット文書名は集計 JSON にも HTML にも**載せない**。数だけを数える。
+★利用者ハッシュも載せない。利用者の見え方（サービスごとの利用者数・新規と継続・偏り・一覧だけで終わった人数・2026-10-12）は
+  人数と件数だけを残す。運営者自身の利用を除いた数字は、除くハッシュを env `USAGE_OPERATOR_HASHES`（カンマ区切り）で渡した
+  ときだけ作る（箱＝SSM usage_operator_hashes → /etc/polyarchy/usage.env。値はリポジトリに書かない）。
   例外の 1 つ＝companies の横断検索で使えなかった入力は、サーバ側の固定の語（項目・未収録の目録のキー）を件数のラベルに使う
   （利用者が書いた語ではない＝companies が捕捉ログの unavailable_vocab に絞って書く・docs/第1c便_計画.md §2-6）。
 
@@ -29,8 +32,9 @@ import os
 import subprocess
 import sys
 import urllib.request
+import statistics
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -67,6 +71,18 @@ KNOWN_TOOLS = {
                   "list_metrics", "screen_companies", "screen_trend"},
     "deliberations": {"search_deliberations", "list_meeting"},
 }
+SERVICES = tuple(LOG_DIRS)   # 表示の並び（recommendations・stats・companies・deliberations）
+# 新規＝直前 3 週（21 日）に現れていない利用者。生ログは 30 日で消える＝月曜に前の週を数えるとき、遡れるのは 3 週まで。
+NEW_LOOKBACK_DAYS = 21
+
+
+def is_list_call(svc: str, rec: dict) -> bool:
+    """引数の無い一覧のツール（問いではない）。一覧だけで終わった利用は、欲しい情報が収録に無かった手がかり。"""
+    if svc == "recommendations":
+        return rec.get("source") == "mcp_list_orgs"
+    return str(rec.get("tool", "")) in {"stats": ("list_datasets", "list_sources", "list_orgs"),
+                                       "companies": ("list_items", "list_metrics"),
+                                       "deliberations": ("list_meeting",)}.get(svc, ())
 
 
 # ── 収集 ────────────────────────────────────────────────────────────────────
@@ -115,15 +131,40 @@ def week_key(ts: str) -> Optional[tuple[str, str]]:
     return f"{y}-W{w:02d}", date.fromisocalendar(y, w, 1).isoformat()
 
 
-def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
-    """週ごとの集計行（週昇順）。値は件数のみ＝率は表示側で計算する。"""
+def _people_view(calls: list[tuple[str, str, bool, date]], seen_before: Optional[set]) -> dict:
+    """1 週分の (利用者, サービス, 一覧か, 日付) から、人数と件数だけの集計を作る（利用者ハッシュは返さない）。
+    `seen_before`＝直前 3 週に現れた利用者（遡る分のログが無ければ None＝新規は数えない）。"""
+    per_user = Counter(u for u, _, _, _ in calls)
+    services = {}
+    for svc in SERVICES:
+        mine = [(u, is_list) for u, s_, is_list, _ in calls if s_ == svc]
+        us = {u for u, _ in mine}
+        services[svc] = {"calls": len(mine), "users": len(us),
+                         "list_only_users": sum(1 for u in us if all(is_list for u2, is_list in mine if u2 == u))}
+    return {"calls": len(calls), "users": len(per_user),
+            "users_new": None if seen_before is None else sum(1 for u in per_user if u not in seen_before),
+            "user_calls_max": max(per_user.values(), default=0),
+            "user_calls_median": float(statistics.median(per_user.values())) if per_user else 0.0,
+            "services": services}
+
+
+def aggregate(records: Iterable[tuple[str, dict]], operator_hashes: Iterable[str] = ()) -> list[dict]:
+    """週ごとの集計行（週昇順）。値は件数のみ＝率は表示側で計算する。`operator_hashes`＝運営者自身の利用者ハッシュ
+    （あれば、除いた数字 `people_ext` も作る。既存の数字は運営者を含んだまま＝過去の行と比べられる）。"""
+    operator = {h for h in operator_hashes if h}
     weeks: dict[str, dict] = {}
     users: dict[str, set] = {}
+    calls: dict[str, list] = {}     # 週 → [(利用者, サービス, 一覧か, 日付)]（利用者ハッシュのある記録だけ）
+    oldest: Optional[date] = None   # 入力にある最も古い記録の日付＝新規を数えられる週の判定に使う
     for svc, rec in records:
         wk = week_key(str(rec.get("ts", "")))
         if wk is None:
             continue
         key, monday = wk
+        day = datetime.fromisoformat(str(rec["ts"])).date()
+        oldest = day if oldest is None or day < oldest else oldest
+        if rec.get("user_hash"):
+            calls.setdefault(key, []).append((rec["user_hash"], svc, is_list_call(svc, rec), day))
         w = weeks.setdefault(key, {
             "week": key, "week_start": monday, "total": 0, "recommendations": 0, "stats": 0,
             "by_source": Counter(), "users": 0,
@@ -203,9 +244,18 @@ def aggregate(records: Iterable[tuple[str, dict]]) -> list[dict]:
             elif tool in ("list_datasets", "list_sources", "list_orgs"):
                 w["stats_catalog"] += 1
     rows = []
+    everyone = [c for cs in calls.values() for c in cs]
     for key in sorted(weeks):
         w = weeks[key]
         w["users"] = len(users.get(key, ()))
+        start = date.fromisoformat(w["week_start"])
+        since = start - timedelta(days=NEW_LOOKBACK_DAYS)
+        complete = oldest is not None and oldest <= since   # 遡る 3 週分のログが残っている週だけ新規を数える
+        mine = calls.get(key, [])
+        before = {u for u, _, _, d in everyone if since <= d < start} if complete else None
+        w["people"] = _people_view(mine, before)
+        w["people_ext"] = (_people_view([c for c in mine if c[0] not in operator],
+                                        None if before is None else before - operator) if operator else None)
         w["by_source"] = dict(sorted(w["by_source"].items()))
         w["stats_nf_reasons"] = dict(sorted(w["stats_nf_reasons"].items()))
         w["companies_unavailable"] = dict(w["companies_unavailable"].most_common())
@@ -222,6 +272,15 @@ def merge_weekly(existing: list[dict], fresh: list[dict]) -> list[dict]:
         old = by_week.get(r["week"])
         if old and old.get("total", 0) > r["total"]:
             continue   # 生ログの 30 日削除で部分的に消えた週＝過去の集計の方が完全
+        if old:
+            # 利用者の集計のうち、後の再計算では作れないものは前の値を残す＝新規（遡る 3 週分のログが消えた後は数えられない）・
+            # 運営者を除いた数字（除くハッシュを渡さない実行＝手元の再生成で消さない）。
+            if r.get("people_ext") is None and old.get("people_ext") is not None:
+                r = {**r, "people_ext": old["people_ext"]}
+            for k in ("people", "people_ext"):
+                new, prev = r.get(k), old.get(k)
+                if new and prev and new.get("users_new") is None and prev.get("users_new") is not None:
+                    r = {**r, k: {**new, "users_new": prev["users_new"]}}
         by_week[r["week"]] = r
     return [by_week[k] for k in sorted(by_week)]
 
@@ -275,6 +334,40 @@ def pct(n: int, d: int) -> str:
     return f"{100 * n / d:.0f}%" if d else "—"
 
 
+def _num(x) -> str:
+    return "—" if x is None else f"{x:g}"
+
+
+def people_cells(v: Optional[dict], *, detail: bool) -> str:
+    """利用者の集計 1 つ分のセル（人数と件数だけ）。`detail`＝偏りと一覧だけの列も出す。集計の無い行は「—」。"""
+    by = lambda k: "・".join(str(v["services"][s_][k]) for s_ in SERVICES) if v else "—"   # noqa: E731
+    if not v:
+        return "<td>—</td>" * (7 if detail else 4)
+    if detail:
+        return (f"<td>{v['users']}</td><td>{_num(v['users_new'])}</td><td>{by('users')}</td><td>{_num(v['user_calls_median'])}</td>"
+                f"<td>{html.escape(pct(v['user_calls_max'], v['calls']))}</td><td>{by('list_only_users')}</td>")
+    return f"<td>{v['calls']}</td><td>{v['users']}</td><td>{_num(v['users_new'])}</td><td>{by('users')}</td>"
+
+
+def people_table(rows: list[dict]) -> str:
+    e = html.escape
+    order = "・".join(SERVICES)
+    parts = [f"""<h2>利用者（人数と件数のみ）</h2><div class="wrap"><table>
+<tr><th>週</th><th>利用者</th><th>うち新規</th><th>サービス別の利用者</th><th>1 人あたりの件数（中央値）</th><th>最多の 1 人の割合</th><th>一覧だけで終わった人</th>
+<th>除: 件数</th><th>除: 利用者</th><th>除: うち新規</th><th>除: サービス別の利用者</th></tr>"""]
+    for r in reversed(rows):
+        v = r.get("people")
+        left = people_cells(v, detail=True) if v else f"<td>{r.get('users', 0)}</td>" + "<td>—</td>" * 5
+        parts.append(f"<tr><td>{e(r['week'])}</td>{left}{people_cells(r.get('people_ext'), detail=False)}</tr>")
+    parts.append(f"""</table></div>
+<p class="note">利用者＝利用者ハッシュのある記録の人数（ハッシュそのものは載せない）。サービス別・一覧だけの並び＝{e(order)}。
+新規＝直前 3 週（{NEW_LOOKBACK_DAYS} 日）に現れていない利用者（生ログは 30 日で消える＝それより前は遡れない。31 日以上空けて戻った人も新規に数える）。
+遡る分のログが無い週は「—」。最多の 1 人の割合＝1 人の件数の最大 ÷ 利用者つきの件数（偏りの目安）。
+一覧だけで終わった人＝そのサービスで一覧のツールしか呼ばなかった人（欲しい情報が収録に無かった手がかり）。
+除:＝運営者自身の利用を除いた数字（除く利用者ハッシュを渡した実行だけ・渡していなければ「—」）。</p>""")
+    return "\n".join(parts)
+
+
 def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at: str) -> str:
     e = html.escape
     latest = rows[-1] if rows else None
@@ -296,9 +389,18 @@ def render_html(rows: list[dict], fresh: dict, health: list[dict], generated_at:
 <p class="note">生成 {e(generated_at)}／入力＝recommendations・stats・companies・deliberations の捕捉ログ（ローカル＋箱の保護コピー）。
 <b>検索語・ヒット文書名・個人を特定する情報は含まない</b>（数字のみ＝恒久蓄積可・プライバシーポリシー整合）。</p>"""
     parts = [head]
+    # 見出しは直近の完了した週（箱の生成は月曜の朝＝始まったばかりの週を見出しにしない）。完了した週が無ければ今週（途中）。
+    label = "今週（途中・"
+    try:
+        today = datetime.fromisoformat(generated_at).date()
+        done = [r for r in rows if date.fromisoformat(r["week_start"]) + timedelta(days=7) <= today]
+        if done:
+            latest, label = done[-1], "直近の完了した週（"
+    except Exception:  # noqa: BLE001
+        pass
     if latest:
         rec_search = latest['recommendations'] - latest.get('recommendations_list', 0)   # 一覧の呼び出しは率の母数に入れない
-        parts.append(f"""<h2>直近週（{e(latest['week'])}・{e(latest['week_start'])} 週）</h2>
+        parts.append(f"""<h2>{label}{e(latest['week'])}・{e(latest['week_start'])} 週）</h2>
 <p>クエリ {latest['total']} 件（recommendations {latest['recommendations']}・stats {latest['stats']}）／
 識別利用者 {latest['users']} 人（user_hash・authless 分は数えない）／
 recommendations 0 件率 {e(pct(latest['recommendations_zero'], rec_search))}・低ヒット率(&lt;{LOW_HIT}) {e(pct(latest['recommendations_low'], rec_search))}（母数＝検索 {rec_search} 件）／
@@ -310,7 +412,7 @@ companies found=false {latest.get('companies_found_false', 0)} 件（{e("・".jo
 deliberations {latest.get('deliberations', 0)} 件（回の一覧 {latest.get('deliberations_list', 0)}・検索 0 件 {latest.get('deliberations_zero', 0)}）／
 集計の対象外の tool {e("・".join(f"{k} {v}" for k, v in (latest.get('unknown_tools') or {}).items()) or "—")}（ツールを足したら polyarchy_common/usage_report.py の KNOWN_TOOLS へ）</p>""")
     parts.append("""<h2>週次推移</h2><div class="wrap"><table>
-<tr><th>週</th><th>週初</th><th>計</th><th>recommendations</th><th>stats</th><th>source 内訳</th><th>利用者</th>
+<tr><th>週</th><th>週初</th><th>計</th><th>recommendations</th><th>stats</th><th>companies</th><th>deliberations</th><th>source 内訳</th><th>利用者</th>
 <th>c: 0件</th><th>c: 低ヒット</th><th>c: orgs指定</th><th>c: 期間指定</th>
 <th>s: find</th><th>s: find 0件</th><th>s: find 絞込</th><th>s: lookup</th><th>s: found=false</th><th>s: false 内訳</th><th>s: 目録</th></tr>""")
     for r in reversed(rows):
@@ -318,12 +420,14 @@ deliberations {latest.get('deliberations', 0)} 件（回の一覧 {latest.get('d
         nf = "・".join(f"{e(k)} {v}" for k, v in r["stats_nf_reasons"].items()) or "—"
         parts.append(
             f"<tr><td>{e(r['week'])}</td><td>{e(r['week_start'])}</td><td>{r['total']}</td>"
-            f"<td>{r['recommendations']}</td><td>{r['stats']}</td><td>{src}</td><td>{r['users']}</td>"
+            f"<td>{r['recommendations']}</td><td>{r['stats']}</td><td>{r.get('companies', 0)}</td><td>{r.get('deliberations', 0)}</td>"
+            f"<td>{src}</td><td>{r['users']}</td>"
             f"<td>{r['recommendations_zero']}</td><td>{r['recommendations_low']}</td><td>{r['recommendations_orgs_filter']}</td>"
             f"<td>{r['recommendations_period_filter']}</td><td>{r['stats_find']}</td><td>{r['stats_find_zero']}</td>"
             f"<td>{r['stats_find_filtered']}</td><td>{r['stats_lookup']}</td><td>{r['stats_found_false']}</td>"
             f"<td>{nf}</td><td>{r['stats_catalog']}</td></tr>")
     parts.append("</table></div>")
+    parts.append(people_table(rows))
     parts.append("<h2>データ鮮度・生き死に（現況）</h2><ul>")
     if fresh:
         parts.append(f"<li>freshness（取得元の存否確認）：{fresh['datasets']} dataset・最終確認 {e(fresh.get('last_checked') or '—')}"
@@ -359,7 +463,8 @@ def main(argv=None) -> int:
         s3_mirror(a.s3_bucket, a.profile, a.region)
 
     records = collect_records()
-    fresh_rows = aggregate(records)
+    operator = [h.strip() for h in os.environ.get("USAGE_OPERATOR_HASHES", "").split(",") if h.strip()]
+    fresh_rows = aggregate(records, operator_hashes=operator)
     existing = load_records(WEEKLY_PATH)
     rows = merge_weekly(existing, fresh_rows)
 
