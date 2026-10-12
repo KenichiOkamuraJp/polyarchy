@@ -3,6 +3,7 @@
 #   health{service=mcp|stats|companies|deliberations}＝1/0・disk_used_percent{service=box}・
 #   mem_available_percent{service=box}・service_restarts{service=box}（前の分からの自動再起動の回数）。
 #   定期実行のユニットの失敗は unit_failed{service=box}（polyarchy-unit-failed@.service）・自動適用は dataapply{service=box}。
+#   外からの到達の確認（polyarchy-edgeprobe・5 分ごと）は edge{service=<サービス>}・idp_reachable{service=box}＝1/0。
 #   ★箱が送るメトリクスとアラームは 1 対 1（`test_common` が突き合わせる）。
 # ログは CW agent がサービスごとのロググループへ転送（保持 30 日＝プライバシーポリシーと一致）。
 # 通知は SNS → メール（var.alert_email。購読はメール側の Confirm リンクで有効化される）。
@@ -251,6 +252,45 @@ locals {
   )
 }
 
+# ── 外からの到達の確認（運用設計 §1.1・2026-10-12）────────────────────────────
+# 箱自身が公開 URL を資格情報なしで叩いた結果（deploy/bootstrap/edge_probe.sh）。箱の中の監視では見えない、トンネル・DNS・
+# エッジの規則・ディスカバリ・設定の食い違いを拾う。2 回続けて 0（約 10 分）で発報＝配布の停止・起動の 1 回では鳴らさない。
+# 確認が止まったとき（missing）はここでは鳴らさない＝箱ごとの死は health、確認の失敗は unit-failed が知らせる。
+resource "aws_cloudwatch_metric_alarm" "edge" {
+  for_each            = local.log_filter_groups
+  alarm_name          = "${var.project}-${var.environment}-edge-${each.key}"
+  alarm_description   = "${each.key} が公開 URL から届かない・認証の入口が壊れている（/healthz・守るパスの 401・ディスカバリの照合のどれかが 2 回続けて失敗）"
+  namespace           = "polyarchy"
+  metric_name         = "edge"
+  dimensions          = { service = each.key }
+  statistic           = "Minimum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  tags                = var.extra_tags
+}
+
+# IdP（発行者）のディスカバリと公開鍵が取れない。サービスごとに分けない＝IdP の障害でメールをサービスの数だけ出さない。
+# 稼働中のサービスは公開鍵を覚えている＝すぐには落ちない（再起動・鍵の入れ替えの後に全員が通らなくなる）。
+resource "aws_cloudwatch_metric_alarm" "idp_reachable" {
+  alarm_name          = "${var.project}-${var.environment}-idp"
+  alarm_description   = "IdP のディスカバリか公開鍵が箱から取れない（2 回続けて失敗）"
+  namespace           = "polyarchy"
+  metric_name         = "idp_reachable"
+  dimensions          = { service = "box" }
+  statistic           = "Minimum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  tags                = var.extra_tags
+}
+
 resource "aws_cloudwatch_log_metric_filter" "http_5xx" {
   for_each       = local.log_filter_groups
   name           = "polyarchy-${each.key}-5xx"
@@ -295,7 +335,7 @@ resource "aws_cloudwatch_metric_alarm" "http_5xx" {
 }
 
 # 閾値の根拠＝staging の 30 日（2026-09-10〜10-10）でこの行はサービスごとに 3 件（IdP の環境を切り替えた直後の数秒）だけ。
-# 利用が少ない時間帯の設定壊れは件数が届かない＝そちらは外からの確認（公開 URL のディスカバリの照合）で拾う。
+# 利用が少ない時間帯の設定壊れは件数が届かない＝箱の側の食い違いは外からの到達の確認（上の edge）が拾う。
 resource "aws_cloudwatch_metric_alarm" "auth_invalid_token" {
   for_each            = local.log_filter_groups
   alarm_name          = "${var.project}-${var.environment}-auth-${each.key}"

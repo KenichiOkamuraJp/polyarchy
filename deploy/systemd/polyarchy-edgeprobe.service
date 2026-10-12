@@ -1,0 +1,22 @@
+# 外からの到達の確認（運用設計 §1.1・2026-10-12）：箱自身が公開 URL を資格情報なしで叩き、結果を CloudWatch へ送る
+# （edge{service=<サービス>}・idp_reachable{service=box}＝1/0）。箱の中の監視では見えない、トンネル・DNS・エッジの規則・
+# ディスカバリ・IdP の異常を拾う。対＝polyarchy-edgeprobe.timer。設置は bootstrap ⑪。
+# User=polyarchy＝サービスごとの env（/etc/polyarchy/<サービス>.env・600）を読める最小の利用者。
+[Unit]
+Description=Polyarchy 外からの到達の確認（公開 URL -> CloudWatch put-metric-data）
+After=network-online.target
+Wants=network-online.target
+# 失敗はメトリクス unit_failed へ（→ アラーム・運用設計 §1.2）。
+OnFailure=polyarchy-unit-failed@%p.service
+
+[Service]
+Type=oneshot
+User=polyarchy
+Group=polyarchy
+EnvironmentFile=/etc/polyarchy/deploy.env
+ExecStart=/usr/local/bin/polyarchy-edge-probe
+# 1 件の取得は 10 秒で切る。全部が届かないときでも次の実行までに終わる。
+TimeoutStartSec=240
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polyarchy-edgeprobe

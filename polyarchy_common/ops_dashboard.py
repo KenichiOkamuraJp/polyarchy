@@ -58,7 +58,8 @@ DELIB_UNITS = ("polyarchy-deliberations", "qdrant-deliberations")  # 審議会DB
 UNITS = ("qdrant", "polyarchy-mcp", "polyarchy-stats", "cloudflared",
          "polyarchy-health.timer", "polyarchy-fuelsync.timer",
          "polyarchy-logprune.timer", "polyarchy-usagereport.timer", "polyarchy-dashboard.timer",
-         "polyarchy-updatecheck.timer", "polyarchy-dataapply.timer")
+         "polyarchy-updatecheck.timer", "polyarchy-dataapply.timer", "polyarchy-edgeprobe.timer")
+EDGE_PROBE_PATH = ROOT / "ops" / "dashboard" / "edge_probe.json"  # polyarchy_common.edge_probe が書く（2026-10-12）
 
 
 # ── 収集（全て best-effort＝取れない項目は「—」で載せる） ─────────────────────
@@ -187,6 +188,15 @@ def fuelsync_status() -> dict:
         return {}
     return {"last_run": _jst(rd("last_run")),
             "services": {s: {"result": rd(f"{s}.result") or "—", "last_ok": _jst(rd(f"{s}.last_ok")) or "—"} for s in FUELSYNC_SERVICES}}
+
+
+def edge_probe_status() -> dict:
+    """外からの到達の確認の直近の結果（edge_probe の状態ファイル）。1 回も走っていない箱・ローカルでは空。"""
+    try:
+        d = json.loads(EDGE_PROBE_PATH.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) and isinstance(d.get("services"), dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def code_version() -> str:
@@ -369,6 +379,19 @@ def render(generated_at: str, env_name: str) -> str:
             parts.append(f"<tr><td>{e(svc)}</td><td class=\"{cls}\">{e(v['result'])}</td><td>{e(v['last_ok'])}</td></tr>")
         parts.append(f"</table><p class=\"note\">同期は前の実行から 1 時間ごと（時刻は固定でない）・最終実行 {e(fs['last_run'] or '—')}。"
                      "absent＝その箱でサービスが無い。</p>")
+    ep = edge_probe_status()
+    if ep:
+        parts.append("<table><tr><th>外からの確認</th><th>公開ホスト</th><th>結果</th><th>失敗した確認</th></tr>")
+        for svc, v in ep["services"].items():
+            cls, txt = ("ok", "ok") if v.get("ok") else ("ng", "NG")
+            parts.append(f"<tr><td>{e(svc)}</td><td>{e(v.get('host', ''))}</td><td class=\"{cls}\">{txt}</td>"
+                         f"<td>{e('・'.join(v.get('failed') or []))}</td></tr>")
+        idp = ep.get("idp") or {}
+        if idp:
+            cls, txt = ("ok", "ok") if idp.get("ok") else ("ng", "NG")
+            parts.append(f"<tr><td>IdP</td><td>（発行者）</td><td class=\"{cls}\">{txt}</td><td>{e(idp.get('failed', ''))}</td></tr>")
+        parts.append(f"</table><p class=\"note\">箱自身が 5 分ごとに公開 URL を資格情報なしで叩く（/healthz・守るパスの 401・ディスカバリの照合・"
+                     f"IdP の公開鍵）・最終確認 {e(_jst(ep.get('ts', '')) or '—')}。失敗の読み方＝RUNBOOK §1「edge」。</p>")
 
     # ② バージョン
     parts.append(f"""<h2>② バージョン・規模</h2>

@@ -1,0 +1,11 @@
+# 外からの到達の確認を 5 分ごとに（時計の 5 分の区切りの 2 分後＝CloudWatch の 5 分の期間に 1 点ずつ入る・毎時の
+# ダッシュボード〔05 分〕と重ねない）。アラーム側は「2 回続けて 0」で発報（1 回だけの失敗＝配布の停止・起動では鳴らさない）。
+[Unit]
+Description=Run polyarchy-edgeprobe every 5 minutes
+
+[Timer]
+OnCalendar=*:2/5
+AccuracySec=10
+
+[Install]
+WantedBy=timers.target

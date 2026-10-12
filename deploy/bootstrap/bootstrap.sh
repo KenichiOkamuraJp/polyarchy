@@ -470,6 +470,7 @@ install -m 755 "$REPO_DIR/deploy/bootstrap/usage_report_weekly.sh" /usr/local/bi
 install -m 755 "$REPO_DIR/deploy/bootstrap/ops_dashboard.sh" /usr/local/bin/polyarchy-dashboard
 install -m 755 "$REPO_DIR/deploy/bootstrap/update_check.sh" /usr/local/bin/polyarchy-update-check
 install -m 755 "$REPO_DIR/deploy/bootstrap/apply_data_update.sh" /usr/local/bin/polyarchy-data-apply
+install -m 755 "$REPO_DIR/deploy/bootstrap/edge_probe.sh" /usr/local/bin/polyarchy-edge-probe  # 外からの到達の確認（2026-10-12）
 install -m 644 "$UNIT_SRC/polyarchy-health.service" /etc/systemd/system/polyarchy-health.service
 install -m 644 "$UNIT_SRC/polyarchy-health.timer" /etc/systemd/system/polyarchy-health.timer
 install -m 644 "$UNIT_SRC/polyarchy-usagereport.service" /etc/systemd/system/polyarchy-usagereport.service
@@ -480,12 +481,15 @@ install -m 644 "$UNIT_SRC/polyarchy-updatecheck.service" /etc/systemd/system/pol
 install -m 644 "$UNIT_SRC/polyarchy-updatecheck.timer" /etc/systemd/system/polyarchy-updatecheck.timer
 install -m 644 "$UNIT_SRC/polyarchy-dataapply.service" /etc/systemd/system/polyarchy-dataapply.service
 install -m 644 "$UNIT_SRC/polyarchy-dataapply.timer" /etc/systemd/system/polyarchy-dataapply.timer
+install -m 644 "$UNIT_SRC/polyarchy-edgeprobe.service" /etc/systemd/system/polyarchy-edgeprobe.service
+install -m 644 "$UNIT_SRC/polyarchy-edgeprobe.timer" /etc/systemd/system/polyarchy-edgeprobe.timer
 systemctl daemon-reload
 systemctl enable --now polyarchy-health.timer
 systemctl enable --now polyarchy-usagereport.timer
 systemctl enable --now polyarchy-dashboard.timer
 systemctl enable --now polyarchy-updatecheck.timer
 systemctl enable --now polyarchy-dataapply.timer
+systemctl enable --now polyarchy-edgeprobe.timer
 
 echo "════════ [bootstrap] 完了 $(date -Is) ════════"
 echo "[bootstrap] 次＝回帰ゲート4種を PASS（README §6）→ Tunnel カットオーバー（README §7）"

@@ -16,7 +16,8 @@
 | 経路 | 内容 |
 |---|---|
 | 毎分 timer `polyarchy-health` | 各サービスの localhost の `/healthz` → CW metric `polyarchy/health`＋disk＋空きメモリ＋常駐のユニットの自動再起動の回数 |
-| CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・空きメモリ<10% が 15 分・自動再起動・定期実行の失敗・5xx>5/5分・トークンの検証の失敗≧10/5分・**dataapply-rollback**（自動適用の切り戻し＝§5）＝一覧と意味は [運用設計](../docs/運用設計.md) §1.2 |
+| 5 分ごと timer `polyarchy-edgeprobe` | 箱自身が公開 URL を資格情報なしで叩く（`/healthz`・守るパスの 401・ディスカバリの照合・IdP の公開鍵）→ CW metric `polyarchy/edge`・`idp_reachable`。結果はダッシュボード①「外からの確認」 |
+| CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・空きメモリ<10% が 15 分・自動再起動・定期実行の失敗・外からの到達の確認が 2 回続けて失敗（edge・idp）・5xx>5/5分・トークンの検証の失敗≧10/5分・**dataapply-rollback**（自動適用の切り戻し＝§5）＝一覧と意味は [運用設計](../docs/運用設計.md) §1.2 |
 | CW Logs（サービスごとのロググループ＝`polyarchy/mcp` ほか） | httplog（時刻・パス・status・ms・user_hash・cf-ray）と認証の警告の行。保持 30 日 |
 | CW Logs `polyarchy/dataapply` | 自動適用の全出力（退避→反映→smoke→判定/切り戻し）＝データ更新の監査線（監査ガイド §4b）。保持 30 日 |
 | 箱内のログファイル | `/var/log/polyarchy/*.log`（rsyslog）は logrotate 日次×30 世代（30 日）・journal は `MaxRetentionSec=30day`（2026-10-09 の版の配布から＝bootstrap の変更はその配布で効く。それまでは週次×4 で約 5 週・journal は期限なし）。捕捉ログ本体（query_log）は 30 日 prune＝保持の正典は deploy/README「捕捉ログの保持」 |
@@ -80,6 +81,28 @@ df -h /; du -xhd1 /opt/polyarchy | sort -h | tail
 - 大抵は捕捉ログか /var/log。捕捉は 30 日 prune（`polyarchy-logprune.timer`）が動いているか確認：`systemctl list-timers | grep logprune`
 - `/opt/polyarchy/rollback/`（約 2.5 GB）と `/opt/polyarchy/releases/` は**削除しない**（自動切り戻しの原資・§5）。PDF は追記専用で増える（2 GB〜）。
 
+### アラーム「edge-<サービス>」（外からの到達の確認が 2 回続けて失敗）
+箱の中は健全でも利用者がつなげていない疑い。まずダッシュボード①「外からの確認」の「失敗した確認」を読む（パスは出ない）：
+
+| 失敗した確認 | 意味 | 見るところ |
+|---|---|---|
+| `healthz(届かない)`・`healthz(5xx)` | 公開ホストが箱に届かない・サービスが異常 | 下の「公開 URL が落ちている」（cloudflared・DNS・トンネル）。health も鳴っていればサービス側 |
+| `mcp(403)` | エッジの規則が守るパスを止めている | `bash deploy/scripts/cloudflare-guard.sh status`／`test`（規則のパスと箱のパスの食い違い） |
+| `mcp(200＝認証なしで通る)` | **認証が外れている**（急ぐ） | そのサービスの env（`/etc/polyarchy/<サービス>.env`）と起動ログの「IdP Bearer 検証=有効」の行 |
+| `mcp(WWW-Authenticate)` | 401 は返るが、クライアントが IdP を見つける手がかりが無い・別のホストを指している | 同上（resource の値） |
+| `prm(403)`・`prm(届かない)` | ディスカバリがエッジで止まっている＝新しく接続を足せない | ガードの規則が `/.well-known/` を除外しているか（`cloudflare-guard.sh status`） |
+| `prm(resource)` | そのホストが別のサービスに届いている・resource の設定の誤り | cloudflared の ingress（ホスト → ポート）と env |
+| `prm(issuer)` | 発行者の設定の食い違い | SSM `auth_issuer` |
+| `aud≠resource` | パスだけ替えて aud を替え忘れた（三点一致の崩れ＝トークンが全部通らない） | SSM `auth_aud_<svc>` と `<svc>_http_path`・IdP の Resource indicator（RUNBOOK §4） |
+
+- 手元からも同じ確認を流せる：`python -m polyarchy_common.edge_probe --resource-url https://<ホスト><パス> --issuer <発行者>`（資格情報なし・読み取りだけ）。手元では通るのに箱からは失敗する＝箱の外向きの経路の問題（利用者には影響していない）。
+- 配布の停止・起動の 1 回では鳴らない（2 回続けて＝約 10 分）。配布の時刻に鳴ったら、適用が 5 分を超えて止まっている（`polyarchy/dataapply` のログ）。
+- この確認は 5 分ごとに守るパスへトークン無しの要求を 1 本送る＝警告「Bearer 欠如」がサービスごとに 1 日 288 件出る（定型・アラームは数えない）。探りの量を警告の件数で読むときは、この分を引く。
+
+### アラーム「idp」（IdP のディスカバリか公開鍵が取れない）
+- 稼働中のサービスは公開鍵を覚えている＝すぐには落ちない。落ちるのはサービスの再起動の後と IdP が鍵を入れ替えた後（auth のアラームが続けて鳴る）＝**鳴っている間は配布と再起動を控える**。
+- IdP の側の障害か（IdP の稼働状況のページ）、発行者の設定の誤りか（SSM `auth_issuer`＝直近に替えたか）を見分ける。ダッシュボード①の IdP の行＝`discovery(…)` は発行者の URL が引けない・`jwks(…)` は公開鍵が取れない。
+
 ### 公開 URL が落ちている（origin は健全）
 ```bash
 systemctl status cloudflared; journalctl -u cloudflared -n 30 --no-pager   # Registered tunnel connection があるか
@@ -109,6 +132,7 @@ curl -sI https://recommendations.<domain>/healthz | head -1   # staging は reco
 | polyarchy-usagereport.timer | 週次利用レポート→S3 ops/report/（月曜 09:20 JST） | — |
 | polyarchy-dashboard.timer | 運用ダッシュボード→S3 ops/dashboard/（毎時 05 分） | — |
 | polyarchy-dataapply.timer | 15 分毎に S3 release/data.json を検知→自動適用（退避→コード反映→同期→smoke→切り戻し）＝§5 | root・qdrant/mcp/stats(/companies) を止める |
+| polyarchy-edgeprobe.timer | 外からの到達の確認（5 分ごと・本体は `/usr/local/bin/polyarchy-edge-probe`＝公開 URL を資格情報なしで叩き、結果をメトリクスとダッシュボード①へ） | — |
 | polyarchy-updatecheck.timer | 更新チェック（freshness＋提言新着→ダッシュボード反映・毎日 06:10 JST。手動キック＝SSM ドキュメント check-updates） | — |
 
 ## 3. データ復元（S3 が原本）

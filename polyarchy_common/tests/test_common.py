@@ -708,7 +708,8 @@ def test_box_metrics_and_alarms_paired():
     root = Path(__file__).resolve().parents[2]
     read = lambda p: (root / p).read_text(encoding="utf-8")   # noqa: E731
     sent = set()
-    for src in ("deploy/bootstrap/health_metric.sh", "deploy/bootstrap/unit_failed.sh", "deploy/bootstrap/apply_data_update.sh"):
+    for src in ("deploy/bootstrap/health_metric.sh", "deploy/bootstrap/unit_failed.sh", "deploy/bootstrap/apply_data_update.sh",
+                "deploy/bootstrap/edge_probe.sh"):
         sent |= set(re.findall(r"MetricName=(\w+)", read(src)))
     tf = read("deploy/terraform/observability.tf")
     alarms = re.findall(r'resource "aws_cloudwatch_metric_alarm" "\w+" \{(.*?)\n\}', tf, re.S)
@@ -716,7 +717,8 @@ def test_box_metrics_and_alarms_paired():
     from_logs = set(re.findall(r'metric_transformation \{\s*name\s*=\s*"([^"]+)"', tf))
     assert from_logs and sent, (from_logs, sent)
     assert set(custom) == sent | from_logs, (sorted(set(custom) ^ (sent | from_logs)))
-    assert {"health", "disk_used_percent", "mem_available_percent", "service_restarts", "unit_failed", "dataapply"} == sent, sent
+    assert {"health", "disk_used_percent", "mem_available_percent", "service_restarts", "unit_failed", "dataapply",
+            "edge", "idp_reachable"} == sent, sent
 
 
 def test_health_metric_script_runs():
@@ -763,6 +765,147 @@ def test_health_metric_script_runs():
     (d / "meminfo").write_text("")
     last = run("0\n\n0\n\n1\n")
     assert len(last) == 2 and "mem_available_percent" not in last[1] and "service_restarts" in last[1], last   # 取れない値は送らない
+
+
+def _edge_fetch(table: dict):
+    """edge_probe の偽の取得＝(メソッド, URL) → (status, ヘッダ, 本文)。表に無い URL は届かない（status 0）。"""
+    def fetch(url, method="GET"):
+        st, hdr, body = table.get((method, url), (0, {}, b""))
+        return st, hdr, body if isinstance(body, bytes) else json.dumps(body).encode()
+    return fetch
+
+
+def test_edge_probe_checks():
+    """外からの到達の確認（2026-10-12・B42 第 2 便）＝公開 URL の /healthz が 200・守るパスがトークン無しで 401＋
+    WWW-Authenticate・ディスカバリ（PRM）の resource と発行者が env と一致・env の aud が resource と同じ文字列（三点一致の
+    うち箱の側の 2 点）。IdP は発行者のディスカバリと公開鍵。失敗は確認の名前で返し、パス（秘密パスの構成では合言葉）を出さない。"""
+    from polyarchy_common import edge_probe as ep
+    base, path, iss = "https://stats.example.com", "/secret-path-xyz", "https://idp.example"
+    res = base + path
+    t = {"service": "stats", "resource_url": res, "issuer": iss, "aud": res}
+    prm = {"resource": res, "authorization_servers": [iss]}
+    www = {"www-authenticate": f'Bearer resource_metadata="{base}/.well-known/oauth-protected-resource"'}
+    good = {("GET", base + "/healthz"): (200, {}, {"ok": True}),
+            ("POST", res): (401, www, {"error": "missing bearer token"}),
+            ("GET", base + "/.well-known/oauth-protected-resource"): (200, {}, prm)}
+    assert ep.check_service(t, _edge_fetch(good)) == []
+
+    def bad(key, value, target=t):
+        return ep.check_service(target, _edge_fetch({**good, key: value}))
+
+    assert bad(("GET", base + "/healthz"), (503, {}, b"")) == ["healthz(503)"]
+    assert bad(("GET", base + "/healthz"), (0, {}, b"")) == ["healthz(届かない)"]                  # トンネル・DNS
+    assert bad(("POST", res), (403, {}, b"")) == ["mcp(403)"]                                       # エッジの規則が止めている
+    assert bad(("POST", res), (200, {}, b"{}")) == ["mcp(200＝認証なしで通る)"]
+    assert bad(("POST", res), (401, {}, b"")) == ["mcp(WWW-Authenticate)"]                          # クライアントが IdP を見つけられない
+    assert bad(("GET", base + "/.well-known/oauth-protected-resource"), (403, {}, b"")) == ["prm(403)"]
+    other = {"resource": "https://companies.example.com/mcp", "authorization_servers": [iss]}
+    assert bad(("GET", base + "/.well-known/oauth-protected-resource"), (200, {}, other)) == ["prm(resource)"]   # 別のサービスに届いている
+    assert bad(("GET", base + "/.well-known/oauth-protected-resource"), (200, {}, {**prm, "authorization_servers": ["https://x"]})) == ["prm(issuer)"]
+    assert bad(("GET", base + "/.well-known/oauth-protected-resource"), (200, {}, b"<html>")) == ["prm(本文)"]
+    assert ep.check_service({**t, "aud": base + "/mcp"}, _edge_fetch(good)) == ["aud≠resource"]    # パスだけ替えて aud を替え忘れた
+    assert ep.check_service({**t, "aud": ""}, _edge_fetch(good)) == []                              # aud を検証しない構成
+    every = ep.check_service({**t, "aud": "x"}, _edge_fetch({}))
+    assert every == ["healthz(届かない)", "mcp(届かない)", "prm(届かない)", "aud≠resource"], every
+    assert not any(path in f for f in every)
+
+    jwks = "https://idp.example/oauth2/jwks"
+    idp_ok = {("GET", iss + "/.well-known/oauth-authorization-server"): (200, {}, {"jwks_uri": jwks}),   # 1 つ目（OIDC）は無い IdP
+              ("GET", jwks): (200, {}, {"keys": [{"kid": "a"}]})}
+    assert ep.check_idp(iss, _edge_fetch(idp_ok)) == ""
+    assert ep.check_idp(iss + "/", _edge_fetch(idp_ok)) == ""                                       # 発行者の末尾のスラッシュ
+    assert ep.check_idp(iss, _edge_fetch({})) == "discovery(届かない)"
+    assert ep.check_idp(iss, _edge_fetch({**idp_ok, ("GET", jwks): (500, {}, b"")})) == "jwks(500)"
+    assert ep.check_idp(iss, _edge_fetch({**idp_ok, ("GET", jwks): (200, {}, {"keys": []})})) == "jwks(鍵が無い)"
+
+
+def test_edge_probe_run_and_dashboard():
+    """確認の対象は箱のサービスごとの env（MCP_AUTH_RESOURCE_URL のあるもの）から読む＝サービスの一覧を持たない。結果は 1 行ずつ
+    （シェルがメトリクスにする）と状態ファイル（ダッシュボード①が読む）。秘密パスはどちらにも出さない。"""
+    import io
+    import tempfile
+    from pathlib import Path
+    from polyarchy_common import edge_probe as ep
+    from polyarchy_common import ops_dashboard as od
+    d = Path(tempfile.mkdtemp())
+    iss, secret = "https://idp.example", "/secret-path-xyz"
+    (d / "deploy.env").write_text("AWS_REGION=ap-northeast-1\nTUNNEL_HOST_MCP=recommendations.example.com\n")
+    (d / "mcp.env").write_text(f"MCP_HTTP_PATH=/mcp\nMCP_AUTH_ISSUER={iss}\nMCP_AUTH_AUD=https://recommendations.example.com/mcp\n"
+                               "MCP_AUTH_RESOURCE_URL=https://recommendations.example.com/mcp\n")
+    (d / "stats.env").write_text(f"MCP_HTTP_PATH={secret}\nMCP_AUTH_ISSUER={iss}\nMCP_AUTH_AUD=https://stats.example.com{secret}\n"
+                                 f"MCP_AUTH_RESOURCE_URL=https://stats.example.com{secret}\n")
+    (d / "companies.env").write_text("MCP_HTTP_PATH=/mcp\n")                                       # 認証の無い env は対象外
+    targets = ep.load_targets(d)
+    assert [t["service"] for t in targets] == ["mcp", "stats"], targets
+    assert targets[1] == {"service": "stats", "resource_url": f"https://stats.example.com{secret}", "issuer": iss,
+                          "aud": f"https://stats.example.com{secret}"}
+
+    def table_for(t):
+        base = t["resource_url"].rsplit("/", 1)[0]
+        return {("GET", base + "/healthz"): (200, {}, {"ok": True}),
+                ("POST", t["resource_url"]): (401, {"www-authenticate": f'Bearer resource_metadata="{base}/.well-known/oauth-protected-resource"'}, b""),
+                ("GET", base + "/.well-known/oauth-protected-resource"): (200, {}, {"resource": t["resource_url"], "authorization_servers": [iss]})}
+    table = {**table_for(targets[0]), **table_for(targets[1]),
+             ("GET", iss + "/.well-known/openid-configuration"): (200, {}, {"jwks_uri": iss + "/jwks"}),
+             ("GET", iss + "/jwks"): (200, {}, {"keys": [{}]})}
+    table[("POST", targets[1]["resource_url"])] = (403, {}, b"")                                     # stats だけエッジで止まっている
+    out, state = io.StringIO(), d / "state" / "edge_probe.json"
+    assert ep.run(d, state, fetch=_edge_fetch(table), out=out, now="2026-10-12T03:02:10+00:00") == 0
+    assert out.getvalue().splitlines() == ["edge mcp 1", "edge stats 0", "idp 1"], out.getvalue()
+    saved = json.loads(state.read_text(encoding="utf-8"))
+    assert saved["services"]["stats"] == {"host": "stats.example.com", "ok": False, "failed": ["mcp(403)"]}, saved
+    assert saved["idp"] == {"ok": True, "failed": ""} and secret not in state.read_text(encoding="utf-8") and secret not in out.getvalue()
+
+    keep = (od.EDGE_PROBE_PATH, od.shutil.which)
+    try:
+        od.EDGE_PROBE_PATH, od.shutil.which = state, (lambda _: None)
+        page = od.render("2026-10-12T12:05:00+09:00", "test")
+        assert "<td>stats</td><td>stats.example.com</td><td class=\"ng\">NG</td><td>mcp(403)</td>" in page
+        assert "<td>mcp</td><td>recommendations.example.com</td><td class=\"ok\">ok</td><td></td>" in page
+        assert "最終確認 2026-10-12T12:02:10+09:00" in page and secret not in page
+        od.EDGE_PROBE_PATH = d / "none.json"
+        assert "外からの確認" not in od.render("2026-10-12T12:05:00+09:00", "test")                  # まだ 1 回も走っていない箱
+    finally:
+        od.EDGE_PROBE_PATH, od.shutil.which = keep
+
+    out2 = io.StringIO()
+    assert ep.run(d / "nowhere", d / "state2.json", fetch=_edge_fetch({}), out=out2, now="2026-10-12T03:02:10+00:00") == 0
+    assert out2.getvalue() == ""                                                                    # 公開していない箱＝何も送らない
+
+
+def test_edge_probe_script_sends_metrics():
+    """edge_probe.sh＝確認の結果の行をメトリクスにして送る（偽の python・aws で実行）。結果が 1 行も無い箱（公開していない）は
+    送らず 0 で終わる。確認そのものが落ちたら非 0（→ OnFailure → unit-failed）。"""
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    (d / "bin").mkdir()
+    (d / "deploy.env").write_text(f"AWS_REGION=ap-northeast-1\nREPO_DIR={d}\n")
+    (d / "bin" / "aws").write_text(f'#!/bin/bash\necho "$*" >> "{d}/aws.log"\n')
+    (d / "bin" / "fakepy").write_text(f'#!/bin/bash\ncat "{d}/lines"; exit $(cat "{d}/rc")\n')
+    for f in (d / "bin").iterdir():
+        f.chmod(0o755)
+    env = {**os.environ, "PATH": f"{d / 'bin'}:{os.environ['PATH']}", "POLYARCHY_DEPLOY_ENV": str(d / "deploy.env"),
+           "POLYARCHY_EDGE_PY": str(d / "bin" / "fakepy")}
+
+    def run(lines: str, rc: int = 0):
+        (d / "lines").write_text(lines)
+        (d / "rc").write_text(str(rc))
+        (d / "aws.log").write_text("")
+        r = subprocess.run(["bash", str(root / "deploy/bootstrap/edge_probe.sh")], env=env, capture_output=True, text=True)
+        return r.returncode, (d / "aws.log").read_text().splitlines()
+
+    rc, sent = run("edge mcp 1\nedge stats 0\nidp 1\n")
+    assert rc == 0 and len(sent) == 1, (rc, sent)
+    assert "MetricName=edge,Dimensions=[{Name=service,Value=mcp}],Value=1," in sent[0]
+    assert "MetricName=edge,Dimensions=[{Name=service,Value=stats}],Value=0," in sent[0]
+    assert "MetricName=idp_reachable,Dimensions=[{Name=service,Value=box}],Value=1," in sent[0]
+    assert run("") == (0, [])
+    rc, sent = run("", rc=1)
+    assert rc != 0 and sent == []
 
 
 def test_shell_var_not_followed_by_multibyte():

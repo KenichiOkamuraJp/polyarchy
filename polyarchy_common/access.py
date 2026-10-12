@@ -212,6 +212,15 @@ def oidc_bearer_middleware(app, issuer: str, aud: Optional[str], protect_path: s
 
 # ── 認証の装着点（HTTP で公開する全 MCP 入口が通る唯一の場所）──────────────────
 
+def idp_config(env) -> Optional[dict]:
+    """案 B の設定（`issuer`・`aud`・`resource_url`）を env から読む。無ければ None。env の名前を知っているのはここだけ＝
+    `install_auth`（`os.environ`）と、外からの到達の確認（`edge_probe`＝箱のサービスごとの env ファイルを読んだ dict）が使う。"""
+    issuer = env.get("MCP_AUTH_ISSUER")       # 例 https://xxxx.authkit.app（トークンの iss と完全一致）
+    if not issuer:
+        return None
+    return {"issuer": issuer, "aud": env.get("MCP_AUTH_AUD") or "", "resource_url": env.get("MCP_AUTH_RESOURCE_URL") or ""}
+
+
 def install_auth(app, *, host: str, port: int, path: str, logger_name: str = "polyarchy.mcp"):
     """MCP アプリ（ASGI）に認証を装着して返す。`mcp_http.serve_streamable_http` がここだけを呼ぶ。
 
@@ -226,6 +235,8 @@ def install_auth(app, *, host: str, port: int, path: str, logger_name: str = "po
     - ASGI アプリを受け取り ASGI アプリを返す。`path` 配下を守り、`/healthz` はこの外側（mcp_http が最外に置く）。
     - 利用者を識別するなら `_current_user` に `{"email", "sub"}` を置く（捕捉ログ・アクセスログの
       `user_hash` はそこから立つ。置かなければ `user_hash` が付かないだけで、動作は変わらない）。
+    - 外からの到達の確認（`polyarchy_common.edge_probe`）は `idp_config` が返す公開 URL と発行者を叩く。案 B の env を
+      書かない認証に替えると、確認の対象が無くなる（何も送らない＝アラームは鳴らない）＝替えるなら `idp_config` も合わせる。
     """
     import os
 
@@ -235,10 +246,11 @@ def install_auth(app, *, host: str, port: int, path: str, logger_name: str = "po
     if team and aud:
         app = access_jwt_middleware(app, team, aud, path, logger_name)
         log.info("Access JWT 検証=有効（team=%s・Cf-Access-Jwt-Assertion 必須の多層防御）", team)
-    issuer = os.environ.get("MCP_AUTH_ISSUER")       # 例 https://xxxx.authkit.app（トークンの iss と完全一致）
-    if issuer:
-        resource = os.environ.get("MCP_AUTH_RESOURCE_URL") or f"http://{host}:{port}{path}"
-        app = oidc_bearer_middleware(app, issuer, os.environ.get("MCP_AUTH_AUD"), path, resource, logger_name)
+    idp = idp_config(os.environ)
+    issuer = idp["issuer"] if idp else None
+    if idp:
+        resource = idp["resource_url"] or f"http://{host}:{port}{path}"
+        app = oidc_bearer_middleware(app, issuer, idp["aud"] or None, path, resource, logger_name)
         log.info("IdP Bearer 検証=有効（issuer=%s・resource=%s・案 B 個人認証）", issuer, resource)
     if not (team and aud) and not issuer:
         log.info("認証=未装着（env 未設定＝ローカル開発の素 HTTP。公開する箱では bootstrap ⑧ が止める）")
