@@ -4,6 +4,8 @@
 # 追加して行う＝2026-08-28 の A1 適用時の決定。RUNBOOK_OPS.md 参照）。
 [Unit]
 Description=Polyarchy weekly usage report (generate -> S3 ops/report/)
+# 失敗はメトリクス unit_failed へ（→ アラーム・運用設計 §1.2）。
+OnFailure=polyarchy-unit-failed@%p.service
 
 [Service]
 Type=oneshot

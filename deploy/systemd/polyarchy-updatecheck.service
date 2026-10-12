@@ -3,6 +3,8 @@
 # 手動キック＝SSM ドキュメント polyarchy-<env>-check-updates（AWS コンソールの Run Command から・監査ガイド）。
 [Unit]
 Description=Polyarchy update check (freshness + new-docs -> dashboard)
+# 失敗はメトリクス unit_failed へ（→ アラーム・運用設計 §1.2）。
+OnFailure=polyarchy-unit-failed@%p.service
 
 [Service]
 Type=oneshot

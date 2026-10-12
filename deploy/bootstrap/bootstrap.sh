@@ -338,6 +338,10 @@ install -m 644 "$UNIT_SRC/polyarchy-fuelsync.timer" /etc/systemd/system/polyarch
 install -m 755 "$REPO_DIR/deploy/bootstrap/fuelsync.sh" /usr/local/bin/polyarchy-fuelsync  # unit の ExecStart（2026-10-01）
 # 捕捉ログの保持期間（既定30日）を守る削除ジョブ（プライバシーポリシーの約束）。
 install -m 644 "$UNIT_SRC/polyarchy-logprune.service" /etc/systemd/system/polyarchy-logprune.service
+install -m 755 "$REPO_DIR/deploy/bootstrap/logprune.sh" /usr/local/bin/polyarchy-logprune  # unit の ExecStart（2026-10-12）
+# 定期実行のユニットの失敗を知らせる口（各ユニットの OnFailure の相手・2026-10-12）
+install -m 644 "$UNIT_SRC/polyarchy-unit-failed@.service" "/etc/systemd/system/polyarchy-unit-failed@.service"
+install -m 755 "$REPO_DIR/deploy/bootstrap/unit_failed.sh" /usr/local/bin/polyarchy-unit-failed
 install -m 644 "$UNIT_SRC/polyarchy-logprune.timer" /etc/systemd/system/polyarchy-logprune.timer
 install -m 644 "$UNIT_SRC/cloudflared.service" /etc/systemd/system/cloudflared.service
 if [[ "$VECTOR_BACKEND" == "qdrant" ]]; then

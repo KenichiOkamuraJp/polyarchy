@@ -30,6 +30,11 @@ from polyarchy_common.logsetup import get_logger
 # 認証済み利用者（{"email": str, "sub": str}）。未認証・stdio では None。
 _current_user: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar("polyarchy_current_user", default=None)
 
+# 「トークンを出したのに通らない」の警告の行に付ける目印。CloudWatch のメトリクスフィルタ（deploy/terraform/observability.tf の
+# auth_invalid_token）がこの文字列を数える＝日本語の文言の一致に頼らない・`test_common` がフィルタと行を突き合わせる。
+# トークン無し（新しい接続の最初の 1 回に必ず出る）には付けない。
+REJECT_INVALID = "auth_reject=invalid_token"
+
 
 def current_user() -> Optional[dict]:
     """このリクエストの認証済み利用者（`email`・`sub`）。未認証／stdio では None。"""
@@ -90,7 +95,7 @@ def access_jwt_middleware(app, team_domain: str, aud: str, protect_path: str,
         try:
             claims = verify(token.decode())
         except Exception as e:  # 署名/aud/iss/期限いずれか不正
-            log.warning("Access JWT 検証失敗: %s", e)
+            log.warning("Access JWT 検証失敗 [%s]: %s", REJECT_INVALID, e)
             return await _reject(send, "invalid token")
         user = {"email": str(claims.get("email") or ""), "sub": str(claims.get("sub") or "")}
         tok = _current_user.set(user)
@@ -193,7 +198,7 @@ def oidc_bearer_middleware(app, issuer: str, aud: Optional[str], protect_path: s
         try:
             claims = verify(auth[7:].strip())
         except Exception as e:  # 署名/iss/aud/期限いずれか不正
-            log.warning("IdP トークン検証失敗: %s", e)
+            log.warning("IdP トークン検証失敗 [%s]: %s", REJECT_INVALID, e)
             return await _reject(send, "invalid token")
         user = {"email": str(claims.get("email") or ""), "sub": str(claims.get("sub") or "")}
         tok = _current_user.set(user)

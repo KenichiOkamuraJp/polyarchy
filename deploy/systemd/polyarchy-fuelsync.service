@@ -2,6 +2,8 @@
 # 保護（仕様§4.1）。oneshot＝timer から定期起動。EBS が主・S3 は保護コピー（--delete は付けない）。
 [Unit]
 Description=Polyarchy 捕捉ログ(燃料)の S3 バックアップ
+# 失敗はメトリクス unit_failed へ（→ アラーム・運用設計 §1.2）。
+OnFailure=polyarchy-unit-failed@%p.service
 After=network-online.target
 Wants=network-online.target
 

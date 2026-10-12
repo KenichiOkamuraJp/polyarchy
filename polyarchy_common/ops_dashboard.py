@@ -63,8 +63,10 @@ UNITS = ("qdrant", "polyarchy-mcp", "polyarchy-stats", "cloudflared",
 
 # ── 収集（全て best-effort＝取れない項目は「—」で載せる） ─────────────────────
 
-def unit_states() -> list[tuple[str, str]]:
-    """systemd ユニットの状態（systemctl が無い環境＝ローカル Mac では空）。"""
+def unit_states() -> list[tuple[str, str, str]]:
+    """systemd ユニットの (名前, 状態, 自動再起動の回数)（systemctl が無い環境＝ローカル Mac では空）。
+    自動再起動＝NRestarts（自分で落ちて systemd に上げ直された回数。配布・手作業の再起動は数えない）＝アラーム restarts が
+    鳴ったとき、どのユニットかをここで見る（2026-10-12）。タイマーには無い＝「—」。"""
     if not shutil.which("systemctl"):
         return []
     out = []
@@ -72,10 +74,31 @@ def unit_states() -> list[tuple[str, str]]:
     for u in units:
         try:
             rc = subprocess.run(["systemctl", "is-active", u], capture_output=True, text=True, timeout=5)
-            out.append((u, rc.stdout.strip() or "unknown"))
+            state = rc.stdout.strip() or "unknown"
         except Exception:  # noqa: BLE001
-            out.append((u, "unknown"))
+            state = "unknown"
+        n = "—"
+        if not u.endswith(".timer"):
+            try:
+                rc = subprocess.run(["systemctl", "show", u, "-p", "NRestarts", "--value"], capture_output=True, text=True, timeout=5)
+                n = rc.stdout.strip() if rc.stdout.strip().isdigit() else "—"
+            except Exception:  # noqa: BLE001
+                pass
+        out.append((u, state, n))
     return out
+
+
+def failed_units() -> list[str] | None:
+    """失敗の状態で残っているユニット（定期実行の失敗＝アラーム unit-failed が鳴ったとき、どれかをここで見る・2026-10-12）。
+    次の実行が成功すれば消える。systemctl が無い・取れないときは None。"""
+    if not shutil.which("systemctl"):
+        return None
+    try:
+        rc = subprocess.run(["systemctl", "list-units", "--state=failed", "--no-legend", "--plain", "polyarchy-*", "qdrant*", "cloudflared*"],
+                            capture_output=True, text=True, timeout=5)
+        return [line.split()[0] for line in rc.stdout.splitlines() if line.split()]
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def disk_usage() -> str:
@@ -309,13 +332,14 @@ def render(generated_at: str, env_name: str) -> str:
 生成元＝<code>polyarchy_common.ops_dashboard</code>（polyarchy-dashboard.timer）。</p>"""]
 
     # ① 稼働
-    parts.append("<h2>① 稼働</h2><div class=\"grid\"><table><tr><th>ユニット</th><th>状態</th></tr>")
+    parts.append("<h2>① 稼働</h2><div class=\"grid\"><table><tr><th>ユニット</th><th>状態</th><th>自動再起動</th></tr>")
     if units:
-        for u, st in units:
+        for u, st, n in units:
             cls = "ok" if st == "active" else "ng"
-            parts.append(f"<tr><td>{e(u)}</td><td class=\"{cls}\">{e(st)}</td></tr>")
+            ncls = " class=\"ng\"" if n.isdigit() and int(n) > 0 else ""
+            parts.append(f"<tr><td>{e(u)}</td><td class=\"{cls}\">{e(st)}</td><td{ncls}>{e(n)}</td></tr>")
     else:
-        parts.append("<tr><td colspan=2 class=\"note\">systemctl なし（ローカル生成）</td></tr>")
+        parts.append("<tr><td colspan=3 class=\"note\">systemctl なし（ローカル生成）</td></tr>")
     parts.append("</table><table><tr><th>healthz</th><th>結果</th></tr>")
     for h in health:
         if h["ok"] is None:
@@ -323,7 +347,13 @@ def render(generated_at: str, env_name: str) -> str:
         else:
             cls, txt = ("ok", "ok") if h["ok"] else ("ng", "NG")
             parts.append(f"<tr><td>{e(h['url'])}（{e(h['service'])}）</td><td class=\"{cls}\">{txt}</td></tr>")
-    parts.append(f"</table></div><p>ディスク使用率：{e(disk_usage())}／メモリ（箱全体）：{e(box_memory())}</p>")
+    parts.append("</table></div>")
+    failed = failed_units()
+    if failed is not None:
+        cls, txt = ("ng", "・".join(failed)) if failed else ("ok", "なし")
+        parts.append(f"<p>失敗したユニット：<span class=\"{cls}\">{e(txt)}</span>"
+                     "<span class=\"note\">（定期実行は次の成功で消える。自動再起動＝自分で落ちて上げ直された回数＝配布・手作業の再起動は数えない）</span></p>")
+    parts.append(f"<p>ディスク使用率：{e(disk_usage())}／メモリ（箱全体）：{e(box_memory())}</p>")
     mem = service_memory()
     if mem:
         parts.append("<table><tr><th>メモリ</th><th>現在</th><th>うちファイルキャッシュ</th><th>起動からの最大</th><th>起動</th></tr>")

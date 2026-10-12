@@ -1,0 +1,12 @@
+# 定期実行のユニットの失敗を知らせる（運用設計 §1.2・2026-10-12）。各ユニットの OnFailure=polyarchy-unit-failed@%p.service から
+# 起動され、メトリクス unit_failed を 1 送る（→ アラーム unit-failed → SNS メール）。%i＝失敗したユニット名。
+# 設置は bootstrap ⑩。付ける相手と例外（health・dataapply）は `test_common` が固定する。
+[Unit]
+Description=Polyarchy 定期実行のユニットの失敗を CloudWatch へ送る（%i）
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/polyarchy-unit-failed %i
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polyarchy-unit-failed

@@ -3,6 +3,8 @@
 # 対＝polyarchy-dashboard.timer。設置は bootstrap ⑪。
 [Unit]
 Description=Polyarchy ops dashboard (generate -> S3 ops/dashboard/)
+# 失敗はメトリクス unit_failed へ（→ アラーム・運用設計 §1.2）。
+OnFailure=polyarchy-unit-failed@%p.service
 
 [Service]
 Type=oneshot

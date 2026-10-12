@@ -452,6 +452,40 @@ def test_ops_dashboard_memory_and_fuelsync():
         od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR, od.subprocess.run, od.shutil.which, od.companies_enabled = saved
 
 
+def test_ops_dashboard_failed_units_and_restarts():
+    """ダッシュボード①＝失敗したユニットと自動再起動の回数（2026-10-12）。アラーム unit-failed・restarts は箱で 1 本ずつ＝
+    どのユニットかは、箱のシェルに入らずここで見る。"""
+    from types import SimpleNamespace
+    from polyarchy_common import ops_dashboard as od
+
+    def fake_run(cmd, **kw):
+        if cmd[1] == "is-active":
+            out = "active\n"
+        elif cmd[1] == "show":
+            out = {"polyarchy-mcp": "2\n", "qdrant": "0\n"}.get(cmd[2], "\n")
+        else:   # list-units --state=failed
+            assert cmd[1:3] == ["list-units", "--state=failed"], cmd
+            out = "polyarchy-logprune.service loaded failed failed Polyarchy 捕捉ログの保持期間超過分を削除\n"
+        return SimpleNamespace(stdout=out, returncode=0)
+
+    saved = (od.subprocess.run, od.shutil.which, od.companies_enabled, od.deliberations_enabled)
+    try:
+        od.subprocess.run, od.shutil.which = fake_run, (lambda _: "/bin/systemctl")
+        od.companies_enabled = od.deliberations_enabled = lambda: False
+        st = {u: (state, n) for u, state, n in od.unit_states()}
+        assert st["polyarchy-mcp"] == ("active", "2") and st["qdrant"] == ("active", "0"), st
+        assert st["polyarchy-stats"] == ("active", "—") and st["polyarchy-logprune.timer"] == ("active", "—"), st   # 取れない・タイマー
+        assert od.failed_units() == ["polyarchy-logprune.service"]
+        page = od.render("2026-10-12T12:00:00+09:00", "test")
+        assert "失敗したユニット：<span class=\"ng\">polyarchy-logprune.service</span>" in page
+        assert "<td>polyarchy-mcp</td><td class=\"ok\">active</td><td class=\"ng\">2</td>" in page
+        od.shutil.which = lambda _: None
+        assert od.unit_states() == [] and od.failed_units() is None
+        assert "失敗したユニット" not in od.render("2026-10-12T12:00:00+09:00", "test")   # ローカル生成では出さない
+    finally:
+        od.subprocess.run, od.shutil.which, od.companies_enabled, od.deliberations_enabled = saved
+
+
 def _sync_cmds(path) -> list[str]:
     """deploy のシェルの aws s3 sync を 1 コマンドずつ（行末の \\ でつないだ継続行を 1 行に・コメント行は除く）。"""
     import re
@@ -536,9 +570,8 @@ def test_capture_log_services_aligned():
     restore = re.findall(r'^restore_fuel "\$(?:APP_DIR|REPO_DIR)/([^"]+)" (\S+)\s*$', read("deploy/bootstrap/bootstrap.sh"), re.M)
     assert {r: l for l, r in restore} == {want[s]: local[s].removeprefix("recommendations/") if s == "recommendations" else local[s]
                                           for s in want}, restore   # 新しい箱で燃料を戻す（bootstrap ⑥）も同じ一覧
-    prune = set(re.findall(r"POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/(\S+)/queries\.jsonl",
-                           read("deploy/systemd/polyarchy-logprune.service")))
-    assert prune == set(local.values()), prune
+    prune = re.findall(r'^prune_one (\w+) "\$REPO_DIR/([^"]+)"\s*$', read("deploy/bootstrap/logprune.sh"), re.M)
+    assert dict(prune) == local, prune
     iam = set(re.findall(r'"\$\{var\.data_s3_prefix\}/(\S*query_log)/\*"', read("deploy/terraform/iam.tf")))
     assert iam == set(want.values()), iam
     rules = set(re.findall(r'prefix = "(\S*query_log)/"', read("deploy/terraform/storage.tf")))
@@ -556,7 +589,7 @@ def test_box_service_list_aligned():
     svcs = {m.lower() for m in re.findall(r"^ENABLE_(\w+)_APP=", read("deploy/terraform/user_data.sh.tftpl"), re.M)} - {"web"}
     assert svcs == {"stats", "companies", "deliberations"}, svcs   # サービスを足したら、この関数の各所にも揃える
     apply, health = read("deploy/bootstrap/apply_data_update.sh"), read("deploy/bootstrap/health_metric.sh")
-    files = {"fuelsync": read("deploy/bootstrap/fuelsync.sh"), "logprune": read("deploy/systemd/polyarchy-logprune.service"),
+    files = {"fuelsync": read("deploy/bootstrap/fuelsync.sh"), "logprune": read("deploy/bootstrap/logprune.sh"),
              "cwagent": read("deploy/bootstrap/cloudwatch-agent.json"), "alarm": read("deploy/terraform/observability.tf"),
              "rollback": read("deploy/scripts/rollback.sh")}
     bad = []
@@ -567,7 +600,7 @@ def test_box_service_list_aligned():
             "apply の smoke": f"-m {s}.eval.mcp_smoke" in apply,
             "apply の退避": f'"$REPO_DIR/{s}/data/"' in apply,
             "fuelsync": f"sync_one {s} " in files["fuelsync"],
-            "logprune": f"/{s}/data/query_log/queries.jsonl" in files["logprune"],
+            "logprune": f"prune_one {s} " in files["logprune"],
             "ログ転送": f'"polyarchy/{s}"' in files["cwagent"],
             "アラーム": f'"health_{s}"' in files["alarm"],
             "rollback status": re.search(rf"for s in [^;]*\bpolyarchy-{s}\b", files["rollback"]),
@@ -578,6 +611,158 @@ def test_box_service_list_aligned():
         if not (hp and ap and hp.group(1) == ap.group(1)):
             bad.append(f"{s}: health と apply の /healthz のポート（{hp and hp.group(1)}・{ap and ap.group(1)}）")
     assert not bad, bad
+
+
+def test_auth_reject_filter_matches_log_line():
+    """「認証の失敗の急増」のメトリクスフィルタ（observability.tf）の文字列が、認証が実際に出す警告の行に含まれる（2026-10-12・
+    B35＝旧フィルタはアクセスログの ` 401 ` を数えていたが、アクセスログは認証の内側＝拒否は行にならず、30 日で 0 件だった）。
+    数えるのは「トークンを出したのに通らない」だけ＝トークン無し（新しい接続の最初の 1 回に必ず出る）は数えない。"""
+    import asyncio
+    import logging
+    import re
+    from pathlib import Path
+    from polyarchy_common.access import access_jwt_middleware, oidc_bearer_middleware
+    root = Path(__file__).resolve().parents[2]
+    tf = (root / "deploy/terraform/observability.tf").read_text(encoding="utf-8")
+    m = re.search(r'resource "aws_cloudwatch_log_metric_filter" "auth_invalid_token" \{.*?pattern\s*=\s*"\\"([^"\\]+)\\""', tf, re.S)
+    assert m, "auth_invalid_token のフィルタが無い"
+    pat = m.group(1)
+    assert pat.isascii(), pat   # フィルタの文字列は ASCII（日本語の文言の一致に頼らない）
+    assert '" 401 "' not in tf.replace("\\", ""), "アクセスログの 401 を数える旧フィルタが残っている"
+
+    records: list[str] = []
+
+    class H(logging.Handler):
+        def emit(self, r):
+            records.append(r.getMessage())
+
+    def bad(token: str) -> dict:
+        raise ValueError("bad token")
+
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    async def call(app, headers):
+        async def send(_):
+            pass
+        await app({"type": "http", "path": "/mcp", "method": "POST", "headers": headers}, None, send)
+
+    lg = logging.getLogger("polyarchy.test_auth_reject")
+    h = H()
+    lg.addHandler(h)
+    lg.setLevel(logging.WARNING)
+    try:
+        oidc = oidc_bearer_middleware(inner, "https://idp.example", "aud", "/mcp", "https://x.example/mcp", logger_name=lg.name, verify=bad)
+        asyncio.run(call(oidc, [(b"authorization", b"Bearer evil")]))
+        asyncio.run(call(oidc, []))
+        acc = access_jwt_middleware(inner, "team.example", "aud", "/mcp", logger_name=lg.name, verify=bad)
+        asyncio.run(call(acc, [(b"cf-access-jwt-assertion", b"evil")]))
+        asyncio.run(call(acc, []))
+    finally:
+        lg.removeHandler(h)
+    assert len(records) == 4, records
+    assert [pat in r for r in records] == [True, False, True, False], (pat, records)   # 不正＝数える・欠如＝数えない
+
+
+def test_timer_units_notify_on_failure():
+    """定期実行のユニット（polyarchy-*.timer の相手）は、失敗をメトリクス unit_failed に送る（2026-10-12＝logprune が止まると
+    保持 30 日の約束が黙って外れるが、知らせる経路が無かった）。例外は理由つきでここに書く。失敗を無視する ExecStart=- を
+    置かない（OnFailure が働かない）。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    sysd = root / "deploy/systemd"
+    exempt = {
+        "polyarchy-health": "毎分＝止まれば health が missing になり health のアラームが鳴る（失敗の知らせも同じ API に頼る）",
+        "polyarchy-dataapply": "切り戻し・中止は自分のメトリクス dataapply=0 で知らせる（同じ出来事でメールを 2 通にしない）",
+    }
+    timers = sorted(t.stem for t in sysd.glob("polyarchy-*.timer"))
+    assert timers and set(exempt) <= set(timers), timers
+    bad = []
+    for name in timers:
+        unit = (sysd / f"{name}.service").read_text(encoding="utf-8")
+        has = re.search(r"^OnFailure=polyarchy-unit-failed@%p\.service$", unit, re.M)
+        if name in exempt:
+            if has:
+                bad.append(f"{name}: 例外なのに OnFailure がある")
+            continue
+        if not has:
+            bad.append(f"{name}: OnFailure が無い")
+        if re.search(r"^ExecStart=-", unit, re.M):
+            bad.append(f"{name}: ExecStart=-（失敗を無視）")
+    assert not bad, bad
+    handler = (sysd / "polyarchy-unit-failed@.service").read_text(encoding="utf-8")
+    assert re.search(r"^ExecStart=/usr/local/bin/polyarchy-unit-failed %i$", handler, re.M), handler
+    assert not re.search(r"^OnFailure=", handler, re.M), handler   # 知らせる側の失敗で自分を呼ばない
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    assert '"$UNIT_SRC/polyarchy-unit-failed@.service"' in boot and "/usr/local/bin/polyarchy-unit-failed" in boot
+
+
+def test_box_metrics_and_alarms_paired():
+    """箱が送るメトリクス（health_metric.sh・unit_failed.sh・apply_data_update.sh の MetricName）と、アラーム（observability.tf の
+    namespace polyarchy）が 1 対 1（2026-10-12＝送っているのに鳴らない・鳴らす先のメトリクスが来ない、を配る前に止める）。
+    ログから数えるメトリクスは、フィルタとアラームの名前が対になっていること。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    read = lambda p: (root / p).read_text(encoding="utf-8")   # noqa: E731
+    sent = set()
+    for src in ("deploy/bootstrap/health_metric.sh", "deploy/bootstrap/unit_failed.sh", "deploy/bootstrap/apply_data_update.sh"):
+        sent |= set(re.findall(r"MetricName=(\w+)", read(src)))
+    tf = read("deploy/terraform/observability.tf")
+    alarms = re.findall(r'resource "aws_cloudwatch_metric_alarm" "\w+" \{(.*?)\n\}', tf, re.S)
+    custom = [re.search(r'metric_name\s*=\s*"([^"]+)"', a).group(1) for a in alarms if re.search(r'namespace\s*=\s*"polyarchy"', a)]
+    from_logs = set(re.findall(r'metric_transformation \{\s*name\s*=\s*"([^"]+)"', tf))
+    assert from_logs and sent, (from_logs, sent)
+    assert set(custom) == sent | from_logs, (sorted(set(custom) ^ (sent | from_logs)))
+    assert {"health", "disk_used_percent", "mem_available_percent", "service_restarts", "unit_failed", "dataapply"} == sent, sent
+
+
+def test_health_metric_script_runs():
+    """health_metric.sh を偽の curl・aws・systemctl・df で実行する（2026-10-12）。このスクリプトが壊れると health が全部 missing に
+    なり全サービスのアラームが鳴る＝足した分（メモリ・再起動）は別の送信に分け、取れない値は送らない。再起動は前回との差
+    （初回・数え直しは 0）。"""
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    (d / "bin").mkdir()
+    (d / "deploy.env").write_text("AWS_REGION=ap-northeast-1\nENABLE_STATS_APP=true\nENABLE_COMPANIES_APP=false\n")
+    (d / "meminfo").write_text("MemTotal:       16000000 kB\nMemFree:  1000 kB\nMemAvailable:   4000000 kB\n")
+    stubs = {
+        "curl": 'case "$*" in *8766*) exit 22;; esac; exit 0',
+        "df": 'printf "Use%%\n 42%%\n"',
+        "aws": f'echo "$*" >> "{d}/aws.log"',
+        "systemctl": f'cat "{d}/restarts"',
+    }
+    for name, body in stubs.items():
+        f = d / "bin" / name
+        f.write_text("#!/bin/bash\n" + body + "\n")
+        f.chmod(0o755)
+    env = {**os.environ, "PATH": f"{d / 'bin'}:{os.environ['PATH']}", "POLYARCHY_DEPLOY_ENV": str(d / "deploy.env"),
+           "POLYARCHY_MEMINFO": str(d / "meminfo"), "POLYARCHY_RESTART_STATE": str(d / "state")}
+
+    def run(restarts: str) -> list[str]:
+        (d / "restarts").write_text(restarts)
+        (d / "aws.log").write_text("")
+        rc = subprocess.run(["bash", str(root / "deploy/bootstrap/health_metric.sh")], env=env, capture_output=True, text=True)
+        assert rc.returncode == 0, rc.stderr
+        return (d / "aws.log").read_text().splitlines()
+
+    first = run("2\n\n0\n\n1\n")
+    assert len(first) == 2, first                                  # 生き死に＋ディスク／メモリ＋再起動＝送信を分ける
+    assert "Value=mcp}],Value=1," in first[0] and "Value=stats}],Value=0," in first[0] and "companies" not in first[0], first[0]
+    assert "MetricName=disk_used_percent,Dimensions=[{Name=service,Value=box}],Value=42," in first[0], first[0]
+    assert "MetricName=mem_available_percent,Dimensions=[{Name=service,Value=box}],Value=25," in first[1], first[1]
+    assert "MetricName=service_restarts,Dimensions=[{Name=service,Value=box}],Value=0," in first[1], first[1]   # 初回は差を取らない
+    assert "MetricName=service_restarts,Dimensions=[{Name=service,Value=box}],Value=2," in run("3\n\n1\n\n1\n")[1]   # 3 → 5
+    assert "MetricName=service_restarts,Dimensions=[{Name=service,Value=box}],Value=0," in run("0\n\n0\n\n1\n")[1]   # 数え直し（手で再起動）
+    (d / "meminfo").write_text("")
+    last = run("0\n\n0\n\n1\n")
+    assert len(last) == 2 and "mem_available_percent" not in last[1] and "service_restarts" in last[1], last   # 取れない値は送らない
 
 
 def test_shell_var_not_followed_by_multibyte():

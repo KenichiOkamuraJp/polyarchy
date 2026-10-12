@@ -1,20 +1,19 @@
 # 捕捉ログの保持期間超過レコードを削除する（プライバシーポリシーの約束＝30日で自動削除）。
-# 実体は deploy/scripts/prune_query_log.py（JSONL を ts で選別・原子的に差し替え）。
+# 実体は deploy/scripts/prune_query_log.py（JSONL を ts で選別・原子的に差し替え）＝サービスごとに deploy/bootstrap/logprune.sh が呼ぶ。
 [Unit]
 Description=Polyarchy 捕捉ログの保持期間超過分を削除（既定30日）
+# 失敗はメトリクス unit_failed へ（→ アラーム・運用設計 §1.2）。
+OnFailure=polyarchy-unit-failed@%p.service
 
 [Service]
 Type=oneshot
 User=polyarchy
 Group=polyarchy
 EnvironmentFile=-/etc/polyarchy/deploy.env
-Environment=POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/recommendations/data/query_log/queries.jsonl
 # 保持日数。プライバシーポリシーの約束により 30。変更時はここと S3 ライフサイクル（storage.tf）を揃える。
 Environment=LOG_RETENTION_DAYS=30
-ExecStart=/opt/miniconda/envs/polyarchy/bin/python /opt/polyarchy/polyarchy/deploy/scripts/prune_query_log.py
-# stats（統計参照DB）の捕捉ログも同じ保持日数で削除（プライバシーポリシー「30 日で自動削除」を両サービスで担保）。
-ExecStart=-/usr/bin/env POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/stats/data/query_log/queries.jsonl /opt/miniconda/envs/polyarchy/bin/python /opt/polyarchy/polyarchy/deploy/scripts/prune_query_log.py
-ExecStart=-/usr/bin/env POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/companies/data/query_log/queries.jsonl /opt/miniconda/envs/polyarchy/bin/python /opt/polyarchy/polyarchy/deploy/scripts/prune_query_log.py
-ExecStart=-/usr/bin/env POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/deliberations/data/query_log/queries.jsonl /opt/miniconda/envs/polyarchy/bin/python /opt/polyarchy/polyarchy/deploy/scripts/prune_query_log.py
+# サービスごとの削除は /usr/local/bin/polyarchy-logprune（deploy/bootstrap/logprune.sh）。1 つの失敗で残りを止めず、
+# 最後に非 0 で終わる＝unit が failed になり知らせが出る（旧＝2 本目以降が ExecStart=- で失敗を無視していた・2026-10-12）。
+ExecStart=/usr/local/bin/polyarchy-logprune
 StandardOutput=journal
 StandardError=journal

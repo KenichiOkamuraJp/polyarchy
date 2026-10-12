@@ -9,8 +9,8 @@ HTTP 入口の運用部品（全サービス共通・純 ASGI）：アクセス�
 
 ログは journald（stderr）へ 1 行 1 リクエスト：
   HTTP <method> <path> <status> <ms>ms user=<hash|-> ray=<cf-ray|->
-CloudWatch Logs に載せた後のメトリクスフィルタ（5xx 率・レイテンシ・401 急増）はこの形式に依存する＝変えるときは
-deploy/terraform/monitoring.tf と RUNBOOK を同時に。保持はプライバシーポリシーどおり 30 日（Logs 側の設定）。
+CloudWatch Logs に載せた後のメトリクスフィルタ（5xx）はこの形式に依存する＝変えるときは
+deploy/terraform/observability.tf と RUNBOOK を同時に（認証の失敗は、この行ではなく access 側の警告の行の目印を数える）。保持はプライバシーポリシーどおり 30 日（Logs 側の設定）。
 """
 import json
 import re

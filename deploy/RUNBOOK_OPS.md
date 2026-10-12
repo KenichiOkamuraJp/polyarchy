@@ -15,9 +15,9 @@
 
 | 経路 | 内容 |
 |---|---|
-| 毎分 timer `polyarchy-health` | localhost の `/healthz`（:8765 recommendations・:8766 stats）→ CW metric `polyarchy/health`＋disk |
-| CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・5xx>5/5分・401>30/5分・**dataapply-rollback**（自動適用の切り戻し＝§5） |
-| CW Logs `polyarchy/mcp`・`polyarchy/stats` | httplog（時刻・パス・status・ms・user_hash・cf-ray）。保持 30 日 |
+| 毎分 timer `polyarchy-health` | 各サービスの localhost の `/healthz` → CW metric `polyarchy/health`＋disk＋空きメモリ＋常駐のユニットの自動再起動の回数 |
+| CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・空きメモリ<10% が 15 分・自動再起動・定期実行の失敗・5xx>5/5分・トークンの検証の失敗≧10/5分・**dataapply-rollback**（自動適用の切り戻し＝§5）＝一覧と意味は [運用設計](../docs/運用設計.md) §1.2 |
+| CW Logs（サービスごとのロググループ＝`polyarchy/mcp` ほか） | httplog（時刻・パス・status・ms・user_hash・cf-ray）と認証の警告の行。保持 30 日 |
 | CW Logs `polyarchy/dataapply` | 自動適用の全出力（退避→反映→smoke→判定/切り戻し）＝データ更新の監査線（監査ガイド §4b）。保持 30 日 |
 | 箱内のログファイル | `/var/log/polyarchy/*.log`（rsyslog）は logrotate 日次×30 世代（30 日）・journal は `MaxRetentionSec=30day`（2026-10-09 の版の配布から＝bootstrap の変更はその配布で効く。それまでは週次×4 で約 5 週・journal は期限なし）。捕捉ログ本体（query_log）は 30 日 prune＝保持の正典は deploy/README「捕捉ログの保持」 |
 | Cloudflare Tunnel Health 通知 | ダッシュボードで ON にする（無料・トンネル断） |
@@ -40,9 +40,11 @@ journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep -E " 50[0-9] "
 ```
 アプリ例外なら Traceback が直前に出ている。データ破損疑い（qdrant）なら §3 の復元。
 
-### アラーム「401 急増」
-- ★**このアラームは、いまの配線では認証の拒否で鳴らない**（2026-10-10 に判明＝数える対象はアクセスログの行だが、アクセスログは認証の内側にあり、拒否された要求は行にならない。残タスク B35）。設定壊れの疑いは、鳴るのを待たずに警告の行で確かめる：`journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep -c "IdP トークン検証失敗"`（トークンを出したのに通らない＝aud・発行者の食い違い）。「Bearer 欠如」は新しい接続の最初の 1 回に必ず出る＝正常。
-- **認証必須（案 B・2026-09-02〜）のため 401 は正常系にも出る**（未認証プローブ・期限切れトークンの再取得前）。急増の主因候補＝①攻撃/スキャンの試行（レート制限が効いているか＝§1「公開 URL」の `cloudflare-guard.sh status`）②**設定壊れ＝aud 不一致**（利用者全員が繋がらない）。
+### アラーム「auth-<サービス>」（トークンの検証の失敗の急増・旧「401 急増」）
+- **数えているもの**＝「トークンを出したのに通らない」要求（警告の行「IdP トークン検証失敗」の目印 `auth_reject=invalid_token`）が 5 分で 10 件以上。トークン無しの 401（警告「Bearer 欠如」）は新しい接続の最初の 1 回に必ず出る＝数えない（2026-10-12・B35＝それまではアクセスログの 401 を数えていて、認証の拒否では鳴らなかった）。
+- **鳴ったら**＝全員がつながらない疑い。原因は 2 つ＝①設定壊れ（aud・発行者の食い違い＝下の三点一致）②IdP の障害（公開鍵が取れない＝警告の行の末尾に取得の失敗が出る）。行を読む：`journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep "IdP トークン検証失敗" | tail`（サービスごとのユニット名に読み替える・箱に入らないなら CW Logs のロググループで同じ文字列を探す）。
+- **鳴らなくても起きている場合**＝利用が少ない時間帯は件数が届かない。利用者から「つながらない」と来たら、鳴るのを待たずに同じ行を数える。
+- **トークン無しの 401 は正常系**（新しい接続の最初の 1 回・未認証の探り）＝アラームは数えない。探りの量が気になるときは警告「Bearer 欠如」の件数と、レート制限が効いているか（§1「公開 URL」の `cloudflare-guard.sh status`）を見る。でたらめなトークンを付けた探りは数に入る＝行の末尾の理由（署名・発行者）で設定壊れと見分ける。
 - 案 B の照合（三点一致）：SSM `auth_issuer`／`auth_aud_<svc>` と WorkOS の Resource indicator と実 URL（ホスト＋秘密パス）が一致しているか。壊れていたら SSM を直して箱で `bootstrap.sh` 再走行 → restart。issuer 変更（テナント差し替え）時は利用者は再ログインになる。
 - （旧・案 A の照合＝`access-oauth.sh status` は Access 併用時のみ・現行は未使用）。
 - **`POST <パス>` の 400 が接続ごとに 1 本出るのは定型**＝障害と読まない（2026-10-10 に手元で再現）。新しいプロトコル版のクライアントが接続の最初に送る発見の要求（`server/discover`）を、箱の MCP SDK（1.x）が「未対応のプロトコル版」として断り、クライアントは従来の `initialize` に落ちて続行する（利用者の画面に失敗は出ない）。400 を数えるアラームは無い。対応は SDK の 2.x への移行（残タスク B36）。★同じ接続で 400 が続く・`initialize` の後のツール呼び出しが 400 になるのは別の事象＝応答の本文を見る。
@@ -52,6 +54,24 @@ journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep -E " 50[0-9] "
   自動切り戻し（ダッシュボード②が ROLLED_BACK）(b) 止める前の退避段で中止（ディスク・S3 権限＝マークは書かれず前回のマークのまま・15 分後に再試行）。
   見分けは CW Logs `polyarchy/dataapply` の「切り戻し完了」か「①退避段で失敗」の行。(a) は §5「切り戻し後」の手順へ・(b) は原因（ディスク・権限）を直す。急がない。
 - 例外＝ダッシュボード②の「切り戻し後 smoke」が FAILED のとき（旧版でも壊れている）→ 上の health の手順・§3 の S3 復元。
+
+### アラーム「mem」（箱の空きメモリが 15 分続けて 10% 未満）
+- まずダッシュボード①のメモリの表（サービスごとの 現在・うちファイルキャッシュ・起動からの最大）で、どのユニットが増えているかを見る。プロセス自身の分は 現在 − ファイルキャッシュ が目安。
+- 箱で見るなら：`free -m; systemctl status polyarchy-mcp polyarchy-stats qdrant --no-pager | grep -E "●|Memory"`
+- 1 つのユニットが増え続けている → そのユニットを `sudo systemctl restart`（数秒の切れ目）。全体に足りない → インスタンスの大きさを上げる判断（terraform の `instance_type`）。
+- このアラームと「restarts」が続けて鳴ったら OOM で落ちている：`journalctl -k --since "-1h" --no-pager | grep -i "out of memory"`
+
+### アラーム「restarts」（常駐のユニットが落ちて自動で上げ直された）
+- 可用性は数秒で戻っている（`Restart=always`）。落ちた瞬間の要求は失敗している＝原因を見る。どのユニットかはダッシュボード①の「自動再起動」の列（0 でないもの）。
+- 箱で見るなら：`systemctl show 'polyarchy-*.service' 'qdrant*.service' cloudflared.service -p Id,NRestarts | paste - - -`／落ちた理由＝`journalctl -u <ユニット> --since "-1h" --no-pager | grep -B5 "Main process exited"`（Traceback か、OOM なら `journalctl -k | grep -i "out of memory"`）
+- 配布（自動適用）の停止・起動は数えない＝配布の時刻に鳴ったら、反映の途中でユニットが自分で落ちている（`polyarchy/dataapply` のログと合わせて読む）。
+
+### アラーム「unit-failed」（定期実行のユニットが失敗した）
+- どのユニットかはダッシュボード①「失敗したユニット」（次の実行が成功すれば消える）。箱で見るなら：`systemctl --failed --no-pager; tail /var/log/polyarchy/polyarchy-unit-failed.log`
+- 失敗の中身：`journalctl -u <ユニット> -n 50 --no-pager`。直したら手で 1 回流して確かめる：`sudo systemctl start <ユニット>.service`
+- ★**`polyarchy-logprune` の失敗は急ぐ**＝捕捉ログの 30 日の削除が止まっている（プライバシーポリシーの約束）。箱の削除が止まっても S3 側はライフサイクルが消す＝外れるのは箱の原本。
+- `polyarchy-fuelsync`＝S3 への保護コピーが止まっている（箱の原本は無事）・`polyarchy-updatecheck`／`polyarchy-dashboard`＝ダッシュボードが古いまま（冒頭の生成時刻で分かる）・`polyarchy-usagereport`＝週次の集計が 1 回抜ける（手で流せば埋まる）。
+- 知らせの対象外＝`polyarchy-health`（止まれば health が missing で鳴る）・`polyarchy-dataapply`（切り戻し・中止は dataapply-rollback で鳴る）。
 
 ### アラーム「disk > 80%」
 ```bash
@@ -82,9 +102,10 @@ curl -sI https://recommendations.<domain>/healthz | head -1   # staging は reco
 | polyarchy-deliberations | deliberations MCP :8768（同上・モデルは recommendations と同じ ruri＋リランカー・ランタイム秘密なし） | qdrant-deliberations |
 | polyarchy-web | **廃止（2026-09-02）**＝unit はリポ残置・箱には無い | — |
 | cloudflared | 入口（トンネル） | 全 origin の後に start が安全 |
-| polyarchy-health.timer | 毎分 healthz→CW metric | — |
+| polyarchy-health.timer | 毎分 healthz・ディスク・空きメモリ・自動再起動の回数→CW metric | — |
 | polyarchy-fuelsync.timer | 捕捉ログを 1 時間ごとに S3 へ（前の実行から 1 時間・時刻は固定でない・本体は `/usr/local/bin/polyarchy-fuelsync`＝サービスごとの結果をダッシュボード①へ） | — |
-| polyarchy-logprune.timer | 捕捉ログ 30 日削除（毎日） | — |
+| polyarchy-logprune.timer | 捕捉ログ 30 日削除（毎日・本体は `/usr/local/bin/polyarchy-logprune`＝サービスごとに削除し、1 つでも失敗すれば unit が failed になる） | — |
+| polyarchy-unit-failed@.service | 定期実行のユニットの失敗をメトリクス `unit_failed` へ送る（各ユニットの `OnFailure` から起動＝手では起動しない） | — |
 | polyarchy-usagereport.timer | 週次利用レポート→S3 ops/report/（月曜 09:20 JST） | — |
 | polyarchy-dashboard.timer | 運用ダッシュボード→S3 ops/dashboard/（毎時 05 分） | — |
 | polyarchy-dataapply.timer | 15 分毎に S3 release/data.json を検知→自動適用（退避→コード反映→同期→smoke→切り戻し）＝§5 | root・qdrant/mcp/stats(/companies) を止める |
