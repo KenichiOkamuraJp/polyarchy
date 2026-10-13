@@ -11,7 +11,9 @@
 #   qdrant-delib の確認が黙って抜ける。
 #
 # 確かめること（1 つでも外れたら非 0＝配らない）:
-#   a. qdrant-dev（と審議会DB 有効時の qdrant-delib）のマウント元＝このフォルダの data/qdrant（測る索引＝配る索引）
+#   a. qdrant-dev（と審議会DB 有効時の qdrant-delib）のマウント元＝このフォルダの data/qdrant（測る索引＝配る索引）と、
+#      その Qdrant が応答する（止まったコンテナでも docker inspect は通る＝マウント元だけでは、ゲートが全部通った後で
+#      初めて止まる・2026-10-12 staging）
 #   b. 配布に使う AWS のプロファイルが通る（sts。ログインからの経過時間は人の判断＝表示だけ）
 #   c. COLLECTION_NAME＝env ファイルの RECOMMENDATIONS_COLLECTION_NAME（シェルに別の値があれば中止）・
 #      DELIB_COLLECTION は未設定か deliberations_v1（配布・箱の unit はこの名前で決め打ち）
@@ -36,6 +38,12 @@ pf_mount() { # $1=コンテナ $2=期待するマウント元（このフォル�
     return 1
   fi
   echo "  ✓ $1 のマウント元＝${2}"
+}
+
+pf_alive() { # $1=コンテナ $2=Qdrant の URL（どちらのコンテナも再起動ポリシーなし＝Docker を上げ直した後は止まっている）
+  curl -fsS -m 3 "$2/collections" >/dev/null 2>&1 \
+    || { pf_fail "$1 が応答しない（${2}）＝docker start $1"; return 1; }
+  echo "  ✓ $1 が応答する（${2}）"
 }
 
 pf_tuning() { # 検索の調整値の混入（名前は config から拾う＝一覧を手で写さない）
@@ -115,10 +123,12 @@ PYEOF
 preflight() {
   echo "── ⓪ 配る前の確認（測るもの＝配るもの）"
   : "${REPO_DIR:?}" "${AWS_PROFILE:?}"
-  # a. マウント元
+  # a. マウント元と応答
   pf_mount qdrant-dev "$REPO_DIR/recommendations/data/qdrant" || return 1
+  pf_alive qdrant-dev "http://localhost:6333" || return 1
   if [[ "${ENABLE_DELIBERATIONS_APP:-false}" == "true" ]]; then
     pf_mount qdrant-delib "$REPO_DIR/deliberations/data/qdrant" || return 1
+    pf_alive qdrant-delib "${DELIB_QDRANT_URL:-http://localhost:6340}" || return 1
   fi
   # b. 配布に使うプロファイル（読み取りだけ）
   aws sts get-caller-identity --profile "$AWS_PROFILE" >/dev/null 2>&1 \

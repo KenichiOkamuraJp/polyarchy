@@ -197,6 +197,36 @@ do_apply() {
       && terraform apply "${TF_ARGS[@]}" )
 }
 
+# ── §4' 対話なしで流す形（2026-10-13）＝plan を保存 → 差分を読む → 保存した plan をそのまま適用 → 直後の plan で差分 0。
+#    読んだ plan と適用する plan が同じ。保存した plan が無ければ適用しない＝plan を読む段を飛ばせない。
+#    plan の後に state が動いていれば terraform が「stale」で止める。置き場は .terraform/（git 外）。
+tf_plan_file() { printf '%s' "$TF_DIR/.terraform/polyarchy-${ENVIRONMENT}.tfplan"; }
+
+do_plan() {
+  local pf; pf="$(tf_plan_file)"
+  log "Terraform plan（読み取りだけ・保存先 ${pf}）"
+  mkdir -p "$(dirname "$pf")"
+  ( cd "$TF_DIR" && terraform init -input=false >/dev/null \
+      && terraform plan -input=false "${TF_ARGS[@]}" "-out=$pf" )
+  log "差分を読んでから: bash deploy.sh ${ENVIRONMENT} apply-plan（保存した plan をそのまま適用する）"
+}
+
+do_apply_plan() {
+  local pf rc=0; pf="$(tf_plan_file)"
+  [[ -f "$pf" ]] || die "保存した plan が無い（先に bash deploy.sh ${ENVIRONMENT} plan で差分を読む）"
+  log "Terraform 適用（保存した plan・対話なし）"
+  ( cd "$TF_DIR" && terraform init -input=false >/dev/null && terraform apply -input=false "$pf" ) || rc=$?
+  rm -f "$pf"                                   # 成否にかかわらず残さない（同じ plan は 2 回適用できない）
+  [[ "$rc" == 0 ]] || die "terraform apply が失敗（plan は消した＝直してから plan からやり直す）"
+  rc=0
+  ( cd "$TF_DIR" && terraform plan -input=false -detailed-exitcode "${TF_ARGS[@]}" >/dev/null ) || rc=$?
+  case "$rc" in
+    0) log "適用の直後の plan: No changes ✓" ;;
+    2) die "適用の直後の plan に差分が残っている（bash deploy.sh ${ENVIRONMENT} plan で読む）" ;;
+    *) die "適用の直後の plan が失敗（rc=${rc}）" ;;
+  esac
+}
+
 # 稼働中インスタンスIDをタグ(Project/Environment)で検索（terraform state 非依存＝rollback でも使える）。
 # load_env 済み（PROJECT/ENVIRONMENT/AWS_PROFILE 設定済）が前提。
 instance_id() {

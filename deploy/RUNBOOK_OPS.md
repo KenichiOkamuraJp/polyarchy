@@ -96,6 +96,7 @@ df -h /; du -xhd1 /opt/polyarchy | sort -h | tail
 | `aud≠resource` | パスだけ替えて aud を替え忘れた（三点一致の崩れ＝トークンが全部通らない） | SSM `auth_aud_<svc>` と `<svc>_http_path`・IdP の Resource indicator（RUNBOOK §4） |
 
 - 手元からも同じ確認を流せる：`python -m polyarchy_common.edge_probe --resource-url https://<ホスト><パス> --issuer <発行者>`（資格情報なし・読み取りだけ）。手元では通るのに箱からは失敗する＝箱の外向きの経路の問題（利用者には影響していない）。
+- **配布の時刻の 1 回の NG は、まず時刻を比べる**：確認は毎時 04 分から 5 分ごと＝自動適用の始まり（15 分の刻み）の 4 分後で、ふつうはサービスの起動（始まりの約 2 分後）より後に走る（2026-10-13〜。それまでは 2 分後で、起動の間際に当たって APPLIED の直後のダッシュボードに NG が載った）。停止が長い配布では 1 回 NG になり得る＝表の下の「最終確認」の時刻が、ユニットの表の「起動」より前なら止まっていた間の結果＝次の実行（5 分後）を見る。
 - 配布の停止・起動の 1 回では鳴らない（2 回続けて＝約 10 分）。配布の時刻に鳴ったら、適用が 5 分を超えて止まっている（`polyarchy/dataapply` のログ）。
 - この確認は 5 分ごとに守るパスへトークン無しの要求を 1 本送る＝警告「Bearer 欠如」がサービスごとに 1 日 288 件出る（定型・アラームは数えない）。探りの量を警告の件数で読むときは、この分を引く。
 
@@ -231,7 +232,7 @@ bash deploy/scripts/release.sh staging                     # 配る前の確認�
 4. **IdP（WorkOS）**＝Resource indicator に 2 と同じ文字列 `https://companies.<domain>/<秘密パス>` を追加（三点一致＝PROD_MIGRATION §2.5）。
    ★**保存の後、Connect → Configuration → MCP resource indicators の一覧に行が出ていることを確かめる**（2026-10-04 の deliberations は行が保存されておらず、claude.ai が「認証に失敗」になった）。
    見分けの目印＝箱の CW Logs `polyarchy/<svc>` に「Bearer 欠如」の 401 しか無く、トークン付きの要求が 1 件も無ければ IdP 側（サーバ側のディスカバリ `/.well-known/oauth-protected-resource` が正しくても起きる）。
-5. **Terraform**＝`bash deploy/scripts/deploy.sh <env> apply`（ロググループ・health/401/5xx アラーム・箱ロールの書込先・S3 ライフサイクル。EC2 の差分は `ignore_changes` で出ない）。
+5. **Terraform**＝`bash deploy/scripts/deploy.sh <env> apply`（対話で `yes` を待つ＝端末で流す。端末の対話なしで流すときは `deploy.sh <env> plan`〔読み取りだけ・plan を保存〕→ 差分を読む → `deploy.sh <env> apply-plan`〔保存した plan をそのまま適用し、直後の plan が `No changes` であることまで確かめる。保存した plan が無ければ止まる〕＝2026-10-13〜。本書のほかの「`deploy.sh <env> apply`」も同じ）（ロググループ・health/401/5xx アラーム・箱ロールの書込先・S3 ライフサイクル。EC2 の差分は `ignore_changes` で出ない）。
    ★**順序＝配布（8）より前**に固定する（2026-10-04 に整理）。理由はロググループ＝箱の CW agent はサービスのログが出た時点でロググループを自分で作る＝配布の後に apply すると作成が `ResourceAlreadyExists` でぶつかる（保持 30 日を terraform 側で持つ設計＝先に作る）。
    その代わり、apply から配布の適用までの間は health アラームが ALARM になる（`treat_missing_data = breaching`＝サービスが立つまで値が来ない）＝**想定内**。通知は状態が変わったときだけ＝ALARM と OK の 1 通ずつで、適用の 3 分ほど後に OK に戻ることを確かめる。鳴る時間を短くするには、apply を配布（`release.sh`）の直前に回す。
    ぶつかってしまったら＝`deploy/scripts/lib.sh` の `TF_ARGS` と同じ `-var` を付けて `terraform import 'aws_cloudwatch_log_group.<svc>[0]' polyarchy/<svc>` で取り込んでから apply し直す（保持は CW agent 側も 30 日で一致・差分はタグだけ）。
@@ -291,7 +292,7 @@ bash deploy/scripts/release.sh staging                     # 配る前の確認�
 | Python 環境 | 任意 | 下表のとおりロックから作る（環境は配布用のクローンを指す editable install にする） |
 
 配布の前の確認は **`release.sh` が最初に機械で行う**（`deploy/scripts/release_preflight.sh`・2026-10-09〜。1 つでも外れたら何も配らない）：
-- `qdrant-dev`（審議会DB 有効時は `qdrant-delib` も）のマウント元＝このフォルダの `*/data/qdrant`（測る索引＝配る索引）
+- `qdrant-dev`（審議会DB 有効時は `qdrant-delib` も）のマウント元＝このフォルダの `*/data/qdrant`（測る索引＝配る索引）と、その Qdrant が応答する（2026-10-13〜＝止まったコンテナでもマウント元は読める。それまでは、ゲートが全部通った後で審議会DB の手前で止まった）
 - `deploy/env/<env>.env` の `AWS_PROFILE` で `aws sts get-caller-identity` が通る
 - `COLLECTION_NAME`＝env ファイルの `RECOMMENDATIONS_COLLECTION_NAME`（シェルに別の値があれば中止）・`DELIB_COLLECTION` は未設定か `deliberations_v1`
 - 検索の調整値（`RERANK_RETRIEVE_K`・`HYBRID_KV` 等＝recommendations／deliberations の config が読む名前）がシェルに export されていない
@@ -318,7 +319,7 @@ env ファイルを読ませるのは `release.sh` と同じ変数で走らせ�
 | 要素 | 内容 |
 |---|---|
 | Python | 配布用の env は**ロックファイルから**作る（§7 ②＝Mac は `lock_mac_variant.py` の変種を `--require-hashes` で入れ、本体は `-e . --no-deps`）＝箱と同じ版でゲートを回す。開発だけなら `pip install -e ".[recommendations,stats]"`（ルート CLAUDE.md §4）でよい。update.sh/release.sh/triage.sh はその env を PATH の先頭に通した shell で実行 |
-| 検索 DB | Docker の `qdrant-dev`（ローカル :6333・`recommendations/data/qdrant` を S3 `data/qdrant/` から同期して起動）。release.sh は起動を確認し、upload 中だけ止める |
+| 検索 DB | Docker の `qdrant-dev`（ローカル :6333・`recommendations/data/qdrant` を S3 `data/qdrant/` から同期して起動）。release.sh は起動を確認し、upload 中だけ止める。審議会DB を有効にした環境は `qdrant-delib`（:6340・`deliberations/data/qdrant`）も。★どちらも再起動ポリシーなし＝Docker（の VM）を上げ直した後は止まっている＝2 つとも手で `docker start`（配る前の確認が応答を見る） |
 | モデル | ruri／リランカーは初回実行時に HF から取得（数 GB）。オフラインでは不可 |
 | CLI | `aws`（プロファイル＝`deploy/env/<env>.env` の `AWS_PROFILE`）・`terraform`（バケット名の取得元＝環境変数 `BUCKET` があれば優先＝`deploy/env/<env>.env` に書いておける。無ければ `deploy/terraform/` の state）・`git`（タグ込み clone＝`git describe` が版を刻む） |
 | git 外の設定 | `deploy/env/<env>.env`（例は `*.env.example`）・`recommendations/.env`（`ANTHROPIC_API_KEY`＝分野タグ判定／`OPENAI_API_KEY`＝チャンク境界検出）・`stats/.env`（`ESTAT_APP_ID`）・Keychain `cloudflare-api-token`（guard 用）・`~/.cloudflared/<UUID>.json` |
@@ -393,7 +394,7 @@ tar を `current` に置く（2026-10-09〜・それまでの箱は最初の適�
 **prod の認証（権限 2 段・2026-09-03 設計）**＝日常のデータ更新に要るのは
 **S3 `data/`・`release/`・`code/` への Put/Delete＋`ops/` の読み取り＋ListBucket だけ**（定義＝[deploy/iam-data-operator-policy.json](iam-data-operator-policy.json)・
 箱・EC2・SSM に触れない・捕捉ログは読めない。upload は CloudTrail データイベントに実行者 ID 付きで記録）。SSM send-command 等の管理系権限は障害対応時のみ。
-release.sh の前提（手元）＝conda env `polyarchy`・Docker の `qdrant-dev`・aws/terraform/git・`deploy/env/<env>.env`・`recommendations/.env`（Anthropic＝分野タグ判定／OpenAI）・
+release.sh の前提（手元）＝conda env `polyarchy`・Docker の `qdrant-dev`（審議会DB 有効時は `qdrant-delib` も）・aws/terraform/git・`deploy/env/<env>.env`・`recommendations/.env`（Anthropic＝分野タグ判定／OpenAI）・
 `stats/.env`（e-Stat appId）・`deploy/terraform/terraform.tfstate`（バケット名の取得元＝無ければ環境変数 `BUCKET` を指定）。
 
 - ★コード変更を伴うリリースも release.sh で足りる（upload が tar を同梱・**箱の apply が tar を再展開**＝2026-09-03〜。

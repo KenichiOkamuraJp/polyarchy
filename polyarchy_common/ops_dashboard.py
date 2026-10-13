@@ -152,11 +152,12 @@ def service_memory() -> list[tuple[str, str, str, str, str]]:
 
 
 def box_memory() -> str:
-    """箱全体の使用量＝MemTotal − MemAvailable（/proc/meminfo）。"""
+    """箱全体の使用量＝MemTotal − MemAvailable（/proc/meminfo）。空きの率はアラーム mem が数える値と同じ向き・同じ切り捨て
+    （health_metric.sh の mem_available_percent）＝アラームのメールから来た人が読み替えずに済むように並べる（2026-10-13）。"""
     try:
         m = {k: int(v.split()[0]) * 1024 for k, v in (line.split(":", 1) for line in MEMINFO_PATH.read_text().splitlines() if ":" in line)}
         used, total = m["MemTotal"] - m["MemAvailable"], m["MemTotal"]
-        return f"{_gb(used)} ／ {_gb(total)}（{100 * used / total:.0f}%）"
+        return f"{_gb(used)} ／ {_gb(total)}（使用 {100 * used / total:.0f}%・空き {100 * m['MemAvailable'] // total}%）"
     except Exception:  # noqa: BLE001
         return "—"
 
@@ -363,7 +364,8 @@ def render(generated_at: str, env_name: str) -> str:
         cls, txt = ("ng", "・".join(failed)) if failed else ("ok", "なし")
         parts.append(f"<p>失敗したユニット：<span class=\"{cls}\">{e(txt)}</span>"
                      "<span class=\"note\">（定期実行は次の成功で消える。自動再起動＝自分で落ちて上げ直された回数＝配布・手作業の再起動は数えない）</span></p>")
-    parts.append(f"<p>ディスク使用率：{e(disk_usage())}／メモリ（箱全体）：{e(box_memory())}</p>")
+    parts.append(f"<p>ディスク使用率：{e(disk_usage())}／メモリ（箱全体）：{e(box_memory())}"
+                 "<span class=\"note\">　アラーム mem は空きの率で数える</span></p>")
     mem = service_memory()
     if mem:
         parts.append("<table><tr><th>メモリ</th><th>現在</th><th>うちファイルキャッシュ</th><th>起動からの最大</th><th>起動</th></tr>")

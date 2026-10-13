@@ -588,7 +588,12 @@ def test_ops_dashboard_memory_and_fuelsync():
     try:
         od.MEMINFO_PATH, od.CGROUP_ROOT, od.FUELSYNC_DIR = d / "meminfo", d / "cg", d / "fs"
         od.subprocess.run, od.shutil.which, od.companies_enabled = fake_run, (lambda _: "/bin/systemctl"), (lambda: True)
-        assert od.box_memory().startswith("3.81 GB ／ 15.26 GB（25%）"), od.box_memory()
+        # 使用の率に並べて空きの率（2026-10-13＝アラーム mem は空きの率で数える＝メールから来た人が読み替えずに済むように。
+        # 空きは health_metric.sh が送る値と同じ切り捨て）
+        assert od.box_memory() == "3.81 GB ／ 15.26 GB（使用 25%・空き 75%）", od.box_memory()
+        od.MEMINFO_PATH.write_text("MemTotal:       15420000 kB\nMemAvailable:   9380000 kB\n")
+        assert od.box_memory() == "5.76 GB ／ 14.71 GB（使用 39%・空き 60%）", od.box_memory()   # 60.83 → 60（メトリクスと同じ）
+        assert "アラーム mem は空きの率" in od.render("2026-10-13T12:00:00+09:00", "test")
         mem = {u: (cur, file_, peak, since) for u, cur, file_, peak, since in od.service_memory()}
         assert mem == {"polyarchy-companies": ("0.29 GB", "0.10 GB", "0.78 GB", "2026-10-01T10:35:40+09:00"),
                        "qdrant": ("—", "—", "—", "—")}, mem   # 止まっているユニットは載せない・ファイルキャッシュは memory.stat の file
@@ -1054,6 +1059,134 @@ def test_edge_probe_script_sends_metrics():
     assert run("") == (0, [])
     rc, sent = run("", rc=1)
     assert rc != 0 and sent == []
+
+
+def test_preflight_checks_qdrant_response():
+    """配る前の確認は、手元の Qdrant のマウント元に加えて応答を見る（2026-10-13）。止まったコンテナでも docker inspect は通る＝
+    マウント元だけでは ✓ が出て、ゲートが全部通った後（審議会DB の手前）で初めて止まった（2026-10-12 staging）。
+    偽の docker・curl・aws で preflight を実行する（aws は失敗させる＝呼ばれていれば a 段を通った）。"""
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    repo = d / "repo"
+    (repo / "recommendations/data/qdrant").mkdir(parents=True)
+    (repo / "deliberations/data/qdrant").mkdir(parents=True)
+    (d / "bin").mkdir()
+    stubs = {
+        "docker": f'case "$2" in qdrant-dev) echo "{repo}/recommendations/data/qdrant";; qdrant-delib) echo "{repo}/deliberations/data/qdrant";; esac',
+        "curl": f'echo "$*" >> "{d}/curl.log"; for p in $(cat "{d}/down"); do case "$*" in *:"$p"/*) exit 7;; esac; done; exit 0',
+        "aws": f'echo "$*" >> "{d}/aws.log"; exit 1',
+    }
+    for name, body in stubs.items():
+        f = d / "bin" / name
+        f.write_text("#!/bin/bash\n" + body + "\n")
+        f.chmod(0o755)
+
+    def run(delib: str, down: str, **extra):
+        (d / "down").write_text(down)
+        (d / "curl.log").write_text("")
+        (d / "aws.log").write_text("")
+        base = {k: v for k, v in os.environ.items() if k != "DELIB_QDRANT_URL"}
+        env = {**base, "PATH": f"{d / 'bin'}:{os.environ['PATH']}", "REPO_DIR": str(repo), "AWS_PROFILE": "x",
+               "ENABLE_DELIBERATIONS_APP": delib, **extra}
+        r = subprocess.run(["bash", "-c", f'source "{root}/deploy/scripts/release_preflight.sh"; preflight'],
+                           env=env, capture_output=True, text=True)
+        return r.returncode, r.stdout, r.stderr, (d / "curl.log").read_text(), (d / "aws.log").read_text()
+
+    rc, out, err, curls, aws = run("true", "6340")            # 審議会DB の Qdrant が止まっている＝a 段で止まる
+    assert rc != 0 and aws == "", (rc, out, err)
+    assert "qdrant-delib" in err and "応答しない" in err and "docker start qdrant-delib" in err, err
+    assert "✓ qdrant-dev が応答する" in out and "✓ qdrant-delib が応答する" not in out, out
+    rc, out, err, curls, aws = run("false", "6340")           # 無効な箱の配布では見ない
+    assert aws != "" and "6340" not in curls and "qdrant-delib" not in out + err, (out, err, curls)
+    rc, out, err, curls, aws = run("true", "")                # 両方応答＝a 段を通る
+    assert aws != "" and "✓ qdrant-dev が応答する" in out and "✓ qdrant-delib が応答する" in out, (out, err)
+    rc, out, err, curls, aws = run("true", "6333")            # 政策主張DB の側も同じ段で
+    assert rc != 0 and aws == "" and "qdrant-dev" in err and "応答しない" in err, (rc, out, err)
+    rc, out, err, curls, aws = run("true", "6399", DELIB_QDRANT_URL="http://localhost:6399")   # release.sh と同じ変数で接続先を読む
+    assert rc != 0 and aws == "" and ":6399/" in curls and "6340" not in curls, (out, err, curls)
+
+
+def test_deploy_plan_then_apply_saved_plan():
+    """deploy.sh の plan／apply-plan（2026-10-13）＝対話なしで流す形は「保存した plan をそのまま適用する」経路だけ。
+    apply は対話で yes を待つ＝セッションからは流せず、運用側が lib.sh の中の名前に頼って手で組んでいた（2026-10-12 staging）。
+    plan は読み取りだけ・apply-plan は保存した plan が無ければ止まる（plan を読む段を飛ばせない）・適用の直後の plan に
+    差分が残れば非 0。偽の terraform・aws で、スクリプトの写しを実行する（env ファイルは写しの側に置く）。"""
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    for sub in ("deploy/scripts", "deploy/env", "deploy/terraform", "bin"):
+        (d / sub).mkdir(parents=True)
+    for name in ("deploy.sh", "lib.sh"):
+        shutil.copy(root / "deploy/scripts" / name, d / "deploy/scripts" / name)
+    (d / "deploy/env/t.env").write_text("ENVIRONMENT=t\nAWS_PROFILE=x\nAWS_REGION=ap-northeast-1\n")
+    stubs = {
+        "aws": 'echo 123456789012',
+        "terraform": (f'echo "$*" >> "{d}/tf.log"\n'
+                      'for a in "$@"; do case "$a" in -out=*) : > "${a#-out=}";; esac; done\n'
+                      f'case "$*" in *-detailed-exitcode*) exit $(cat "{d}/left");; esac; exit 0'),
+    }
+    for name, body in stubs.items():
+        f = d / "bin" / name
+        f.write_text("#!/bin/bash\n" + body + "\n")
+        f.chmod(0o755)
+    env = {**os.environ, "PATH": f"{d / 'bin'}:{os.environ['PATH']}"}
+    plan_file = d / "deploy/terraform/.terraform/polyarchy-t.tfplan"
+
+    def run(phase: str, left: int = 0):
+        (d / "left").write_text(str(left))
+        (d / "tf.log").write_text("")
+        r = subprocess.run(["bash", str(d / "deploy/scripts/deploy.sh"), "t", phase], env=env, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+        return r.returncode, [ln for ln in (d / "tf.log").read_text().splitlines() if not ln.startswith("init")], r.stderr
+
+    rc, tf, err = run("apply-plan")                     # 保存した plan が無い＝適用しない
+    assert rc != 0 and tf == [] and "plan" in err, (rc, tf, err)
+    rc, tf, err = run("plan")                           # 読み取りだけ＋保存
+    assert rc == 0 and len(tf) == 1 and tf[0].startswith("plan ") and f"-out={plan_file}" in tf[0], (rc, tf, err)
+    assert "-var project=polyarchy" in tf[0] and "-var environment=t" in tf[0] and plan_file.exists(), tf
+    rc, tf, err = run("apply-plan")                     # 保存した plan だけを渡す（-var を付けない）→ 直後の plan で差分 0 を確かめる
+    assert rc == 0 and tf[0] == f"apply -input=false {plan_file}", (rc, tf, err)
+    assert len(tf) == 2 and tf[1].startswith("plan ") and "-detailed-exitcode" in tf[1] and "-out=" not in tf[1], tf
+    assert not plan_file.exists()                       # 使った plan は残さない（2 回は適用できない）
+    run("plan")
+    rc, tf, err = run("apply-plan", left=2)             # 適用の直後の plan に差分が残る＝非 0
+    assert rc != 0 and "差分" in err, (rc, err)
+    # 全体を対話なしで適用する経路は、保存した plan だけ（-auto-approve は初回構築のバケットの先行作成＝-target つきの 1 か所）
+    lib = (root / "deploy/scripts/lib.sh").read_text(encoding="utf-8")
+    assert lib.count("-auto-approve") == 1 and "-target=aws_s3_bucket_versioning.data" in lib.split("-auto-approve")[1].split(")")[0], "lib.sh"
+    assert "-auto-approve" not in (root / "deploy/scripts/deploy.sh").read_text(encoding="utf-8")
+
+
+def test_edge_probe_tick_clear_of_apply_start():
+    """外からの到達の確認の刻みを、自動適用の始まりから離す（2026-10-13）。自動適用は 15 分の刻みで始まり、約 2 分後に
+    サービスが起動する＝始まりの 2 分後に定刻があると、毎回、起動の間際に当たって APPLIED の直後のダッシュボードに NG が載る
+    （2026-10-12 staging＝アラームは鳴らないが、配布の確認でまずここを読む人は障害と読む）。timer のファイルから読んで固定する。"""
+    import re
+    from pathlib import Path
+    units = Path(__file__).resolve().parents[2] / "deploy" / "systemd"
+
+    def minutes(name: str) -> list[int]:
+        cal = re.search(r"^OnCalendar=(.+)$", (units / name).read_text(encoding="utf-8"), re.M).group(1).split()[-1]
+        mm = cal.split(":")[1]                                  # 時:分[:秒] の分
+        if "/" in mm:
+            start, step = (int(x) for x in mm.split("/"))
+            return list(range(start, 60, step))
+        return [int(mm)]
+
+    apply_at, probe_at, dash_at = minutes("polyarchy-dataapply.timer"), minutes("polyarchy-edgeprobe.timer"), minutes("polyarchy-dashboard.timer")
+    assert len(probe_at) == 12, probe_at                       # 5 分ごと＝CloudWatch の 5 分の期間に 1 点ずつ（アラームの前提）
+    for a in apply_at:
+        gap = min((p - a) % 60 for p in probe_at)              # 適用の始まりから最初の確認まで
+        assert gap >= 4, (a, gap)
+    assert not set(probe_at) & set(dash_at), (probe_at, dash_at)   # 毎時のダッシュボードの生成と重ねない
 
 
 def test_shell_var_not_followed_by_multibyte():
