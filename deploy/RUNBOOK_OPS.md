@@ -34,6 +34,7 @@ journalctl -u polyarchy-mcp -n 50 --no-pager     # or polyarchy-stats / polyarch
 - unit が落ちている → `sudo systemctl restart polyarchy-mcp`（Restart=always なのに落ち続ける場合はログの Traceback を読む）
 - recommendations の healthz が `ok:false`／chunks=0 → qdrant を疑う：`systemctl status qdrant`・`curl -s localhost:6333/collections`
 - 箱ごと無応答（missing）→ EC2 再起動：`aws ec2 reboot-instances --instance-ids <id>`（systemd が全部 enable 済＝自動復帰）
+- unit は active のまま・いま叩くと `ok:true` なのに 0 の点が続いた → **重い要求の最中**を疑う：1 サービスは要求を 1 本ずつ処理する（ツールの実行中は `/healthz` も待つ・箱の確認は 5 秒で打ち切って 0 を送る）＝同じ時刻のアクセスログに数秒〜数十秒の POST が並んでいれば、落ちたのではなく混んでいた（2026-10-12 staging＝運営者 1 人の検索の重なりで 1 分の点が 2 つ続けて 0・アラームは 3 分続けてなので鳴っていない）。再起動はしない（処理中の要求を落とすだけ）。誰の量かは捕捉ログの側で読む（[残タスク](../docs/残タスク.md) B44）。★アクセスログの所要時間は、サービスがその要求を受け取ってからの時間＝処理の最中に届いた要求が受け取られるまでの待ちは写らない（手元の最小サーバの実測＝利用側で 8.5 秒待った要求の行が 4 ms）。待ちがあったかは health の 0 の点で読む。
 
 ### アラーム「5xx」
 ```bash
@@ -232,7 +233,7 @@ bash deploy/scripts/release.sh staging                     # 配る前の確認�
 4. **IdP（WorkOS）**＝Resource indicator に 2 と同じ文字列 `https://companies.<domain>/<秘密パス>` を追加（三点一致＝PROD_MIGRATION §2.5）。
    ★**保存の後、Connect → Configuration → MCP resource indicators の一覧に行が出ていることを確かめる**（2026-10-04 の deliberations は行が保存されておらず、claude.ai が「認証に失敗」になった）。
    見分けの目印＝箱の CW Logs `polyarchy/<svc>` に「Bearer 欠如」の 401 しか無く、トークン付きの要求が 1 件も無ければ IdP 側（サーバ側のディスカバリ `/.well-known/oauth-protected-resource` が正しくても起きる）。
-5. **Terraform**＝`bash deploy/scripts/deploy.sh <env> apply`（対話で `yes` を待つ＝端末で流す。端末の対話なしで流すときは `deploy.sh <env> plan`〔読み取りだけ・plan を保存〕→ 差分を読む → `deploy.sh <env> apply-plan`〔保存した plan をそのまま適用し、直後の plan が `No changes` であることまで確かめる。保存した plan が無ければ止まる〕＝2026-10-13〜。本書のほかの「`deploy.sh <env> apply`」も同じ）（ロググループ・health/401/5xx アラーム・箱ロールの書込先・S3 ライフサイクル。EC2 の差分は `ignore_changes` で出ない）。
+5. **Terraform**＝`bash deploy/scripts/deploy.sh <env> apply`（対話で `yes` を待つ＝端末で流す。端末の対話なしで流すときは `deploy.sh <env> plan`〔読み取りだけ・plan を保存〕→ 差分を読む → `deploy.sh <env> apply-plan`〔保存した plan をそのまま適用し、直後の plan が `No changes` であることまで確かめる。保存した plan が無ければ止まる。差分の無い plan は保存されない＝`No changes` の後の `apply-plan` は「plan が無い」で止まる〕＝2026-10-13〜。本書のほかの「`deploy.sh <env> apply`」も同じ）（ロググループ・health/401/5xx アラーム・箱ロールの書込先・S3 ライフサイクル。EC2 の差分は `ignore_changes` で出ない）。
    ★**順序＝配布（8）より前**に固定する（2026-10-04 に整理）。理由はロググループ＝箱の CW agent はサービスのログが出た時点でロググループを自分で作る＝配布の後に apply すると作成が `ResourceAlreadyExists` でぶつかる（保持 30 日を terraform 側で持つ設計＝先に作る）。
    その代わり、apply から配布の適用までの間は health アラームが ALARM になる（`treat_missing_data = breaching`＝サービスが立つまで値が来ない）＝**想定内**。通知は状態が変わったときだけ＝ALARM と OK の 1 通ずつで、適用の 3 分ほど後に OK に戻ることを確かめる。鳴る時間を短くするには、apply を配布（`release.sh`）の直前に回す。
    ぶつかってしまったら＝`deploy/scripts/lib.sh` の `TF_ARGS` と同じ `-var` を付けて `terraform import 'aws_cloudwatch_log_group.<svc>[0]' polyarchy/<svc>` で取り込んでから apply し直す（保持は CW agent 側も 30 日で一致・差分はタグだけ）。

@@ -7,7 +7,7 @@
 #       secrets    … §2 SSM 秘密登録
 #       upload     … §3 バケット先行作成 → コード/データを S3 へ（約 7GB・時間の山）
 #       apply      … §4 本適用（EC2/VPC/IAM…・プラン確認あり＝対話で yes を待つ）
-#       plan       … §4 の差分を見るだけ（読み取り）＋ plan を保存
+#       plan       … §4 の差分を見るだけ（読み取り）＋ 差分があれば plan を保存（差分なしなら残さない）
 #       apply-plan … plan で保存した plan をそのまま適用（対話なし）→ 直後の plan が No changes であることまで。
 #                    既存の箱への小さな変更（アラーム・IAM・S3 のライフサイクル）を、端末の対話なしで流すときの形
 #       all        … secrets → upload →（確認）→ apply

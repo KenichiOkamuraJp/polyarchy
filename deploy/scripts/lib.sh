@@ -203,12 +203,18 @@ do_apply() {
 tf_plan_file() { printf '%s' "$TF_DIR/.terraform/polyarchy-${ENVIRONMENT}.tfplan"; }
 
 do_plan() {
-  local pf; pf="$(tf_plan_file)"
+  local pf rc=0; pf="$(tf_plan_file)"
   log "Terraform plan（読み取りだけ・保存先 ${pf}）"
   mkdir -p "$(dirname "$pf")"
   ( cd "$TF_DIR" && terraform init -input=false >/dev/null \
-      && terraform plan -input=false "${TF_ARGS[@]}" "-out=$pf" )
-  log "差分を読んでから: bash deploy.sh ${ENVIRONMENT} apply-plan（保存した plan をそのまま適用する）"
+      && terraform plan -input=false -detailed-exitcode "${TF_ARGS[@]}" "-out=$pf" ) || rc=$?
+  # 保存した plan を残すのは差分があるときだけ＝差分なしの plan が残ると、後日 plan を取り直さずに流した apply-plan に
+  # 古い plan が当たる（2026-10-13 staging）。前に残っていた plan も、ここで上書きされるか消える。
+  case "$rc" in
+    0) rm -f "$pf"; log "差分なし（No changes）＝plan は残さない（apply-plan で流すものは無い）" ;;
+    2) log "差分を読んでから: bash deploy.sh ${ENVIRONMENT} apply-plan（保存した plan をそのまま適用する）" ;;
+    *) rm -f "$pf"; die "terraform plan が失敗（rc=${rc}）" ;;
+  esac
 }
 
 do_apply_plan() {

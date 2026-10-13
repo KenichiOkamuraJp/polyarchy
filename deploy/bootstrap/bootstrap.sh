@@ -502,6 +502,7 @@ systemctl enable --now polyarchy-updatecheck.timer
 systemctl enable --now polyarchy-dataapply.timer
 systemctl enable --now polyarchy-edgeprobe.timer
 systemctl restart polyarchy-edgeprobe.timer   # 稼働中の timer に刻みの変更を効かせる（時計の刻みの timer＝restart では走らない）
+systemctl restart polyarchy-health.timer      # 同上（2026-10-13＝前の実行から数える刻みを時計の分ごとに替えた）
 
 echo "════════ [bootstrap] 完了 $(date -Is) ════════"
 echo "[bootstrap] 次＝回帰ゲート4種を PASS（README §6）→ Tunnel カットオーバー（README §7）"

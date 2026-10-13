@@ -1,10 +1,11 @@
 # 毎分の生き死に送信（運用設計 §1.1）。アラーム側は「3 分連続 0 または missing」で発報。
+# 時計の分ごと＝CloudWatch の 1 分の期間に 1 点ずつ入る（2026-10-13）。それまでの「前の実行から 60 秒」は、実行の所要と
+# 起動の幅のぶん刻みが延び、点は 1 日に約 1,280＝点の無い分があった（2026-10-13 staging の実測）＝test_common が刻みを見る。
 [Unit]
 Description=Run polyarchy-health every minute
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=60
+OnCalendar=*:*:00
 AccuracySec=10
 
 [Install]

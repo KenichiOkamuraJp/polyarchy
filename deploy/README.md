@@ -116,7 +116,7 @@ bash scripts/deploy.sh staging plan        # §4 の差分を見るだけ（読�
 bash scripts/deploy.sh staging apply-plan  # 保存した plan をそのまま適用（対話なし）→ 直後の plan が No changes であることまで
 ```
 
-`plan`→`apply-plan` は、既存の箱への小さな変更（アラーム・IAM・S3 のライフサイクル）を端末の対話なしで流すときの形（読んだ plan と適用する plan が同じ・保存した plan が無ければ止まる）。
+`plan`→`apply-plan` は、既存の箱への小さな変更（アラーム・IAM・S3 のライフサイクル）を端末の対話なしで流すときの形（読んだ plan と適用する plan が同じ・保存した plan が無ければ止まる・差分の無い plan は保存されない＝前に残っていた plan も消える）。
 
 **prod 昇格は転写1コマンド**：`cp env/prod.env.example env/prod.env` を編集（導入団体プロファイル・
 導入団体ゾーンの新トンネル・`ENABLE_WEB_APP=false`）してから：

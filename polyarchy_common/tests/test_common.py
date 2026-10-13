@@ -1149,16 +1149,25 @@ def test_deploy_plan_then_apply_saved_plan():
 
     rc, tf, err = run("apply-plan")                     # 保存した plan が無い＝適用しない
     assert rc != 0 and tf == [] and "plan" in err, (rc, tf, err)
-    rc, tf, err = run("plan")                           # 読み取りだけ＋保存
+    rc, tf, err = run("plan", left=2)                   # 差分あり＝読み取りだけ＋保存
     assert rc == 0 and len(tf) == 1 and tf[0].startswith("plan ") and f"-out={plan_file}" in tf[0], (rc, tf, err)
     assert "-var project=polyarchy" in tf[0] and "-var environment=t" in tf[0] and plan_file.exists(), tf
     rc, tf, err = run("apply-plan")                     # 保存した plan だけを渡す（-var を付けない）→ 直後の plan で差分 0 を確かめる
     assert rc == 0 and tf[0] == f"apply -input=false {plan_file}", (rc, tf, err)
     assert len(tf) == 2 and tf[1].startswith("plan ") and "-detailed-exitcode" in tf[1] and "-out=" not in tf[1], tf
     assert not plan_file.exists()                       # 使った plan は残さない（2 回は適用できない）
-    run("plan")
+    run("plan", left=2)
     rc, tf, err = run("apply-plan", left=2)             # 適用の直後の plan に差分が残る＝非 0
     assert rc != 0 and "差分" in err, (rc, err)
+    # 差分の無い plan は残さない（2026-10-13 staging＝No changes の plan のファイルが残り、後日 plan を取り直さずに apply-plan を
+    # 流すと古い plan が当たる形だった）。残っていた古い plan も、差分なしの plan を取れば消える。plan が失敗したときも残さない。
+    run("plan", left=2)
+    rc, tf, err = run("plan", left=0)
+    assert rc == 0 and len(tf) == 1 and "-detailed-exitcode" in tf[0] and not plan_file.exists(), (rc, tf, err)
+    rc, tf, err = run("apply-plan")
+    assert rc != 0 and tf == [] and "plan" in err, (rc, tf, err)
+    rc, tf, err = run("plan", left=1)
+    assert rc != 0 and not plan_file.exists(), (rc, tf, err)
     # 全体を対話なしで適用する経路は、保存した plan だけ（-auto-approve は初回構築のバケットの先行作成＝-target つきの 1 か所）
     lib = (root / "deploy/scripts/lib.sh").read_text(encoding="utf-8")
     assert lib.count("-auto-approve") == 1 and "-target=aws_s3_bucket_versioning.data" in lib.split("-auto-approve")[1].split(")")[0], "lib.sh"
@@ -1187,6 +1196,23 @@ def test_edge_probe_tick_clear_of_apply_start():
         gap = min((p - a) % 60 for p in probe_at)              # 適用の始まりから最初の確認まで
         assert gap >= 4, (a, gap)
     assert not set(probe_at) & set(dash_at), (probe_at, dash_at)   # 毎時のダッシュボードの生成と重ねない
+
+
+def test_health_timer_on_clock_minutes():
+    """生き死にの送信は時計の分ごと＝CloudWatch の 1 分の期間に 1 点ずつ（2026-10-13 staging＝「前の実行から 60 秒」の刻みは
+    実行の所要と起動の幅のぶん延び、点は 1 日に約 1,280＝点の無い分があった。アラームは鳴らないが、「0 になった分」を数える
+    集計が欠けと 0 を分けなければならない）。稼働中の timer に刻みの変更を効かせるため、bootstrap は restart する。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    timer = (root / "deploy/systemd/polyarchy-health.timer").read_text(encoding="utf-8")
+    lines = [ln for ln in timer.splitlines() if ln and not ln.startswith("#")]
+    assert "OnCalendar=*:*:00" in lines, lines
+    assert not [ln for ln in lines if re.match(r"On(UnitActive|UnitInactive|Boot|Startup|Active)Sec=", ln)], lines
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    assert boot.index("systemctl enable --now polyarchy-health.timer") < boot.index("systemctl restart polyarchy-health.timer"), "bootstrap"
+    # 送信のスクリプトは時刻を付けずに送る＝点は送った分に入る（1 分に 1 回の実行が 1 分に 1 点になる前提）
+    assert "--timestamp" not in (root / "deploy/bootstrap/health_metric.sh").read_text(encoding="utf-8")
 
 
 def test_shell_var_not_followed_by_multibyte():
