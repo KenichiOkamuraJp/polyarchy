@@ -32,7 +32,11 @@ from polyarchy_common.logsetup import get_logger
 # - 要求ごとの値（利用者ハッシュ・経路のラベル＝contextvar）は、スレッドへ写されて届く＝捕捉ログは欠けない。
 # - 捌ききれない呼び出しは黙って並べない：並びすぎ（MCP_TOOL_QUEUE_MAX）・待ちすぎ（MCP_TOOL_WAIT_SECONDS）は、エラーの結果で
 #   「混んでいる・実行していない」と返す。「該当なし」（found=false・results 空）と形を分ける＝利用側の LLM が「無い」と読まない。
-#   既定値は暫定（箱での実測で決め直す＝同計画 §7）。断った回数はログの目印 `tool_busy=` で数えられる。
+#   既定値は暫定（箱での実測で決め直す＝同計画 §7）。断った回数はログの目印 `tool_busy=` で数える（observability.tf のフィルタと
+#   アラーム busy-<サービス>＝箱が足りていない合図）。
+# - 混み具合を読めるように、実行した呼び出しは 1 回ごとに 1 行を出す：`TOOL <名前> wait_ms <待った時間> run_ms <実行の時間> queue <着いたとき
+#   に並んでいた数>`。アクセスログの所要時間では待ちと実行が分かれず、ツールの名前も無い。利用者・引数は出さない（検索語は捕捉ログの
+#   領分）。行の形を変えるときは RUNBOOK §1 の集計の式も同じ変更で（`test_common` が突き合わせる）。
 # FastMCP の内側の名前（_tool_manager・Tool.fn・Tool.is_async）に頼る＝`mcp<2` の固定の内側。`test_common` が形と動きを固定する。
 BUSY_MARK = "[busy]"
 BUSY_MESSAGE = (BUSY_MARK + " いま混み合っていて、この呼び出しは実行していません（該当なしという意味ではありません）。"
@@ -51,6 +55,7 @@ def offload_tools(mcp, *, enabled: bool = True, queue_max: int = TOOL_QUEUE_MAX_
     if not enabled:
         return []
     import functools
+    import time
 
     import anyio
     log = get_logger(logger_name)
@@ -66,6 +71,7 @@ def offload_tools(mcp, *, enabled: bool = True, queue_max: int = TOOL_QUEUE_MAX_
             if state["gate"] is None:              # イベントループの中で作る
                 state["gate"] = anyio.Semaphore(1)
             gate = state["gate"]
+            arrived, queue = time.monotonic(), state["waiting"]
             try:
                 gate.acquire_nowait()
             except anyio.WouldBlock:
@@ -81,10 +87,13 @@ def offload_tools(mcp, *, enabled: bool = True, queue_max: int = TOOL_QUEUE_MAX_
                     state["waiting"] -= 1
                 if not got:
                     busy(name, "wait")
+            started = time.monotonic()
             try:                                   # 利用側が切れても、スレッドの実行が終わるまで次を始めない（1 本ずつを保つ）
                 return await anyio.to_thread.run_sync(functools.partial(fn, **kwargs))
             finally:
                 gate.release()
+                log.info("TOOL %s wait_ms %d run_ms %d queue %d", name, (started - arrived) * 1000,
+                         (time.monotonic() - started) * 1000, queue)
         return run
 
     wrapped = []

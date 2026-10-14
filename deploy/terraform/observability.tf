@@ -351,3 +351,37 @@ resource "aws_cloudwatch_metric_alarm" "auth_invalid_token" {
   alarm_actions       = [aws_sns_topic.alerts.arn]
   tags                = var.extra_tags
 }
+
+# ── 混み具合（運用設計 §1.2・2026-10-14）──────────────────────────────────
+# 待受はツールを 1 本ずつ動かし、捌ききれない呼び出し（並びすぎ・待ちすぎ）を「混んでいる」のエラーの結果で返す
+# （polyarchy_common/mcp_http.py）。その警告の行の目印を数える。障害ではなく、箱が足りていない合図＝1 回でも知らせる
+# （導入の直後の短い山でも鳴る＝続くかどうかで機種を上げるかを決める。docs/性能と同時実行_開発計画.md）。
+# 待った時間・実行の時間・並んでいた数は、呼び出しごとの TOOL の行にある＝メトリクスにはせず、ログの集計で読む（RUNBOOK §1）。
+resource "aws_cloudwatch_log_metric_filter" "tool_busy" {
+  for_each       = local.log_filter_groups
+  name           = "polyarchy-${each.key}-tool-busy"
+  log_group_name = each.value
+  pattern        = "\"tool_busy=\""
+  metric_transformation {
+    name          = "tool_busy_${each.key}"
+    namespace     = "polyarchy"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "tool_busy" {
+  for_each            = local.log_filter_groups
+  alarm_name          = "${var.project}-${var.environment}-busy-${each.key}"
+  alarm_description   = "${each.key} が捌ききれない呼び出しに「混んでいる」と返した（5 分で 1 回以上）＝障害ではなく、箱が足りていない合図"
+  namespace           = "polyarchy"
+  metric_name         = "tool_busy_${each.key}"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  tags                = var.extra_tags
+}

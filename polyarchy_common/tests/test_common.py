@@ -1303,6 +1303,73 @@ def test_tools_run_off_event_loop_and_say_busy():
     assert "offload_tools(" in src and all(k in src for k in ("MCP_TOOL_OFFLOAD", "MCP_TOOL_QUEUE_MAX", "MCP_TOOL_WAIT_SECONDS")), "serve"
 
 
+def test_tool_load_lines_and_busy_filter():
+    """混み具合を数字で読めるようにする（2026-10-14・B45 段 2）。別のスレッドで動かしたツールの呼び出しは、1 回ごとに
+    「待った時間・実行の時間・着いたときに並んでいた数」を 1 行で出す（利用者・検索語は出さない）＝アクセスログの所要時間では
+    待ちと実行が分かれず、ツールの名前も無い。「混んでいる」を返した行は目印で数えてアラームにする＝箱が足りていない合図。
+    固定すること＝行の形・RUNBOOK の集計の式がその行を読めること・フィルタの目印が断った行だけに当たること・フィルタとアラームの対。"""
+    import asyncio
+    import logging
+    import re
+    import time
+    from pathlib import Path
+    from mcp.server.fastmcp import FastMCP
+    from polyarchy_common import mcp_http
+    root = Path(__file__).resolve().parents[2]
+    records: list[tuple[str, str]] = []
+
+    class H(logging.Handler):
+        def emit(self, r):
+            records.append((r.levelname, r.getMessage()))
+
+    mcp = FastMCP("t")
+
+    @mcp.tool()
+    def slow(seconds: float = 0.2, fail: bool = False) -> dict:
+        """遅い検索の代わり。"""
+        time.sleep(seconds)
+        if fail:
+            raise RuntimeError("boom")
+        return {"found": False}
+
+    lg = logging.getLogger("polyarchy.test_tool_load")
+    h = H()
+    lg.addHandler(h)
+    lg.setLevel(logging.INFO)
+
+    async def run():
+        mcp_http.offload_tools(mcp, queue_max=1, wait_seconds=5.0, logger_name=lg.name)
+        return await asyncio.gather(mcp.call_tool("slow", {"seconds": 0.2}), mcp.call_tool("slow", {"seconds": 0.05, "fail": True}),
+                                    mcp.call_tool("slow", {"seconds": 0.05}), return_exceptions=True)
+    try:
+        asyncio.run(run())
+    finally:
+        lg.removeHandler(h)
+    line = re.compile(r"^TOOL (\S+) wait_ms (\d+) run_ms (\d+) queue (\d+)$")
+    tool = [line.match(m).groups() for lv, m in records if lv == "INFO" and line.match(m)]
+    busy = [m for lv, m in records if lv == "WARNING"]
+    assert len(tool) == 2 and len(busy) == 1, records                 # 実行した 2 本（失敗した呼び出しも 1 行）・断った 1 本
+    first, second = sorted(tool, key=lambda t: int(t[1]))
+    assert first[0] == "slow" and int(first[1]) < 100 and int(first[2]) >= 190 and first[3] == "0", first     # すぐ始まった 1 本
+    assert int(second[1]) >= 150 and int(second[2]) >= 40 and second[3] == "0", second   # 前の 1 本を待った＝待ちと実行が分かれて出る
+    assert not any(k in m for _, m in records for k in ("user=", "query", "seconds", "boom")), records   # 引数・利用者・例外の文言は出さない
+    # RUNBOOK の集計の式（Logs Insights の parse）が、この行を読める
+    rb = (root / "deploy/RUNBOOK_OPS.md").read_text(encoding="utf-8")
+    m = re.search(r"parse @message /(TOOL [^\n]+?)/\n", rb)
+    assert m, "RUNBOOK に TOOL の行の集計の式が無い"
+    insights = re.compile(m.group(1).replace("(?<", "(?P<"))
+    got = insights.search("Oct 14 01:02:03 ip-10-0-0-1 polyarchy-mcp[123]: 01:02:03 [INFO] TOOL %s wait_ms %s run_ms %s queue %s" % second)
+    assert got and got.groupdict() == {"tool": "slow", "wait": second[1], "run": second[2], "queue": second[3]}, got
+    # フィルタの目印は、断った行だけに当たる（実行した行・アクセスログの行には当たらない）。フィルタとアラームは対
+    tf = (root / "deploy/terraform/observability.tf").read_text(encoding="utf-8")
+    f = re.search(r'resource "aws_cloudwatch_log_metric_filter" "tool_busy" \{.*?pattern\s*=\s*"\\"([^"\\]+)\\"".*?name\s*=\s*"(tool_busy_\$\{each\.key\})"', tf, re.S)
+    assert f and f.group(1).isascii(), "tool_busy のフィルタが無い"
+    assert f.group(1) in busy[0] and not any(f.group(1) in m for lv, m in records if lv == "INFO"), (f.group(1), records)
+    a = re.search(r'resource "aws_cloudwatch_metric_alarm" "tool_busy" \{(.*?)\n\}', tf, re.S)
+    assert a and 'metric_name         = "tool_busy_${each.key}"' in a.group(1) and "-busy-${each.key}" in a.group(1), "tool_busy のアラーム"
+    assert "notBreaching" in a.group(1) and "「busy-" in rb, "読み方（RUNBOOK）"
+
+
 def test_reranker_scores_in_small_batches():
     """リランカーは候補を小分けにして計算する（2026-10-14）。1 度に計算する組は、いちばん長い組の長さまで引き伸ばされる＝
     候補 30 組を 1 度に渡すと、短い組のぶんが無駄な計算になる（開発機の実測＝小分けで並べ替えが約 1.7 倍・点数の差は 1e-7・
