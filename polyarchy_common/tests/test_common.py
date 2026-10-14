@@ -1215,6 +1215,127 @@ def test_health_timer_on_clock_minutes():
     assert "--timestamp" not in (root / "deploy/bootstrap/health_metric.sh").read_text(encoding="utf-8")
 
 
+def test_tools_run_off_event_loop_and_say_busy():
+    """ツールの実行をイベントループの外へ出す（2026-10-14・B45 段 1）。ツールは同期の関数で、SDK はイベントループの上で直に呼ぶ＝
+    重い検索の間は、ほかの利用者の接続の手続きも `/healthz` も待った（運営者 1 人の検索の重なりで health が 2 分続けて 0）。
+    待受の 1 か所で、登録済みのツールを別のスレッドで動かす形に包む。固定すること＝① ツールの定義は変わらない（掲載中＝
+    コネクタの作り直しをしない）② 実行中もイベントループが回る ③ ツールは 1 本ずつのまま（検索の部品は直列の前提）
+    ④ 要求ごとの値（利用者・経路）がスレッドの中でも読める＝捕捉ログが欠けない ⑤ 並びすぎ・待ちすぎは「混んでいる」と返し、
+    その形は「該当なし」（found=false・results 空）と違う＝エラーの結果で、実行していないと書く ⑥ 空けば元どおり通る
+    ⑦ 切れば元の動き（イベントループの上で直に）。"""
+    import asyncio
+    import threading
+    import time
+    from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp.exceptions import ToolError
+    from polyarchy_common import httplog, mcp_http
+
+    def build():
+        mcp = FastMCP("t")
+        state = {"now": 0, "max": 0, "threads": set(), "client": None}
+
+        @mcp.tool(title="遅い検索")
+        def slow(seconds: float = 0.3, query: str = "") -> dict:
+            """遅い検索の代わり。"""
+            state["now"] += 1
+            state["max"] = max(state["max"], state["now"])
+            state["threads"].add(threading.get_ident())
+            state["client"] = httplog.current_client()
+            time.sleep(seconds)
+            state["now"] -= 1
+            return {"found": False, "results": [], "query": query}
+
+        return mcp, state
+
+    async def defs(mcp):
+        return [t.model_dump() for t in await mcp.list_tools()]
+
+    async def run():
+        mcp, state = build()
+        before = await defs(mcp)
+        wrapped = mcp_http.offload_tools(mcp, queue_max=2, wait_seconds=5.0)
+        assert wrapped == ["slow"] and await defs(mcp) == before                    # ① 定義（名前・説明・引数・注釈）は同じ
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        tk = asyncio.create_task(ticker())
+        tok = httplog._current_client.set("chatgpt")
+        t0 = time.monotonic()
+        await asyncio.gather(mcp.call_tool("slow", {"seconds": 0.3}), mcp.call_tool("slow", {"seconds": 0.3}))
+        dt = time.monotonic() - t0
+        httplog._current_client.reset(tok)
+        assert ticks >= 20, ticks                                                   # ② 0.6 秒の実行の間もループが回った
+        assert state["max"] == 1 and dt >= 0.55, (state, dt)                        # ③ 1 本ずつ
+        assert threading.get_ident() not in state["threads"] and state["client"] == "chatgpt", state   # ④ 別スレッド・値は届く
+        # ⑤ 並びすぎ＝実行中 1 本＋待ち 2 本まで。4 本目は「混んでいる」（待たずにすぐ返る）
+        t0 = time.monotonic()
+        rs = await asyncio.gather(*[mcp.call_tool("slow", {"seconds": 0.2}) for _ in range(4)], return_exceptions=True)
+        busy = [r for r in rs if isinstance(r, Exception)]
+        assert len(busy) == 1 and isinstance(busy[0], ToolError) and mcp_http.BUSY_MARK in str(busy[0]), rs
+        assert "実行していません" in str(busy[0]) and "該当なし" in str(busy[0]), str(busy[0])
+        assert "found" not in str(busy[0]) and "results" not in str(busy[0]), str(busy[0])   # 「無い」の形と混ざらない
+        assert state["max"] == 1 and 0.55 <= time.monotonic() - t0 < 2.0
+        ok = await mcp.call_tool("slow", {"seconds": 0.01, "query": "q"})           # ⑥ 空けば通る
+        assert "\"query\": \"q\"" in str(ok) or "'query': 'q'" in str(ok), ok
+        tk.cancel()
+        # ⑤' 待ちすぎ＝並んでいる数が上限の内側でも、決めた秒数を超えて待った呼び出しは「混んでいる」
+        mcp2, st2 = build()
+        mcp_http.offload_tools(mcp2, queue_max=10, wait_seconds=0.15)
+        rs = await asyncio.gather(mcp2.call_tool("slow", {"seconds": 0.5}), mcp2.call_tool("slow", {"seconds": 0.01}),
+                                  return_exceptions=True)
+        assert not isinstance(rs[0], Exception) and isinstance(rs[1], ToolError) and mcp_http.BUSY_MARK in str(rs[1]), rs
+        assert st2["max"] == 1
+        # ⑦ 切る＝包まない（イベントループの上で直に＝元の動き）
+        mcp3, st3 = build()
+        assert mcp_http.offload_tools(mcp3, enabled=False) == []
+        await mcp3.call_tool("slow", {"seconds": 0.01})
+        assert st3["threads"] == {threading.get_ident()}, st3
+
+    asyncio.run(run())
+    # 待受の関数が env を読んで装着する（切る口＝MCP_TOOL_OFFLOAD=0）。既定は装着・上限は env で変えられる
+    import inspect
+    src = inspect.getsource(mcp_http.serve_streamable_http)
+    assert "offload_tools(" in src and all(k in src for k in ("MCP_TOOL_OFFLOAD", "MCP_TOOL_QUEUE_MAX", "MCP_TOOL_WAIT_SECONDS")), "serve"
+
+
+def test_reranker_scores_in_small_batches():
+    """リランカーは候補を小分けにして計算する（2026-10-14）。1 度に計算する組は、いちばん長い組の長さまで引き伸ばされる＝
+    候補 30 組を 1 度に渡すと、短い組のぶんが無駄な計算になる（開発機の実測＝小分けで並べ替えが約 1.7 倍・点数の差は 1e-7・
+    順位は同じ）。文書検索のサービスが共有する読み込みの 1 か所で決める。偽の CrossEncoder で、渡し方と点数の並びを固定する。"""
+    import sys
+    import types
+    calls = []
+
+    class FakeCrossEncoder:
+        def __init__(self, name, **kw):
+            self.init = (name, kw)
+
+        def predict(self, pairs, **kw):
+            calls.append((list(pairs), kw))
+            return [float(len(p)) for _, p in pairs]
+
+    saved = sys.modules.get("sentence_transformers")
+    sys.modules["sentence_transformers"] = types.SimpleNamespace(CrossEncoder=FakeCrossEncoder)
+    try:
+        from polyarchy_retrieval import models
+        rerank = models.cross_encoder("org/model", max_length=512)()
+        passages = ["あ" * n for n in (50, 400, 3, 120, 7)]
+        scores = rerank("問", passages)
+    finally:
+        if saved is None:
+            sys.modules.pop("sentence_transformers", None)
+        else:
+            sys.modules["sentence_transformers"] = saved
+    assert len(calls) == 1 and calls[0][0] == [("問", p) for p in passages], calls          # 1 回の呼び出し・組は渡した順
+    assert calls[0][1].get("batch_size") == models.RERANK_BATCH_SIZE and 1 <= models.RERANK_BATCH_SIZE <= 8, calls[0][1]
+    assert scores == [50.0, 400.0, 3.0, 120.0, 7.0] and all(type(x) is float for x in scores), scores    # 点数は渡した順に対応
+
+
 def test_shell_var_not_followed_by_multibyte():
     """シェルの変数展開の直後に全角の文字を置かない＝${VAR} と波括弧で囲む（2026-10-02 staging＝macOS の /bin/bash 3.2 は
     UTF-8 のロケールで全角の先頭バイトを変数名の一部として読み、set -u の release.sh が「GATE_LOG?: unbound variable」で止まった）。"""

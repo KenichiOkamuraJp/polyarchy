@@ -25,6 +25,13 @@ PINNED_REVISIONS: dict[str, str] = {
 }
 
 
+# リランカーが 1 度に計算する組の数。1 度に計算する組は、いちばん長い組の長さまで引き伸ばされる＝候補（プール 30）を
+# 1 度に渡すと、短い組のぶんが無駄な計算になる。小分けにすると無駄が減り、並べ替えが約 1.7 倍速い（2026-10-14・開発機・
+# CPU 4 スレッドの実測＝32 → 8 で 30 組が 0.47 → 0.28 秒。4 にしてもほぼ同じ）。点数の差は 1e-7（引き伸ばしの長さが変わる
+# ぶんの丸め）で、順位は変わらない＝変えるときは両方の文書検索のサービスのゲートで、問ごとの出力が同じことを確かめる。
+RERANK_BATCH_SIZE = 8
+
+
 def hf_embedding(model_name: str, query_instruction: str = None, text_instruction: str = None):
     """HuggingFace 埋め込み（ローカル推論）の生成関数を返す。要 `llama-index-embeddings-huggingface`。
 
@@ -81,7 +88,7 @@ def cross_encoder(model_name: str, max_length: int = 512):
 
         def rerank(query: str, passages: list[str]) -> list[float]:
             pairs = [(query, p) for p in passages]
-            scores = model.predict(pairs)
+            scores = model.predict(pairs, batch_size=RERANK_BATCH_SIZE)
             return [float(s) for s in scores]
 
         return rerank
