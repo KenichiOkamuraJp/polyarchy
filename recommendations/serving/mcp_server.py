@@ -508,6 +508,7 @@ def main_http(host: str = "127.0.0.1", port: int = 8765, path: str = "/mcp") -> 
 
     serve_streamable_http(
         mcp, host=host, port=port, path=path, health_check=_health,
+        parallel_safe=True,   # ツールを同時に動かしても結果が同じ（recommendations/eval/concurrency・同時の数は unit）
         tools_desc="公開ツール=[search_policy_docs, sweep_policy_docs, list_orgs] "
                    "層=公開固定（機密は物理遮断）")
 

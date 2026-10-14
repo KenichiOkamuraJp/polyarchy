@@ -25,6 +25,9 @@ Environment=DELIB_QDRANT_URL=http://127.0.0.1:6340
 Environment=DELIB_COLLECTION=deliberations_v1
 Environment=DELIB_QUERY_LOG=/opt/polyarchy/polyarchy/deliberations/data/query_log/queries.jsonl
 Environment=TOKENIZERS_PARALLELISM=false
+# ツールを同時に動かす数（B45 段 3・2026-10-14）。同時に流しても 1 本ずつと結果が同じことをゲート（eval/concurrency）で確かめた
+# サービスだけが受ける。3＝平常の線（同時に 3 人）。計算のスレッドの数は起動の行に出る（docs/性能と同時実行_開発計画.md §6）。
+Environment=MCP_TOOL_CONCURRENCY=3
 # 待受アドレスは MCP_HTTP_HOST（deploy.env・無ければ 127.0.0.1＝直露出しない）。ポートは cloudflared ingress・health と対なのでここで固定。
 ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m deliberations.serving.mcp_server --http --port 8768
 Restart=always

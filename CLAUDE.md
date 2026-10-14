@@ -53,6 +53,7 @@ bash deploy/scripts/release.sh <env>                # 配る前の確認→全�
 - ★ **bootstrap の再走行はコードを更新しない**（コード反映は tar 再展開＝通常は自動適用がやる）。箱を手で触らない。どうしても手動 apply するときは `systemd-cat -t polyarchy-dataapply` を挟む（監査線に残すため・RUNBOOK §5）。
 - ★ **自動適用のスクリプト（`deploy/bootstrap/apply_data_update.sh` ほか `/usr/local/bin/polyarchy-*` に入るもの）の変更は、次の次の配布から効く**：自動適用の中の bootstrap 再走行で入れ替わる＝その配布自体は旧スクリプトで走る。直したことの確認は 2 回目の配布で行う。
 - ★ **S3→箱の `aws s3 sync` は `--exact-timestamps` を付ける**：既定は大きさが同じファイルを取り直さない＝中身が変わっても古いまま残る（2026-10-07：審議会DB の束の目印 `bundle.json` が同じ 614 バイトで、10-04 以降の配布で束が復元されなかった）。`deploy/bootstrap/bootstrap.sh` のデータ同期と `apply_data_update.sh` の Qdrant の写し（2026-10-09・次の次の配布から効く）は対応済み＝`test_common` が S3→箱の全同期を検査する。
+- ★ **文書検索の 2 サービス（政策主張DB・審議会DB）はツールを同時に動かす**（unit の `MCP_TOOL_CONCURRENCY`・2026-10-14）：検索の部品に、呼び出しをまたいで書き換える状態（共有の検索器の条件の差し替え・スレッドで共有する解析器）を足さない＝条件は呼び出しごとに渡す。取り違えは黙って別の結果になる＝各 `eval/concurrency`（ゲート）が同時に流して 1 本ずつと突き合わせる。ほかのサービスで同時に動かすなら、同じゲートを作ってから `parallel_safe=True`。
 - ★ **依存を変えたらロックを再生成**（`deploy/scripts/lock_deps.sh`→PR→ゲート＝RUNBOOK §7）。`mcp` は `<2` に固定（2.x は FastMCP が無い）。箱の Qdrant は musl ビルド必須。
 - ★ **ChatGPT（Business）のコネクタ**：利用者ごとの認可は「個人の設定→アプリ→接続」で行う（作成画面では出ない）。公開後にツール定義を更新できない＝変えたら作り直し。
 - ★ **OECD SDMX は 1 時間 60 ダウンロードの制限**（解除手段なし）。取得の UA は curl 相当が既定（IMF／OECD の WAF）。例外は UA 文字列で弾く中小企業白書 PDF だけ＝方針は [stats/README.md](stats/README.md)「取得の作法」（JS チャレンジ・ログイン・レート制限は突破しない）。

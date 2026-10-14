@@ -28,6 +28,9 @@ Environment=POLYARCHY_QUERY_LOG=/opt/polyarchy/polyarchy/recommendations/data/qu
 # キャッシュを見ていたこと＝7038ef4 で解消済み。
 Environment=HF_HUB_OFFLINE=1
 Environment=TOKENIZERS_PARALLELISM=false
+# ツールを同時に動かす数（B45 段 3・2026-10-14）。同時に流しても 1 本ずつと結果が同じことをゲート（eval/concurrency）で確かめた
+# サービスだけが受ける。3＝平常の線（同時に 3 人）。計算のスレッドの数は起動の行に出る（docs/性能と同時実行_開発計画.md §6）。
+Environment=MCP_TOOL_CONCURRENCY=3
 # transport_security は既定 off（トンネル前提・421 回避・§33.5）。ホスト限定するなら↓を設定。
 # Environment=MCP_ALLOWED_HOSTS=recommendations.<domain>,127.0.0.1:8765
 # 待受アドレスは MCP_HTTP_HOST（deploy.env・無ければ 127.0.0.1＝直露出しない）。ポートは cloudflared ingress・health と対なのでここで固定。

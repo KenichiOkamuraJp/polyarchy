@@ -127,8 +127,9 @@ Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃＝v5 データは S3 `d
 | `python -m recommendations.eval.eval --filter-eval` | フィルタ 27/27 ＋ 層ゲート PASS |
 | `python -m recommendations.eval.multistage_eval` | 網羅 100% / 集約棄却 12/12 / 答え可能 3/3（答え可能は本番の入口 orchestrate で測る。集約棄却は判定方針の回帰テスト＝covered は「絞り込みの範囲で 1 件以上返った」の意で関連度の閾値は無い） |
 | `python -m recommendations.eval.mcp_smoke` | MCP 疎通・層公開固定・stdout クリーン |
+| `python -m recommendations.eval.concurrency` | 同時に流しても 1 本ずつと結果が同じ（ツールの関数を、評価問から作った呼び出し〔絞り込み・団体横断・重複抑制を混ぜる〕で 1 本ずつと同時 3 本の 2 通りに流し、返り値の全体が一致・捕捉ログの行が全部そろう）＝箱はツールを同時に動かす（unit の `MCP_TOOL_CONCURRENCY`・2026-10-14〜） |
 
-### deliberations（審議会議事録DB・2026-10-03〜。`release.sh` は env の `ENABLE_DELIBERATIONS_APP=true` のとき 4 本と束の書き出しを足す＝2026-10-04 配線）
+### deliberations（審議会議事録DB・2026-10-03〜。`release.sh` は env の `ENABLE_DELIBERATIONS_APP=true` のとき 5 本と束の書き出しを足す＝2026-10-04 配線・同時実行は 2026-10-14〜）
 
 手元の専用 Qdrant（`qdrant-delib`・:6340）と取り込み済みのコレクションが前提（[deliberations/CLAUDE.md](deliberations/CLAUDE.md)）。
 
@@ -138,6 +139,7 @@ Chroma 経路はバッチ2 段4〔2026-08-28〕で全廃＝v5 データは S3 `d
 | `python -m deliberations.eval.attribution_gate` | 帰属の取り違え 0（M0 の帰属ラベル＝資料 40・発言 42＋アンカー問の発言者の区分・資料の提出者の区分と提出者）・初出の型（D）の正解を全単位から数え直して一致・全単位の fail-closed |
 | `python -m deliberations.eval.layer_gate` | 公開以外 0・機密の自己試験で遮断・layer の無い検索を拒む・匿名の単位に発言者なし |
 | `python -m deliberations.eval.mcp_smoke` | ツール 2 本・読み取り専用・layer 引数なし・返り値の帰属と注記 |
+| `python -m deliberations.eval.concurrency` | 同時に流しても 1 本ずつと結果が同じ（アンカー問の全部・会議体と資料の種別の絞り込み・回の一覧を、1 本ずつと同時 3 本の 2 通りに流して返り値の全体が一致・捕捉ログの行が全部そろう） |
 
 > 改定の経緯＝[アンカー改定の記録](docs/アンカー改定の記録_2026-10-09.md)。アンカーは回帰を見つけるためのもの（固定の問に合わせた検索側の調整をしない）。
 

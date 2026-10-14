@@ -133,8 +133,8 @@ class PolicySearchService:
 
     起動時に 埋め込み(ruri)・Qdrant コーパス参照・ハイブリッド retriever（BM25 sparse を
     含む）・リランカーを構築する（156k チャンクで十数秒）。以後の
-    1 検索は ~0.6 秒（本番 p50 と同じ）。フィルタは `retriever.set_filter()` で差し替える
-    （BM25 索引・埋め込みは再構築しない）。
+    1 検索は ~0.6 秒（本番 p50 と同じ）。フィルタは呼び出しごとに `retriever.with_filter()` で持たせる
+    （BM25 索引・埋め込みは再構築しない・同時に呼んでよい）。
 
     text_chars: 各チャンク本文の返却上限（0 以下で無制限）。MCP のペイロードを軽くする用途。
     allow_inmemory_bm25: 語彙サイドカーの無い一時コレクション（層ゲートの自己検証）だけ True。既定 False＝
@@ -171,7 +171,7 @@ class PolicySearchService:
             self.pool_k = (max(RERANK_RETRIEVE_K, default_top_k)
                            if PRODUCTION_RERANKER else default_top_k)
             self.reranker = production_reranker_postprocessor(top_n=self.pool_k)
-            # 既定フィルタ（公開固定）で 1 度だけ retriever を組む。以後は set_filter で条件差し替え。
+            # 既定フィルタ（公開固定）で 1 度だけ retriever を組む。以後は呼び出しごとに with_filter で条件を持たせる。
             self.retriever = production_retriever(
                 self.collection, self.embed_model, self.pool_k,
                 SearchFilter(layers=PUBLIC_ONLY), allow_inmemory_bm25=allow_inmemory_bm25)
@@ -211,9 +211,9 @@ class PolicySearchService:
         k = top_k or self.default_top_k
         sf = self._make_filter(orgs, since, until, field)
 
-        # retriever は 1 つを set_filter で差し替えて使う（索引・埋め込みは再構築しない）＝search は直列に呼ぶ前提
-        self.retriever.set_filter(sf)
-        nodes = self.retriever.retrieve(query)
+        # 条件は呼び出しごとの retriever に持たせる（索引・埋め込み・検索器は共有＝再構築しない）。search は同時に呼ばれる
+        # ことがある（待受の MCP_TOOL_CONCURRENCY）＝共有の retriever の条件を書き換えない（eval/concurrency が確かめる）
+        nodes = self.retriever.with_filter(sf).retrieve(query)
         if self.reranker is not None:
             nodes = self.reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(query))
         same_doc_hits: dict[str, int] = {}

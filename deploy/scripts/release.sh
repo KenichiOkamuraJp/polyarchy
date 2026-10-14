@@ -40,7 +40,7 @@ preflight || fail "配る前の確認で中止（上の ❌ を直して再実�
 say "① 品質ゲート（qdrant-dev 起動が前提・全出力→${GATE_LOG}）"
 curl -fsS -m 3 http://localhost:6333/collections >/dev/null || fail "qdrant-dev が起動していない（docker start qdrant-dev）"
 
-say "  [1/9] retrieval アンカー（--eval-set both）"
+say "  [1/10] retrieval アンカー（--eval-set both）"
 python -m recommendations.eval.eval --retrieval-only --eval-set both >>"$GATE_LOG" 2>&1 || fail "retrieval eval が異常終了"
 ALL_LINE="$(grep -E '^ALL[[:space:]]' "$GATE_LOG" | tail -1)"
 [[ -n "$ALL_LINE" ]] || fail "retrieval の ALL 行が見つからない"
@@ -52,32 +52,36 @@ echo "      hit@5 ${HIT5}% / MRR ${MRR} ✓"
 
 RETRIEVAL_CFG="$(grep -E '^\[retrieval-only\]' "$GATE_LOG" | tail -1 || true)"   # 測った構成（collection・pool・rerank）＝マニフェストへ（無くても止めない）
 
-# アンカー（上の [1/9]・審議会DB の retrieval）以外の合否は終了コード（出力の文字列を grep しない＝累積ログの別の行に当たって
+# アンカー（上の [1/10]・審議会DB の retrieval）以外の合否は終了コード（出力の文字列を grep しない＝累積ログの別の行に当たって
 # FAIL を見逃す・2026-10-09）。アンカーは ALL 行の数値を基準値と比べる（数値の比較は終了コードでは表せない）。
-say "  [2/9] filter-eval（全問＋層ゲート PASS で 0）"
+say "  [2/10] filter-eval（全問＋層ゲート PASS で 0）"
 python -m recommendations.eval.eval --filter-eval >>"$GATE_LOG" 2>&1 || fail "filter-eval FAIL（フィルタ全問＋層ゲート）"
 
-say "  [3/9] multistage（網羅・集約棄却・答え可能が全問で 0）"
+say "  [3/10] multistage（網羅・集約棄却・答え可能が全問で 0）"
 python -m recommendations.eval.multistage_eval >>"$GATE_LOG" 2>&1 || fail "multistage_eval FAIL"
 
-say "  [4/9] recommendations mcp_smoke"
+say "  [4/10] recommendations mcp_smoke"
 python -m recommendations.eval.mcp_smoke >>"$GATE_LOG" 2>&1 || fail "recommendations mcp_smoke FAIL"
 
-say "  [5-8/9] stats 4 ゲート（exit code が合否）"
+# 同時実行（B45 段 3・2026-10-14）＝箱はツールを同時に動かす（unit の MCP_TOOL_CONCURRENCY）＝同時に流しても 1 本ずつと結果が同じ
+say "  [5/10] recommendations 同時実行（同時に流しても 1 本ずつと結果が同じで 0）"
+python -m recommendations.eval.concurrency >>"$GATE_LOG" 2>&1 || fail "recommendations 同時実行 FAIL（同時に流すと結果が変わる）"
+
+say "  [6-9/10] stats 4 ゲート（exit code が合否）"
 python -m stats.eval.mcp_smoke     >>"$GATE_LOG" 2>&1 || fail "stats mcp_smoke FAIL"
 python -m stats.eval.exact_match   >>"$GATE_LOG" 2>&1 || fail "stats exact_match FAIL"
 STATS_TEST_STRICT=1 python -m stats.eval.test_core >>"$GATE_LOG" 2>&1 || fail "stats test_core FAIL（STRICT＝値ストア依存の検査のスキップも FAIL）"
 python -m stats.eval.find_quality  >>"$GATE_LOG" 2>&1 || fail "stats find_quality FAIL"
 
-say "  [9/9] 共通契約テスト"
+say "  [10/10] 共通契約テスト"
 python -m polyarchy_common.tests.test_common >>"$GATE_LOG" 2>&1 || fail "polyarchy_common tests FAIL"
 
-# companies（企業情報DB）は opt-in＝env の ENABLE_COMPANIES_APP=true のときだけゲートに入る（使わない導入団体は 9 本のまま）。
+# companies（企業情報DB）は opt-in＝env の ENABLE_COMPANIES_APP=true のときだけゲートに入る（使わない導入団体は 10 本のまま）。
 # 有効なのに値の置き場が無ければ中止する（黙って省かない＝箱の companies が空になる配布を出さない）。
 COMPANIES_GATES="対象外"; COMPANIES_N=0
 if [[ "${ENABLE_COMPANIES_APP:-false}" == "true" ]]; then
   [[ -f companies/data/store/companies.json ]] || fail "ENABLE_COMPANIES_APP=true だが companies/data/store が無い（取込 or S3 から復元＝RUNBOOK §3）"
-  say "  [10-13/13] companies 4 ゲート（exit code が合否）"
+  say "  [11-14/14] companies 4 ゲート（exit code が合否）"
   python -m companies.eval.mcp_smoke    >>"$GATE_LOG" 2>&1 || fail "companies mcp_smoke FAIL"
   python -m companies.eval.exact_match  >>"$GATE_LOG" 2>&1 || fail "companies exact_match FAIL"
   python -m companies.eval.test_core    >>"$GATE_LOG" 2>&1 || fail "companies test_core FAIL"
@@ -85,7 +89,7 @@ if [[ "${ENABLE_COMPANIES_APP:-false}" == "true" ]]; then
   COMPANIES_GATES="4/4 PASS"
   COMPANIES_N="$(python3 -c "import json; print(len(json.load(open('companies/data/store/companies.json'))))")"
 fi
-# deliberations（審議会議事録DB）も opt-in＝env の ENABLE_DELIBERATIONS_APP=true のときだけ 4 ゲート＋束の書き出し。
+# deliberations（審議会議事録DB）も opt-in＝env の ENABLE_DELIBERATIONS_APP=true のときだけ 5 ゲート＋束の書き出し。
 # 手元の専用 Qdrant（qdrant-delib・:6340）と解析結果（deliberations/data/cache）が前提。アンカーは非劣化（>=）。
 DELIB_GATES="対象外"; DELIB_POINTS=0
 if [[ "${ENABLE_DELIBERATIONS_APP:-false}" == "true" ]]; then
@@ -93,7 +97,7 @@ if [[ "${ENABLE_DELIBERATIONS_APP:-false}" == "true" ]]; then
   curl -fsS -m 3 "$DELIB_URL/collections" >/dev/null || fail "ENABLE_DELIBERATIONS_APP=true だが審議会DB の Qdrant（${DELIB_URL}）が応答しない（docker start qdrant-delib）"
   [[ -f deliberations/data/cache/units.jsonl ]] || fail "ENABLE_DELIBERATIONS_APP=true だが deliberations/data/cache が無い（deliberations/CLAUDE.md の手順で収集・解析・取り込み）"
   DELIB_REQUIRE_HIT5="${DELIB_REQUIRE_HIT5:-94.7}"; DELIB_REQUIRE_MRR="${DELIB_REQUIRE_MRR:-0.856}"
-  say "  [+4] deliberations 4 ゲート（アンカー非劣化 hit@5>=${DELIB_REQUIRE_HIT5}・MRR>=${DELIB_REQUIRE_MRR}・帰属・層・スモーク）"
+  say "  [+5] deliberations 5 ゲート（アンカー非劣化 hit@5>=${DELIB_REQUIRE_HIT5}・MRR>=${DELIB_REQUIRE_MRR}・帰属・層・スモーク・同時実行）"
   python -m deliberations.eval.retrieval >>"$GATE_LOG" 2>&1 || fail "deliberations retrieval が異常終了"
   D_LINE="$(grep -E '^ALL[[:space:]]' "$GATE_LOG" | tail -1)"
   D_HIT5="$(awk '{print $3}' <<<"$D_LINE" | tr -d '%')"; D_MRR="$(awk '{print $4}' <<<"$D_LINE")"
@@ -102,8 +106,9 @@ if [[ "${ENABLE_DELIBERATIONS_APP:-false}" == "true" ]]; then
   python -m deliberations.eval.attribution_gate >>"$GATE_LOG" 2>&1 || fail "deliberations 帰属ゲート FAIL"
   python -m deliberations.eval.layer_gate       >>"$GATE_LOG" 2>&1 || fail "deliberations 層ゲート FAIL"
   python -m deliberations.eval.mcp_smoke        >>"$GATE_LOG" 2>&1 || fail "deliberations mcp_smoke FAIL"
+  python -m deliberations.eval.concurrency      >>"$GATE_LOG" 2>&1 || fail "deliberations 同時実行 FAIL（同時に流すと結果が変わる）"
   python -m deliberations.ops.bundle export --url "$DELIB_URL" >>"$GATE_LOG" 2>&1 || fail "deliberations の束の書き出しに失敗"
-  DELIB_GATES="4/4 PASS（hit@5 ${D_HIT5}%・MRR ${D_MRR}）"
+  DELIB_GATES="5/5 PASS（hit@5 ${D_HIT5}%・MRR ${D_MRR}）"
   DELIB_POINTS="$(python3 -c "import json; print(json.load(open('deliberations/data/bundle/deliberations_v1/bundle.json'))['points'])")"
 fi
 echo "② 全ゲート PASS ✅"
@@ -133,7 +138,7 @@ json.dump({
   "released_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
   "code_version": "$GITV",
   "gates": {"hit5_pct": float("$HIT5"), "mrr": float("$MRR"),
-             "filter": "PASS", "multistage": "PASS", "smoke": "PASS",
+             "filter": "PASS", "multistage": "PASS", "smoke": "PASS", "concurrency": "PASS",
              "stats": "4/4 PASS", "common": "PASS", "companies": "$COMPANIES_GATES", "deliberations": "$DELIB_GATES"},
   "scale": {"stats_series": int("$SERIES_N"), "recommendations_docs": int("$DOCS_N"), "companies": int("$COMPANIES_N"),
             "deliberations_points": int("$DELIB_POINTS")},

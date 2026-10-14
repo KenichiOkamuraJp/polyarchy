@@ -1403,6 +1403,149 @@ def test_reranker_scores_in_small_batches():
     assert scores == [50.0, 400.0, 3.0, 120.0, 7.0] and all(type(x) is float for x in scores), scores    # 点数は渡した順に対応
 
 
+def test_tools_run_concurrently_up_to_the_limit():
+    """検索そのものの同時実行（2026-10-14・B45 段 3）。待受は、同時に動かしても安全だと宣言したサービス（文書検索の 2 つ）だけ、
+    ツールを N 本まで同時に別のスレッドで動かす（N＝unit の MCP_TOOL_CONCURRENCY）。1 本ずつだと、重い団体横断の後ろで軽い検索も
+    待った（staging の 3 人の形で、1 本の待ちが最大 22 秒）。固定すること＝① 同時に動くのは N 本まで ② 並べる上限・「混んでいる」
+    の形は段 1 と同じ（N 本の実行中のほかに並んだ数で数える）③ 要求ごとの値（利用者・経路）は、同時に動く呼び出しのそれぞれに
+    自分の値が届く＝捕捉ログが取り違えない ④ 宣言の無いサービスは env が 2 以上でも 1 本ずつ（統計DB・企業情報DB は未検証）
+    ⑤ 配線＝宣言は政策主張DB と審議会DB だけ・unit の N も両者だけ。"""
+    import asyncio
+    import logging
+    import re
+    import threading
+    import time
+    from pathlib import Path
+    from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp.exceptions import ToolError
+    from polyarchy_common import httplog, mcp_http
+    root = Path(__file__).resolve().parents[2]
+
+    mcp = FastMCP("t")
+    state = {"now": 0, "max": 0, "seen": [], "lock": threading.Lock()}
+
+    @mcp.tool()
+    def slow(seconds: float = 0.3, tag: str = "") -> dict:
+        """遅い検索の代わり。"""
+        with state["lock"]:
+            state["now"] += 1
+            state["max"] = max(state["max"], state["now"])
+        time.sleep(seconds)
+        with state["lock"]:
+            state["now"] -= 1
+            state["seen"].append((tag, httplog.current_client()))
+        return {"found": False, "tag": tag}
+
+    async def call(tag: str, seconds: float = 0.3):
+        httplog._current_client.set(tag)          # タスクごとの文脈＝要求ごとの値の代わり
+        return await mcp.call_tool("slow", {"seconds": seconds, "tag": tag})
+
+    async def run():
+        assert mcp_http.offload_tools(mcp, concurrency=2, queue_max=1, wait_seconds=5.0) == ["slow"]
+        t0 = time.monotonic()
+        rs = await asyncio.gather(*[asyncio.create_task(call(f"c{i}")) for i in range(4)], return_exceptions=True)
+        dt = time.monotonic() - t0
+        busy = [r for r in rs if isinstance(r, Exception)]
+        assert state["max"] == 2, state                                              # ① 2 本まで同時
+        assert len(busy) == 1 and isinstance(busy[0], ToolError) and mcp_http.BUSY_MARK in str(busy[0]), rs   # ② 実行 2＋待ち 1 の後は「混んでいる」
+        assert 0.55 <= dt < 1.2, dt                                                  # 2 本ずつ 2 巡（1 本ずつなら 0.9 秒）
+        assert len(state["seen"]) == 3 and all(tag == cl for tag, cl in state["seen"]), state["seen"]   # ③ 自分の値が届く
+    asyncio.run(run())
+
+    # ④ 同時に動かす数は env から。宣言の無いサービスは 1 本ずつに抑える（警告を出す）
+    lg = logging.getLogger("polyarchy.test_concurrency")
+    warned: list[str] = []
+
+    class H(logging.Handler):
+        def emit(self, r):
+            warned.append(r.getMessage())
+    h = H()
+    lg.addHandler(h)
+    import os
+    saved = os.environ.get("MCP_TOOL_CONCURRENCY")
+    try:
+        os.environ.pop("MCP_TOOL_CONCURRENCY", None)
+        assert mcp_http.tool_concurrency(True, lg) == 1                              # 既定＝1 本ずつ（いまの動き）
+        os.environ["MCP_TOOL_CONCURRENCY"] = "3"
+        assert mcp_http.tool_concurrency(True, lg) == 3 and not warned
+        assert mcp_http.tool_concurrency(False, lg) == 1 and warned, warned          # 宣言なし＝1
+        for bad in ("x", "0", "-2"):
+            os.environ["MCP_TOOL_CONCURRENCY"] = bad
+            assert mcp_http.tool_concurrency(True, lg) == 1, bad
+    finally:
+        lg.removeHandler(h)
+        if saved is None:
+            os.environ.pop("MCP_TOOL_CONCURRENCY", None)
+        else:
+            os.environ["MCP_TOOL_CONCURRENCY"] = saved
+    import inspect
+    src = inspect.getsource(mcp_http.serve_streamable_http)
+    assert "parallel_safe" in inspect.signature(mcp_http.serve_streamable_http).parameters
+    assert "tool_concurrency(" in src and "concurrency=" in src, "serve が数を読んで渡す"
+    assert inspect.signature(mcp_http.serve_streamable_http).parameters["parallel_safe"].default is False   # 既定は宣言なし
+
+    # ⑤ 配線：宣言は文書検索の 2 サービスだけ（同時に流しても結果が同じことをゲート＝各 eval/concurrency で確かめたもの）
+    serving = {"recommendations": True, "deliberations": True, "stats": False, "companies": False}
+    for svc, safe in serving.items():
+        s = (root / svc / "serving/mcp_server.py").read_text(encoding="utf-8")
+        assert ("parallel_safe=True" in s) == safe, svc
+        assert (root / svc / "eval/concurrency.py").exists() == safe, f"{svc} の同時実行のゲート"
+    units = {"polyarchy-mcp": True, "polyarchy-deliberations": True, "polyarchy-stats": False, "polyarchy-companies": False}
+    for u, on in units.items():
+        t = (root / f"deploy/systemd/{u}.service").read_text(encoding="utf-8")
+        m = re.search(r"^Environment=MCP_TOOL_CONCURRENCY=(\d+)$", t, re.M)
+        assert bool(m) == on and (not m or int(m.group(1)) >= 2), u
+    # 同時実行のゲートは release.sh が回し、README「品質の担保」に載っている
+    rel = (root / "deploy/scripts/release.sh").read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    for g in ("recommendations.eval.concurrency", "deliberations.eval.concurrency"):
+        assert f"python -m {g}" in rel and f"python -m {g}" in readme, g
+
+
+def test_tokenizer_tagger_per_thread():
+    """分かち書き（fugashi の Tagger）はスレッドごとに持つ（2026-10-14・B45 段 3）。検索を同時に動かすと、1 つの Tagger を複数の
+    スレッドから同時に呼ぶことになる（MeCab の解析器は同時に呼ばれる前提ではない）。偽の fugashi で、スレッドごとに 1 つ・同じ
+    スレッドでは使い回すことを固定する。"""
+    import sys
+    import threading
+    import types
+    made: list[int] = []
+
+    class FakeTagger:
+        def __init__(self):
+            made.append(threading.get_ident())
+
+        def __call__(self, text):
+            return [types.SimpleNamespace(surface=w) for w in text.split()]
+
+    from polyarchy_retrieval import tokenizer as tk
+    saved_mod, saved_local = sys.modules.get("fugashi"), getattr(tk, "_LOCAL", None)
+    sys.modules["fugashi"] = types.SimpleNamespace(Tagger=FakeTagger)
+    tk._LOCAL = threading.local()
+    try:
+        out: list[list[str]] = []
+        lock = threading.Lock()
+        together = threading.Barrier(3)              # 3 本を最後まで並ばせる（先に終わったスレッドの番号が使い回されない）
+
+        def work():
+            for _ in range(3):
+                r = tk.tokenize_ja("経団連 は 提言 した")
+                with lock:
+                    out.append(r)
+            together.wait()
+        th = [threading.Thread(target=work) for _ in range(3)]
+        [t.start() for t in th]
+        [t.join() for t in th]
+    finally:
+        if saved_mod is None:
+            sys.modules.pop("fugashi", None)
+        else:
+            sys.modules["fugashi"] = saved_mod
+        tk._LOCAL = saved_local if saved_local is not None else threading.local()
+    assert out == [["経団連", "は", "提言", "した"]] * 9, out
+    assert len(made) == 3 and len(set(made)) == 3, made                               # スレッドごとに 1 つ・使い回す
+
+
 def test_shell_var_not_followed_by_multibyte():
     """シェルの変数展開の直後に全角の文字を置かない＝${VAR} と波括弧で囲む（2026-10-02 staging＝macOS の /bin/bash 3.2 は
     UTF-8 のロケールで全角の先頭バイトを変数名の一部として読み、set -u の release.sh が「GATE_LOG?: unbound variable」で止まった）。"""

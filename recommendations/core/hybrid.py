@@ -39,7 +39,8 @@ def build_hybrid_retriever(collection: str, embed_model, kv: int, kb: int, pool:
     - ベクトル側は Qdrant filter push-down（org/layer/date をインデックスで絞る）。
     - BM25 sparse も同条件を push-down。field_tags 部分一致だけは push できないので
       候補を広げ Python で後段フィルタ（FILTER_WIDEN）。
-    フィルタは `set_filter()` で後から差し替え可（索引を作り直さず、eval の設問毎切替に使う）。
+    フィルタは `with_filter()` で呼び出しごとに持たせる（索引を作り直さず・同時に呼んでよい）。`set_filter()` は共有の
+    retriever を書き換える＝層ゲートの自己検証など、1 本ずつ使う所だけ。
     """
     from llama_index.core.retrievers import BaseRetriever
     from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
@@ -84,8 +85,14 @@ def build_hybrid_retriever(collection: str, embed_model, kv: int, kb: int, pool:
             super().__init__()
 
         def set_filter(self, sf) -> None:
-            """検索フィルタを差し替える（BM25 索引・埋め込みは再構築しない）。"""
+            """検索フィルタを差し替える（BM25 索引・埋め込みは再構築しない）。同じ retriever を同時に使う所では使わない
+            （差し替えが別の呼び出しに混ざる）＝本番の検索は with_filter。"""
             self._filter = sf
+
+        def with_filter(self, sf) -> "HybridRetriever":
+            """同じ索引・埋め込み・検索器を共有し、フィルタだけ持つ retriever を返す（作るのは軽い）。ツールは同時に
+            動くことがある（待受の MCP_TOOL_CONCURRENCY・2026-10-14）＝条件は呼び出しごとに持ち、共有のものを書き換えない。"""
+            return HybridRetriever(sf)
 
         def _fused_ids(self, qemb, q: str, sf) -> "list[str]":
             """1フィルタ条件でのベクトル＋BM25→RRF融合の id 列（best-first, 未truncate）。

@@ -130,7 +130,8 @@ def main() -> None:
         serve_streamable_http(mcp, host=args.host, port=args.port, path=os.getenv("MCP_HTTP_PATH", "/mcp"),
                               tools_desc="tools=search_deliberations,list_meeting",
                               logger_name="polyarchy.deliberations.mcp",
-                              health_check=lambda: {"ok": svc().count > 0, "points": svc().count})
+                              health_check=lambda: {"ok": svc().count > 0, "points": svc().count},
+                              parallel_safe=True)   # ツールを同時に動かしても結果が同じ（deliberations/eval/concurrency・同時の数は unit）
         return
     real = guard_stdout_for_stdio()
     from io import TextIOWrapper

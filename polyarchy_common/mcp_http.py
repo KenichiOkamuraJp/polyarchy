@@ -12,7 +12,9 @@ Bearer 検証）＋秘密パス＋エッジのレート制限で守る構成の"
 - `MCP_OPENAI_APPS_CHALLENGE` … 掲載先（OpenAI のプラグインのディレクトリ）が発行するドメイン確認の文字列。設定時だけ
                               GET `/.well-known/openai-apps-challenge` がその文字列を返す（認証不要）。未設定＝404 のまま。
 - `MCP_TOOL_OFFLOAD`       … ツールの実行をイベントループの外（別のスレッド）へ出す（既定＝出す。`0` で切る＝元の動き）。
-- `MCP_TOOL_QUEUE_MAX`     … 実行中の 1 本のほかに並べる呼び出しの上限（既定 20）。超えた呼び出しは「混んでいる」と返す。
+- `MCP_TOOL_CONCURRENCY`   … ツールを同時に動かす数（既定 1＝1 本ずつ）。2 以上が効くのは、同時に動かしても安全だと宣言した
+                              サービス（`serve_streamable_http(..., parallel_safe=True)`）だけ。宣言の無いサービスは 1 に抑える。
+- `MCP_TOOL_QUEUE_MAX`     … 実行中の呼び出しのほかに並べる呼び出しの上限（既定 20）。超えた呼び出しは「混んでいる」と返す。
 - `MCP_TOOL_WAIT_SECONDS`  … 並んだ呼び出しが待つ上限の秒数（既定 45）。超えたら「混んでいる」と返す。
 - 認証の env（`MCP_ACCESS_*`＝案 A・`MCP_AUTH_*`＝案 B）は `access.install_auth` が読む（装着点はそこ 1 か所。
   契約と差し替えの約束は同関数の docstring・`docs/個人認証_案B設計.md`）。
@@ -27,8 +29,10 @@ from polyarchy_common.logsetup import get_logger
 # （運営者 1 人の検索の重なりで health が 2 分続けて 0・アクセスログの所要時間にも待ちが写らなかった）。登録済みのツールを、
 # 別のスレッドで動かす async の関数に包む。
 # - ツールの定義（名前・説明・引数の型・注釈）は登録のときに決まっていて、ここでは触らない＝コネクタの作り直しは要らない。
-# - ★同時に動かすのは 1 本のまま。検索の部品は直列に呼ぶ前提（フィルタを差し替えて使う検索器・分かち書き・モデル）＝
-#   ここの数を増やしても同時実行にはならず壊れる。検索そのものの同時実行は、プロセスを分ける形で（同計画 段 3）。
+# - 同時に動かすのは concurrency 本まで（既定 1＝1 本ずつ）。2 以上にしてよいのは、呼び出しをまたいで状態を共有しないと確かめた
+#   サービスだけ（2026-10-14・同計画 段 3＝文書検索の 2 サービス。条件は呼び出しごとに渡し、分かち書きはスレッドごと、モデルは
+#   共有＝計算は torch が GIL を外して並ぶ）。確かめ方＝各サービスの eval/concurrency（同時に流しても 1 本ずつと結果が同じ）。
+#   プロセスを分ける形は採らない（速さは同じで、メモリがプロセスの数だけ要る＝開発機の実測）。
 # - 要求ごとの値（利用者ハッシュ・経路のラベル＝contextvar）は、スレッドへ写されて届く＝捕捉ログは欠けない。
 # - 捌ききれない呼び出しは黙って並べない：並びすぎ（MCP_TOOL_QUEUE_MAX）・待ちすぎ（MCP_TOOL_WAIT_SECONDS）は、エラーの結果で
 #   「混んでいる・実行していない」と返す。「該当なし」（found=false・results 空）と形を分ける＝利用側の LLM が「無い」と読まない。
@@ -49,9 +53,10 @@ class ToolBusy(Exception):
     """混んでいて実行しなかった呼び出し（SDK がエラーの結果〔isError〕にして返す）。"""
 
 
-def offload_tools(mcp, *, enabled: bool = True, queue_max: int = TOOL_QUEUE_MAX_DEFAULT,
+def offload_tools(mcp, *, enabled: bool = True, concurrency: int = 1, queue_max: int = TOOL_QUEUE_MAX_DEFAULT,
                   wait_seconds: float = TOOL_WAIT_SECONDS_DEFAULT, logger_name: str = "polyarchy.mcp") -> list[str]:
-    """登録済みの同期のツールを、別のスレッドで 1 本ずつ動かす形に包む。包んだツールの名前を返す（enabled=False なら何もしない）。"""
+    """登録済みの同期のツールを、別のスレッドで concurrency 本まで同時に動かす形に包む。包んだツールの名前を返す
+    （enabled=False なら何もしない）。並べる上限（queue_max）は、実行中の呼び出しのほかに待っている数で数える。"""
     if not enabled:
         return []
     import functools
@@ -69,7 +74,7 @@ def offload_tools(mcp, *, enabled: bool = True, queue_max: int = TOOL_QUEUE_MAX_
         @functools.wraps(fn)
         async def run(**kwargs):
             if state["gate"] is None:              # イベントループの中で作る
-                state["gate"] = anyio.Semaphore(1)
+                state["gate"] = anyio.Semaphore(max(1, int(concurrency)))
             gate = state["gate"]
             arrived, queue = time.monotonic(), state["waiting"]
             try:
@@ -88,7 +93,7 @@ def offload_tools(mcp, *, enabled: bool = True, queue_max: int = TOOL_QUEUE_MAX_
                 if not got:
                     busy(name, "wait")
             started = time.monotonic()
-            try:                                   # 利用側が切れても、スレッドの実行が終わるまで次を始めない（1 本ずつを保つ）
+            try:                                   # 利用側が切れても、スレッドの実行が終わるまで枠を空けない（同時の数を保つ）
                 return await anyio.to_thread.run_sync(functools.partial(fn, **kwargs))
             finally:
                 gate.release()
@@ -102,6 +107,24 @@ def offload_tools(mcp, *, enabled: bool = True, queue_max: int = TOOL_QUEUE_MAX_
             tool.fn, tool.is_async = wrap(tool.name, tool.fn), True
             wrapped.append(tool.name)
     return wrapped
+
+
+TOOL_CONCURRENCY_MAX = 16
+
+
+def tool_concurrency(parallel_safe: bool, log) -> int:
+    """env MCP_TOOL_CONCURRENCY を読んで、ツールを同時に動かす数を返す（既定 1）。宣言の無いサービスは 1 に抑える。"""
+    raw = (os.environ.get("MCP_TOOL_CONCURRENCY") or "").strip()
+    try:
+        n = int(raw) if raw else 1
+    except ValueError:
+        log.warning("MCP_TOOL_CONCURRENCY の値が数として読めない＝1 本ずつ")
+        return 1
+    n = min(max(n, 1), TOOL_CONCURRENCY_MAX)
+    if n > 1 and not parallel_safe:
+        log.warning("MCP_TOOL_CONCURRENCY=%d だが、このサービスは同時に動かしてよいと宣言していない＝1 本ずつ", n)
+        return 1
+    return n
 
 
 def _env_number(name: str, default, cast, log):
@@ -120,11 +143,13 @@ def _env_number(name: str, default, cast, log):
 
 def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, path: str = "/mcp",
                           tools_desc: str = "", logger_name: str = "polyarchy.mcp",
-                          health_check=None) -> None:
+                          health_check=None, parallel_safe: bool = False) -> None:
     """FastMCP を Streamable HTTP（stateless）で待ち受ける。戻らない（サーバ終了まで）。
 
     health_check（任意）＝サービス固有の軽い検査を返す callable。渡すと GET /healthz が生える
-    （認証不要・最外＝運用の生き死に判定。docs/運用設計.md §1.1）。アクセスログは常に装着。"""
+    （認証不要・最外＝運用の生き死に判定。docs/運用設計.md §1.1）。アクセスログは常に装着。
+    parallel_safe＝ツールを同時に動かしても結果が変わらないと確かめたサービスだけ True（同時の数は env
+    MCP_TOOL_CONCURRENCY・確かめ方は各サービスの eval/concurrency）。"""
     log = get_logger(logger_name)
     mcp.settings.host = host
     mcp.settings.port = port
@@ -151,9 +176,15 @@ def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, pat
     off = (os.environ.get("MCP_TOOL_OFFLOAD") or "1").strip().lower() not in ("0", "false", "off", "no")
     queue_max = _env_number("MCP_TOOL_QUEUE_MAX", TOOL_QUEUE_MAX_DEFAULT, int, log)
     wait_seconds = _env_number("MCP_TOOL_WAIT_SECONDS", TOOL_WAIT_SECONDS_DEFAULT, float, log)
-    wrapped = offload_tools(mcp, enabled=off, queue_max=queue_max, wait_seconds=wait_seconds, logger_name=logger_name)
+    concurrency = tool_concurrency(parallel_safe, log)
+    wrapped = offload_tools(mcp, enabled=off, concurrency=concurrency, queue_max=queue_max, wait_seconds=wait_seconds,
+                            logger_name=logger_name)
     if wrapped:
-        log.info("ツールの実行=別スレッド（1 本ずつ・並びの上限 %d・待ちの上限 %.0f 秒・%d 本）", queue_max, wait_seconds, len(wrapped))
+        import sys
+        torch = sys.modules.get("torch")           # モデルを読んだサービスだけ＝計算のスレッドの数（同時の数との兼ね合いを読む材料）
+        log.info("ツールの実行=別スレッド（%s・並びの上限 %d・待ちの上限 %.0f 秒・%d 本%s）",
+                 "1 本ずつ" if concurrency == 1 else f"同時 {concurrency} 本まで", queue_max, wait_seconds, len(wrapped),
+                 f"・計算のスレッド {torch.get_num_threads()}" if torch is not None else "")
     else:
         log.info("ツールの実行=イベントループの上（MCP_TOOL_OFFLOAD=0）")
 

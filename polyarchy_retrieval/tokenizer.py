@@ -2,17 +2,20 @@
 
 fugashi（MeCab, ローカル/無料）＝リランカーと同じ日本語形態素。辞書は unidic-lite。
 """
+import threading
 
-_TAGGER = None
+# Tagger はスレッドごとに持つ（2026-10-14）。待受はツールを同時に別のスレッドで動かすことがある＝MeCab の解析器は
+# 同時に呼ばれる前提ではない（docs/性能と同時実行_開発計画.md 段 3）。辞書の読み込みは 1 つ数十 ms。
+_LOCAL = threading.local()
 
 
 def _tagger():
-    """fugashi Tagger を遅延生成（プロセス内で1回だけロード）。"""
-    global _TAGGER
-    if _TAGGER is None:
+    """fugashi Tagger を遅延生成（スレッドごとに 1 回だけロード）。"""
+    t = getattr(_LOCAL, "tagger", None)
+    if t is None:
         import fugashi
-        _TAGGER = fugashi.Tagger()
-    return _TAGGER
+        t = _LOCAL.tagger = fugashi.Tagger()
+    return t
 
 
 def tokenize_ja(text: str) -> list[str]:
