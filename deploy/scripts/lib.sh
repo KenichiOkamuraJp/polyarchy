@@ -98,17 +98,22 @@ load_env() {
 # ── §2 秘密を SSM へ（両環境で cloudflared・web=true の時だけ Anthropic）──────────
 do_register_secrets() {
   [[ -n "${TUNNEL_ID:-}" ]] || die "env に TUNNEL_ID が要る"
-  [[ -f "${CLOUDFLARED_CRED_FILE:-/nonexistent}" ]] \
-    || die "CLOUDFLARED_CRED_FILE が見つからない: ${CLOUDFLARED_CRED_FILE:-未設定}"
-
   log "SSM: $SSM_PREFIX/cloudflared_tunnel_id"
   aws ssm put-parameter --overwrite --type String \
     --name "$SSM_PREFIX/cloudflared_tunnel_id" --value "$TUNNEL_ID" >/dev/null
 
-  log "SSM: $SSM_PREFIX/cloudflared_credentials（SecureString）"
-  aws ssm put-parameter --overwrite --type SecureString \
-    --name "$SSM_PREFIX/cloudflared_credentials" \
-    --value "file://$CLOUDFLARED_CRED_FILE" >/dev/null
+  # トンネルの資格情報は、登録の後に作業用 PC から消す（ルート CLAUDE.md §5）＝ファイルが無くても、SSM に登録済みなら触らずに
+  # 先へ（認証の値などを登録し直せるように・2026-10-15）。初回（未登録）はファイルが要る。
+  if [[ -f "${CLOUDFLARED_CRED_FILE:-/nonexistent}" ]]; then
+    log "SSM: $SSM_PREFIX/cloudflared_credentials（SecureString）"
+    aws ssm put-parameter --overwrite --type SecureString \
+      --name "$SSM_PREFIX/cloudflared_credentials" \
+      --value "file://$CLOUDFLARED_CRED_FILE" >/dev/null
+  elif aws ssm get-parameter --name "$SSM_PREFIX/cloudflared_credentials" --query Parameter.Name --output text >/dev/null 2>&1; then
+    log "トンネルの資格情報は手元に無い＝SSM の登録済みのものを使う（触らない）"
+  else
+    die "CLOUDFLARED_CRED_FILE が見つからず、SSM にも登録が無い: ${CLOUDFLARED_CRED_FILE:-未設定}"
+  fi
 
   if [[ "$ENABLE_WEB_APP" == "true" ]]; then
     local key; key="$(resolve_key "${ANTHROPIC_SOURCE:-}" ANTHROPIC_API_KEY || true)"
@@ -263,5 +268,5 @@ print_next_steps() {
   log "── 次（初回構築のときの手順＝README §5〜。上の terraform の next_steps も同じ。既存の箱への小さな変更〔S3 のライフサイクル・アラーム・IAM 等〕の apply なら読み飛ばしてよい） ──"
   log "箱に入る:     aws ssm start-session --target ${iid:-<instance_id>}"
   log "bootstrap監視: sudo tail -f /var/log/polyarchy-bootstrap.log"
-  log "回帰ゲート:   README §6（4種 PASS）→ Tunnel カットオーバー §7"
+  log "次:           箱の上の smoke → 入口を開く（PROD_MIGRATION §5.2・§5.3）。以後の更新は release.sh だけ（§6.3）"
 }

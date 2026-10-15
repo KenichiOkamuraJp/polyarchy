@@ -35,7 +35,7 @@ journalctl -u polyarchy-mcp -n 50 --no-pager     # or polyarchy-stats / polyarch
 - unit が落ちている → `sudo systemctl restart polyarchy-mcp`（Restart=always なのに落ち続ける場合はログの Traceback を読む）
 - recommendations の healthz が `ok:false`／chunks=0 → qdrant を疑う：`systemctl status qdrant`・`curl -s localhost:6333/collections`
 - 箱ごと無応答（missing）→ EC2 再起動：`aws ec2 reboot-instances --instance-ids <id>`（systemd が全部 enable 済＝自動復帰）
-- unit は active のまま・いま叩くと `ok:true` なのに 0 の点が続いた → **重い要求の最中**を疑う。ツールの実行は別のスレッドで動く（2026-10-14 の版から＝ツールの実行中も `/healthz` は返る・政策主張DB と審議会DB は同時に unit の `MCP_TOOL_CONCURRENCY` 本まで・ほかは 1 本ずつ順に動く）。それより前の版と、切っているサービス（unit に `MCP_TOOL_OFFLOAD=0`＝企業情報DB は掲載の審査のあいだ）では、ツールの実行中は `/healthz` も待つ＝箱の確認は 5 秒で打ち切って 0 を送る（2026-10-12 staging＝運営者 1 人の検索の重なりで 1 分の点が 2 つ続けて 0）。同じ時刻のアクセスログに数秒〜数十秒の POST が並んでいれば、落ちたのではなく混んでいた。再起動はしない（処理中の要求を落とすだけ）。誰の量かは捕捉ログの側で読む（[残タスク](../docs/残タスク.md) B44）。★切っているサービスでは、アクセスログの所要時間に、処理の最中に届いた要求が受け取られるまでの待ちが写らない（手元の最小サーバの実測＝利用側で 8.5 秒待った要求の行が 4 ms）。別のスレッドで動くサービスでは、並んで待った時間も所要時間に入る。
+- unit は active のまま・いま叩くと `ok:true` なのに 0 の点が続いた → **重い要求の最中**を疑う。ツールの実行は別のスレッドで動く（2026-10-14 の版から＝ツールの実行中も `/healthz` は返る・政策主張DB と審議会DB は同時に unit の `MCP_TOOL_CONCURRENCY` 本まで・ほかは 1 本ずつ順に動く）。それより前の版と、切っているサービス（運営者の箱の SSM `tool_offload_<サービス>`＝`0`・2026-10-15〜＝企業情報DB は掲載の審査のあいだ）では、ツールの実行中は `/healthz` も待つ＝箱の確認は 5 秒で打ち切って 0 を送る（2026-10-12 staging＝運営者 1 人の検索の重なりで 1 分の点が 2 つ続けて 0）。同じ時刻のアクセスログに数秒〜数十秒の POST が並んでいれば、落ちたのではなく混んでいた。再起動はしない（処理中の要求を落とすだけ）。誰の量かは捕捉ログの側で読む（[残タスク](../docs/残タスク.md) B44）。★切っているサービスでは、アクセスログの所要時間に、処理の最中に届いた要求が受け取られるまでの待ちが写らない（手元の最小サーバの実測＝利用側で 8.5 秒待った要求の行が 4 ms）。別のスレッドで動くサービスでは、並んで待った時間も所要時間に入る。
 
 ### アラーム「5xx」
 ```bash
@@ -108,7 +108,7 @@ df -h /; du -xhd1 /opt/polyarchy | sort -h | tail
 - 何回・どちらの理由か＝ログの警告 `混雑で断った [tool_busy=queue]`（並びすぎ）／`[tool_busy=wait]`（待ちすぎ）。メトリクスは `tool_busy_<サービス>`。
 - 1 回きりで戻った → 短い山（告知の直後など）。何もしない。**何度も鳴る・戻らない → 機種を上げる判断**（[性能と同時実行の開発計画](../docs/性能と同時実行_開発計画.md)）。
   1 人の連打なら、量の側（[残タスク](../docs/残タスク.md) B44）。再起動はしない（並んでいる呼び出しを落とすだけ）。
-- 上限は unit の `MCP_TOOL_QUEUE_MAX`・`MCP_TOOL_WAIT_SECONDS`、同時の数は `MCP_TOOL_CONCURRENCY`（どれも配布で変える・既定は暫定）。起動の行に「同時 N 本まで・計算のスレッド M」が出る（同時の数を上げても、箱のコアが足りなければ 1 本の実行が延びる＝`run` で見る）。企業情報DB は掲載の審査のあいだ切ってある（`MCP_TOOL_OFFLOAD=0`）＝この行は出ない。
+- 上限は unit の `MCP_TOOL_QUEUE_MAX`・`MCP_TOOL_WAIT_SECONDS`、同時の数は `MCP_TOOL_CONCURRENCY`（どれも配布で変える・既定は暫定）。起動の行に「同時 N 本まで・計算のスレッド M」が出る（同時の数を上げても、箱のコアが足りなければ 1 本の実行が延びる＝`run` で見る）。切る口は SSM `tool_offload_<サービス>`＝`0`（bootstrap がそのサービスの env に `MCP_TOOL_OFFLOAD=0` を書く＝次の配布の適用から効く・unit には書かない＝複製に運ばない。運営者の箱は企業情報DB を掲載の審査のあいだ切っている）＝切ったサービスは起動の行が「イベントループの上」。
 - **混み具合の読み方**（鳴っていないときも）＝実行した呼び出しは 1 回ごとに `TOOL <名前> wait_ms <待った時間> run_ms <実行の時間> queue <着いたときに並んでいた数>` を出す。
   CW Logs Insights（ロググループ `polyarchy/<svc>`）で 1 時間ごとに集計する：
 ```
@@ -238,7 +238,7 @@ sudo systemctl start qdrant polyarchy-mcp
 
 | 何 | 手順 |
 |---|---|
-| 秘密パス（mcp/stats） | `aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/<env>/{mcp,stats}_http_path --value "/mcp-$(openssl rand -hex 16)"` → 箱の `/etc/polyarchy/{mcp,stats}.env` の MCP_HTTP_PATH を更新（bootstrap 再走行 or sed）→ サービス restart → guard を該当 SERVICE・`IP_ALLOWLIST=off` で再適用 → 利用者に新 URL を配布。★WAF ルールはエッジ伝播に数十秒かかる（直後の 403 は慌てない）。★**案 B 認証ホストでは秘密パスは原則回転しない**＝PRM で公開されるため「漏洩時の締め出し」効果が無く、回すと三点一致（WorkOS Resource indicator・`AUTH_AUD_<SVC>`・SSM）の3か所同時更新＋全利用者再登録が要る（PROD_MIGRATION §2.3b）。回転が意味を持つのは authless ホストのみ。参考＝claude.ai は URL 単位で旧 OAuth 設定を記憶する（2026-08-28 実測）＝認証方式を変えるときは URL も変えるのが安全 |
+| 秘密パス（サービスごと＝mcp・stats・companies・deliberations） | `aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/<env>/<識別子>_http_path --value "/mcp-$(openssl rand -hex 16)"` → `release.sh <env>`（自動適用の bootstrap がサービスの env を書き直して再起動）→ guard を該当 SERVICE・`IP_ALLOWLIST=off` で再適用 → 利用者に新 URL を配布。★WAF ルールはエッジ伝播に数十秒かかる（直後の 403 は慌てない）。★**案 B 認証ホストでは秘密パスは原則回転しない**＝PRM で公開されるため「漏洩時の締め出し」効果が無く、回すと三点一致（WorkOS Resource indicator・`AUTH_AUD_<SVC>`・SSM）の3か所同時更新＋全利用者再登録が要る（PROD_MIGRATION §2.3）。回転が意味を持つのは authless ホストのみ。参考＝claude.ai は URL 単位で旧 OAuth 設定を記憶する（2026-08-28 実測）＝認証方式を変えるときは URL も変えるのが安全 |
 | **案 B（auth_issuer/auth_aud_<svc>）** | IdP テナント・環境の差し替え、resource URL 変更時：`deploy/env/<env>.env` の `AUTH_*` を更新 → `deploy.sh <env> secrets`（`auth_*` 以外の秘密も同じ値で書き直す＝SSM の版が 1 つ進むだけ）→ **箱への反映は配布に乗せる**（`release.sh <env>`＝自動適用の中の bootstrap 再走行が `/etc/polyarchy/*.env` を書き直し、再起動・smoke・`/healthz` まで行って監査線に残る。2026-10-10 にこの経路で発行者とパスを同時に切り替えた）。急ぐときだけ箱で bootstrap 再走行 → restart（`systemd-cat -t polyarchy-dataapply` を挟む＝§5）。WorkOS 側（Resource indicator・Default・JWT テンプレート）も同時に＝三点一致（PROD_MIGRATION §2.5）。★切り替えの間は接続が切れる（自動適用の再起動の数分）。★発行者か resource URL が変わると、利用者はコネクタを作り直す（発行者が変われば新規登録から＝PROD_MIGRATION §2.5 の注） |
 | Access AUD（旧・案 A） | Access アプリを作り直したら `access-oauth.sh status` で AUD → SSM `access_aud_stats` 更新 → bootstrap 再走行 |
 | Cloudflare API トークン | ダッシュボードで再発行 → Keychain `cloudflare-api-token`（WAF）/`cloudflare-access-token`（Access/DNS/Pages）を更新 |

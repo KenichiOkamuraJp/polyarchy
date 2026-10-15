@@ -7,7 +7,7 @@
 #   ★現行方針（2026-08-28〜）：IP 許可は廃止＝IP_ALLOWLIST の既定は off（秘密パス＋レート制限のみ適用）。
 #     strict/connector のモード・許可IPの説明は IP_ALLOWLIST=on を明示した場合にだけ意味を持つ（歴史的経緯）。
 #   ★prod で使うときは既定値が staging 固定な点に注意＝ZONE_NAME・MCP_HOST・SSM_PATH_PARAM・
-#     AWS_PROFILE_CF・RL_HOSTS・SERVICE を必ず上書きする（例は deploy/PROD_MIGRATION.md §2.3）。
+#     AWS_PROFILE_CF・RL_HOSTS・SERVICE を必ず上書きする（例は deploy/PROD_MIGRATION.md §2.4）。
 #   ★レート制限は Free プラン1本＝description は polyarchy-mcp-ratelimit 固定で全サービス共有
 #     （SERVICE=stats remove ではレート制限は消えない＝消すのは mcp 側の remove か手動）。
 #     apply はこの 1 本を**作り直す**＝載せるホストは RL_HOSTS（カンマ区切り）。RL_HOSTS を省いたときは
@@ -42,7 +42,7 @@
 set -euo pipefail
 
 # ── 設定（環境変数で上書き可）─────────────────────────────────────────────────
-# 既定＝staging の現行（2026-09-02 ドメイン移行後）。prod は ZONE_NAME/MCP_HOST/SSM_PATH_PARAM/AWS_PROFILE_CF/RL_HOSTS を必ず上書き（PROD_MIGRATION §2.3）。
+# 既定＝staging の現行（2026-09-02 ドメイン移行後）。prod は ZONE_NAME/MCP_HOST/SSM_PATH_PARAM/AWS_PROFILE_CF/RL_HOSTS を必ず上書き（PROD_MIGRATION §2.4）。
 ZONE_NAME="${ZONE_NAME:-polyarchy.net}"
 MCP_HOST="${MCP_HOST:-recommendations.polyarchy.net}"
 # サービス識別子（B6 案 B：ホストごとに別プロセス）。ルールの description を "polyarchy-<SERVICE>-…" にして
@@ -337,7 +337,7 @@ guard_consistency() {
   for v in "$SSM_PATH_PARAM" "$AWS_PROFILE_CF"; do [[ "$v" == *staging* ]] && stg=$((stg+1)); done
   [[ "$stg" == 1 ]] && die "SSM_PATH_PARAM（${SSM_PATH_PARAM}）と AWS_PROFILE_CF（${AWS_PROFILE_CF}）の環境が食い違う＝片方の上書き漏れ"
   [[ "$ZONE_NAME" != "polyarchy.net" && "$stg" == 2 ]] \
-    && die "ZONE_NAME=${ZONE_NAME} だが SSM_PATH_PARAM・AWS_PROFILE_CF が staging の既定のまま＝prod では全部上書きする（PROD_MIGRATION §2.3）"
+    && die "ZONE_NAME=${ZONE_NAME} だが SSM_PATH_PARAM・AWS_PROFILE_CF が staging の既定のまま＝prod では全部上書きする（PROD_MIGRATION §2.4）"
   [[ "$MCP_HOST" == *".$ZONE_NAME" ]] || die "MCP_HOST=${MCP_HOST} が ZONE_NAME=${ZONE_NAME} の下に無い"
   [[ "$SSM_PATH_PARAM" == */"${SERVICE}"_http_path ]] || die "SSM_PATH_PARAM=${SSM_PATH_PARAM} が SERVICE=${SERVICE} の秘密パス（…/${SERVICE}_http_path）でない"
   return 0

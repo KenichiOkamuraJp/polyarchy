@@ -256,7 +256,7 @@ sudo systemctl start polyarchy-mcp polyarchy-stats
    sudo systemctl enable --now cloudflared
    sudo journalctl -u cloudflared -f     # Registered tunnel connection が出れば接続
    ```
-4. **公開URL越しに検証**（毎回やる。認証 ON では Bearer なし＝401 が「正」・手順の正典は PROD_MIGRATION §5.2）：
+4. **公開URL越しに検証**（毎回やる。認証 ON では Bearer なし＝401 が「正」・手順の正典は PROD_MIGRATION §5.3）：
    ```bash
    curl -sS https://recommendations.polyarchy.net/healthz          # 200
    curl -sS https://recommendations.polyarchy.net/.well-known/oauth-protected-resource | head -c 200   # PRM 200
@@ -278,23 +278,13 @@ sudo systemctl start polyarchy-mcp polyarchy-stats
 
 ## 9. prod 昇格（導入団体 AWS で MCP を再現）＝同一 .tf を転写
 
-> **アカウント作成からの独立した完全手順は → [`PROD_MIGRATION.md`](PROD_MIGRATION.md)**。以下はその要約。
+> **アカウント作成からの独立した完全手順は → [`PROD_MIGRATION.md`](PROD_MIGRATION.md)**（2026-10-15 に 4 サービス・データの受け取り・手元の準備で全面改訂）。以下は要約。
 
-**差し替えるのは 3 点だけ**（仕様§3.1・ロードマップ§3）：アカウント/プロファイル、`enable_web_app=false`、
-入口（導入団体ゾーン＋新トンネル＋秘密パス/レート制限）。検索の質は staging の同一 built index で担保済。
-
-1. `aws configure --profile adopter-prod`（導入団体 AWS へのアクセス手段＝IAM ユーザー／SSO／ロール委任のどれか＝PROD_MIGRATION §1.1）。
-2. `env/prod.env` を用意（`environment=prod` / `aws_profile=adopter-prod` /
-   `enable_web_app=false` / `tunnel_hostname_mcp=recommendations.<導入団体の独自ドメイン>`）。
-   **state を分ける**：`terraform workspace new prod` か、prod 用ディレクトリ/backend key で別 state に。
-3. SSM（prod）に **cloudflared＋auth_issuer/auth_aud_***（案 B 認証）を登録。**anthropic/openai は
-   serving 用には登録しない**（＝ランタイム秘密ゼロ。品質検査用キーは別途＝PROD_MIGRATION §5.2）。
-4. `scripts/upload_to_s3.sh` を prod バケットへ（同一 built index を配る）。`terraform apply`。
-5. **Cloudflare（導入団体ゾーン）側**で②③を設定（`cloudflare-guard.sh apply`・**`IP_ALLOWLIST=off`**）：
-   - **② 秘密パス**：SSM `/polyarchy/prod/mcp_http_path` を発行し、既定パス以外をエッジ遮断（除外 3 種込み）。
-   - **③ レート制限**：per-IP **600–1200 req/分**（多段は1問で10-30検索のため高め）。
-   - ★IP 許可リストは作らない（2026-08-27/28 廃止＝PROD_MIGRATION §2.3。egress IP/VPN の事前確認も不要に）。
-6. prod 検証：`mcp_smoke`（箱上）＋公開URL越し `list_orgs`/`search_policy_docs`＋**未認証/境界の curl**。
+1. 公開リポジトリを複製し（fork でなく mirror）、データを受け取り、手元の準備をする（ロックの環境・`qdrant-dev`／`qdrant-delib`・手元でゲート・審議会DB の束）＝PROD_MIGRATION §0.5〜§0.7。
+2. 導入団体の AWS へのアクセス（§1）・vCPU の上限の確認（§1.3）。
+3. Cloudflare の導入団体ゾーンにトンネルとホスト 4 本 → SSM に 4 サービスのパス → ガード（レート制限＋パスの規則・`IP_ALLOWLIST=off`）→ IdP（4 本の Resource indicator・DCR・JWT に email）＝§2。
+4. `env/prod.env`（4 サービス・認証の値・`ESTAT_SOURCE`・`ALERT_EMAIL`）と SSM の一覧（§3）→ `deploy.sh prod all`（§4）。
+5. 起動の確認（4 サービスの smoke・入口を開く・外からの確認）→ go-live（自団体のプライバシーポリシーを SSM `privacy_url` に）＝§5・§6。以後の更新は `release.sh` だけ（§6.3）。
 
 ---
 
@@ -308,7 +298,7 @@ sudo systemctl start polyarchy-mcp polyarchy-stats
 | ① 秘密パス | `MCP_HTTP_PATH=/mcp-<128bit乱数>` 以外のパスをエッジで block（値は SSM のみ・repo に持たない。除外＝/.well-known/・/cdn-cgi/・/healthz） 接続 URL を公開する前提なら、秘密パスなしの構成を選べる＝下の「秘密パスなしで公開する構成」|
 | ② レート制限 | per-IP。無料プランは 10 秒窓のため 1200/分 → **200 req/10s** に自動換算 |
 | ③ 層公開固定 | 従来どおり（機密は物理遮断・`search_api`）|
-| （廃止）IP 許可 | **2026-08-27/28 に廃止**＝ChatGPT egress は列挙不能・OAuth のディスカバリ/ログインはレンジ外から来る。guard は `IP_ALLOWLIST=off` で適用（経緯の正典＝[`PROD_MIGRATION.md`](PROD_MIGRATION.md) §2.3）|
+| （廃止）IP 許可 | **2026-08-27/28 に廃止**＝ChatGPT egress は列挙不能・OAuth のディスカバリ/ログインはレンジ外から来る。guard は `IP_ALLOWLIST=off` で適用（経緯の正典＝[`PROD_MIGRATION.md`](PROD_MIGRATION.md) §2.4）|
 
 > **★ コネクタはベンダー（Anthropic/OpenAI）のサーバから接続される**＝送信元 IP で組織を絞れない。組織/個人限定が要る場合は**非公開ホスト＋Access OAuth**（2026-08-28 に全経路実証済み。現行は案 B＝[docs/個人認証_案B設計.md](../docs/個人認証_案B設計.md)）。導入団体へ必ず開示すること。
 

@@ -267,7 +267,7 @@ fi
 
 # ── ⑧ MCP の秘密パス（両環境）＝SSM → EnvironmentFile ─────────────────────────
 # 公開URLに埋める「合言葉」。Claude のカスタムコネクタは Anthropic 経由で来るため送信元IPで
-# 組織を絞れない（deploy/PROD_MIGRATION.md §2.3 の★）。その補完として推測不可能なパスを使う。
+# 組織を絞れない（deploy/PROD_MIGRATION.md §2.4 の★）。その補完として推測不可能なパスを使う。
 MCP_PATH="$(ssm_get mcp_http_path)"
 # ── 認証の配線（この節の 2 関数だけ。サービスごとの呼び出しは write_service_env の 1 行）──────────
 # 案 B（現行）：SSM auth_issuer＋auth_aud_<svc> → そのサービスの env に MCP_AUTH_ISSUER/AUD/RESOURCE_URL
@@ -294,17 +294,33 @@ auth_env_lines() { # $1=サービス名（ログ用） $2=秘密パス $3=Access
   fi
 }
 write_service_env() { # $1=サービス名 $2=env ファイル $3=秘密パス $4=Access AUD $5=IdP AUD $6=公開ホスト → 内容があれば 600 で書く・無ければ削除
-  local svc="$1" f="$2" p="$3" auth challenge
+  local svc="$1" f="$2" p="$3" auth challenge offload privacy
   auth="$(auth_env_lines "$svc" "$p" "$4" "${5:-}" "${6:-}")" || exit 1
   # 掲載先によるドメインの確認（任意）＝SSM openai_apps_challenge_<svc> があれば、そのサービスが確認用の文字列を返す
   #   （polyarchy_common.httplog.domain_challenge_middleware。無ければ行を書かない＝そのパスは 404 のまま）。
   challenge="$(ssm_get "openai_apps_challenge_${svc}")"
-  if [[ -z "$p" && -z "$auth" && -z "$challenge" ]]; then rm -f "$f"; return 0; fi
+  # ツールの実行をイベントループの上に戻す（任意・運営者の箱の一時の事情＝SSM tool_offload_<svc>＝0 のときだけ・2026-10-15）。
+  #   unit に書かない＝リポジトリを複製した箱には運ばない（既定＝別のスレッド・docs/性能と同時実行_開発計画.md 段 1）。
+  offload=""
+  if [[ "$(ssm_get "tool_offload_${svc}")" == "0" ]]; then
+    offload=1
+    echo "[bootstrap] $svc: ツールの実行をイベントループの上に戻す（SSM tool_offload_${svc}=0）" >&2
+  fi
+  # サーバの説明が案内するプライバシーページ（任意・SSM privacy_url・2026-10-15）＝無ければ上流のページ。複製した導入団体の箱は
+  #   自分のページを入れる（deploy/PROD_MIGRATION.md §6）。https で始まり空白の無い値だけ（env の行を壊さない）。
+  privacy="$(ssm_get privacy_url)"
+  if [[ -n "$privacy" && ! "$privacy" =~ ^https://[^[:space:]]+$ ]]; then
+    echo "[bootstrap] ⚠ SSM privacy_url の形が想定外（https:// で始まり空白なし）＝使わない" >&2
+    privacy=""
+  fi
+  if [[ -z "$p" && -z "$auth" && -z "$challenge" && -z "$offload" && -z "$privacy" ]]; then rm -f "$f"; return 0; fi
   umask 077
   : > "$f"
   [[ -n "$p" ]] && printf 'MCP_HTTP_PATH=%s\n' "$p" >> "$f"
   [[ -n "$auth" ]] && printf '%s\n' "$auth" >> "$f"
   [[ -n "$challenge" ]] && printf 'MCP_OPENAI_APPS_CHALLENGE=%s\n' "$challenge" >> "$f"
+  [[ -n "$offload" ]] && printf 'MCP_TOOL_OFFLOAD=0\n' >> "$f"
+  [[ -n "$privacy" ]] && printf 'MCP_PRIVACY_URL=%s\n' "$privacy" >> "$f"
   chown "$SVC_USER:$SVC_USER" "$f"; chmod 600 "$f"; umask 022
 }
 write_service_env mcp /etc/polyarchy/mcp.env "$MCP_PATH" "$(ssm_get access_aud_mcp)" "$(ssm_get auth_aud_mcp)" "${TUNNEL_HOST_MCP:-}"

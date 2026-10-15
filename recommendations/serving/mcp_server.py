@@ -33,6 +33,7 @@ MCP は stdout を JSON-RPC 伝送路に使う。transformers/llama_index の英
     # あるいは MCP クライアント（Claude Code 等）の設定から stdio 起動（.mcp.json 参照）
 """
 import json
+import os
 from typing import Optional
 
 # ── ノイズ抑制 & stdio 保護は「重い import より前」に行う（print 混入を根本で断つ）。
@@ -105,7 +106,9 @@ SERVER_INSTRUCTIONS = (
     "経団連の 2002-05-28（日経連との統合）以前の文書の発言主体は旧・経済団体連合会＝旧経団連である"
     "（労働分野は日経連管轄で、日経連自身の文書は未収録）。"
     "検索語・絞り込み条件・該当件数は品質改善のため 30 日間記録する（会話本文は取得しない。"
-    "https://docs.polyarchy.net/privacy）。"
+    # 案内するページは箱の env MCP_PRIVACY_URL（bootstrap が SSM privacy_url から書く・2026-10-15）＝複製した導入団体の箱は
+    # 自分のページを案内する。無ければ上流のページ（運営者の箱の説明は変わらない）。
+    f"{os.environ.get('MCP_PRIVACY_URL') or 'https://docs.polyarchy.net/privacy'}）。"
 )
 
 

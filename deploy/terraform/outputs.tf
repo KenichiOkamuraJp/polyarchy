@@ -22,10 +22,9 @@ output "tail_bootstrap_log" {
 output "next_steps" {
   description = "apply 後の手順（詳細は deploy/README.md）。"
   value = join("\n", [
-    "1) 秘密登録: SSM Parameter Store に cloudflared 資格情報（＋staging は anthropic_api_key）を SecureString で。",
-    "2) コード/データ投入: scripts/upload_to_s3.sh でこのバケットへ push（apply 前でも可）。",
-    "3) 監視: ${aws_instance.app.id} に SSM で入り /var/log/polyarchy-bootstrap.log を追う。",
-    "4) 回帰ゲート4種を箱の上で PASS（README §6）。",
-    "5) 入口を開く: 箱で cloudflared を起動 → curl で /healthz 200・未認証 401 を確認（README §7・PROD_MIGRATION §5.3）。",
+    "1) 監視: ${aws_instance.app.id} に SSM で入り /var/log/polyarchy-bootstrap.log を「完了」まで追う（PROD_MIGRATION §5.1）。",
+    "2) 箱の上の smoke（PROD_MIGRATION §5.2）。検索の質のゲートは手元で（release.sh・README「品質の担保」）。",
+    "3) 入口を開く: 箱で cloudflared を起動 → curl で /healthz 200・未認証 401 を確認（PROD_MIGRATION §5.3）。",
+    "4) 以後のデータとコードの更新は release.sh だけ（PROD_MIGRATION §6.3・RUNBOOK_OPS §5）。",
   ])
 }

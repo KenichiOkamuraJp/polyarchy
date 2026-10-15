@@ -1765,6 +1765,120 @@ def test_top_user_wiring():
     assert "polyarchy-topuser" in read("docs/運用設計.md")
 
 
+
+def test_tool_offload_switch_from_ssm():
+    """ツールの実行をイベントループの上に戻す（`MCP_TOOL_OFFLOAD=0`）のは、運営者の箱の SSM `tool_offload_<サービス>`＝`0` からだけ
+    （2026-10-15）。unit に書くと、リポジトリを複製した導入団体の箱にもそのまま入る（複製は 1 回きり）＝運営者の一時の事情
+    （企業情報DB の掲載の審査のあいだ）を、複製に運ばない。bootstrap の write_service_env を取り出して、偽の SSM で実行する。"""
+    import re
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    for unit in sorted((root / "deploy/systemd").glob("*.service")):
+        assert not re.search(r"^Environment=MCP_TOOL_OFFLOAD=", unit.read_text(encoding="utf-8"), re.M), unit.name
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    fn = re.search(r"^write_service_env\(\) \{.*?^\}\n", boot, re.M | re.S).group(0)
+    d = Path(tempfile.mkdtemp())
+
+    def run(ssm: dict) -> str:
+        f = d / "svc.env"
+        f.unlink(missing_ok=True)
+        stub = "ssm_get() { case \"$1\" in " + " ".join(f'{k}) printf %s "{v}";;' for k, v in ssm.items()) + " esac; }\n"
+        script = (stub + "auth_env_lines() { :; }\nchown() { :; }\nSVC_USER=x\n" + fn +
+                  f'write_service_env companies "{f}" "" "" "" ""\n')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return f.read_text() if f.exists() else ""
+
+    assert run({"tool_offload_companies": "0"}) == "MCP_TOOL_OFFLOAD=0\n"
+    assert run({}) == ""                                             # 既定＝別のスレッド（ファイルも作らない）
+    assert run({"tool_offload_companies": "1"}) == ""                # 0 以外は書かない（既定のまま）
+    assert run({"tool_offload_stats": "0"}) == ""                    # ほかのサービスの値は効かない
+    rb = (root / "deploy/RUNBOOK_OPS.md").read_text(encoding="utf-8")
+    assert "tool_offload_<サービス>" in rb and "unit に `MCP_TOOL_OFFLOAD=0`" not in rb, "RUNBOOK"
+
+
+
+def test_privacy_url_from_ssm():
+    """サーバの説明が案内するプライバシーページは、箱の SSM `privacy_url` から（2026-10-15）。リポジトリを複製した導入団体の箱が、
+    上流のページを利用者に案内し続けないように。無ければ上流のページ（運営者の箱の説明は変わらない）。https で始まり空白を
+    含まない値だけを書く（env の行が壊れない）。bootstrap の write_service_env を取り出して、偽の SSM で実行する。"""
+    import os
+    import re
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    fn = re.search(r"^write_service_env\(\) \{.*?^\}\n", boot, re.M | re.S).group(0)
+    d = Path(tempfile.mkdtemp())
+
+    def run(ssm: dict) -> str:
+        f = d / "svc.env"
+        f.unlink(missing_ok=True)
+        stub = "ssm_get() { case \"$1\" in " + " ".join(f'{k}) printf %s "{v}";;' for k, v in ssm.items()) + " esac; }\n"
+        script = stub + "auth_env_lines() { :; }\nchown() { :; }\nSVC_USER=x\n" + fn + f'write_service_env mcp "{f}" "" "" "" ""\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return f.read_text() if f.exists() else ""
+
+    assert run({"privacy_url": "https://example.org/privacy"}) == "MCP_PRIVACY_URL=https://example.org/privacy\n"
+    assert run({}) == ""
+    assert run({"privacy_url": "http://example.org/p"}) == ""          # https 以外は書かない
+    assert run({"privacy_url": "https://a b"}) == ""                   # 空白を含む値は書かない
+
+    def instructions(env_url):
+        env = {k: v for k, v in os.environ.items() if k != "MCP_PRIVACY_URL"}
+        if env_url:
+            env["MCP_PRIVACY_URL"] = env_url
+        r = subprocess.run([sys.executable, "-c", "from recommendations.serving.mcp_server import SERVER_INSTRUCTIONS as s; print(s)"],
+                           cwd=root, env={**env, "PYTHONPATH": str(root)}, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr[-500:]
+        return r.stdout
+    assert "https://example.org/privacy" in instructions("https://example.org/privacy")
+    assert "https://docs.polyarchy.net/privacy" in instructions(None)  # 既定＝上流（運営者の箱は変わらない）
+    assert "docs.polyarchy.net" not in instructions("https://example.org/privacy")
+
+
+def test_secrets_without_tunnel_credentials_file():
+    """`deploy.sh <env> secrets` は、トンネルの資格情報のファイルが手元に無くても、SSM に登録済みなら止まらない（2026-10-15）。
+    資格情報は登録の後に作業用 PC から消す（ルート CLAUDE.md §5）＝消した後に認証の値などを登録し直せなかった。登録済みでも
+    なければ止まる（初回はファイルが要る）。偽の aws で、スクリプトの写しを実行する。"""
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    for sub in ("deploy/scripts", "deploy/env", "deploy/terraform", "bin"):
+        (d / sub).mkdir(parents=True)
+    for name in ("deploy.sh", "lib.sh"):
+        shutil.copy(root / "deploy/scripts" / name, d / "deploy/scripts" / name)
+    (d / "bin/aws").write_text(f'#!/bin/bash\necho "$*" >> "{d}/aws.log"\n'
+                               f'case "$*" in "sts "*) echo 123456789012;; *get-parameter*cloudflared_credentials*) exit $(cat "{d}/has");; esac\n'
+                               'exit 0\n')
+    (d / "bin/aws").chmod(0o755)
+    env = {**os.environ, "PATH": f"{d / 'bin'}:{os.environ['PATH']}"}
+    (d / "deploy/env/t.env").write_text(f"ENVIRONMENT=t\nAWS_PROFILE=x\nAWS_REGION=ap-northeast-1\nTUNNEL_ID=u\n"
+                                        f"CLOUDFLARED_CRED_FILE={d}/none.json\nAUTH_ISSUER=https://idp.example\n")
+
+    def run(has: int):
+        (d / "has").write_text(str(has))
+        (d / "aws.log").write_text("")
+        r = subprocess.run(["bash", str(d / "deploy/scripts/deploy.sh"), "t", "secrets"], env=env, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+        return r.returncode, (d / "aws.log").read_text(), r.stderr
+
+    rc, log, err = run(0)                      # 登録済み＝資格情報は触らずに先へ（認証の値は登録する）
+    assert rc == 0, err[-400:]
+    assert "--name /polyarchy/t/cloudflared_credentials --value" not in log and "auth_issuer" in log, log
+    rc, log, err = run(1)                      # 未登録＝ファイルが要る
+    assert rc != 0 and "auth_issuer" not in log, (rc, log)
+
+
 if __name__ == "__main__":
     import sys
 
