@@ -17,7 +17,8 @@
 |---|---|
 | 毎分 timer `polyarchy-health` | 各サービスの localhost の `/healthz` → CW metric `polyarchy/health`＋disk＋空きメモリ＋常駐のユニットの自動再起動の回数 |
 | 5 分ごと timer `polyarchy-edgeprobe` | 箱自身が公開 URL を資格情報なしで叩く（`/healthz`・守るパスの 401・ディスカバリの照合・IdP の公開鍵）→ CW metric `polyarchy/edge`・`idp_reachable`。結果はダッシュボード①「外からの確認」 |
-| CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・空きメモリ<10% が 15 分・自動再起動・定期実行の失敗・外からの到達の確認が 2 回続けて失敗（edge・idp）・5xx>5/5分・トークンの検証の失敗≧10/5分・**dataapply-rollback**（自動適用の切り戻し＝§5）＝一覧と意味は [運用設計](../docs/運用設計.md) §1.2 |
+| 5 分ごと timer `polyarchy-topuser` | 全サービスの捕捉ログを利用者ごとに数え、直近 1 時間の最多の 1 人の呼び出しの数 → CW metric `polyarchy/top_user_calls_1h`（数だけ・利用者のハッシュは送らない） |
+| CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・空きメモリ<10% が 15 分・自動再起動・定期実行の失敗・外からの到達の確認が 2 回続けて失敗（edge・idp）・1 人が直近 1 時間に閾値以上の呼び出し（top-user）・5xx>5/5分・トークンの検証の失敗≧10/5分・**dataapply-rollback**（自動適用の切り戻し＝§5）＝一覧と意味は [運用設計](../docs/運用設計.md) §1.2 |
 | CW Logs（サービスごとのロググループ＝`polyarchy/mcp` ほか） | httplog（時刻・パス・status・ms・user_hash・cf-ray）と認証の警告の行。保持 30 日 |
 | CW Logs `polyarchy/dataapply` | 自動適用の全出力（退避→反映→smoke→判定/切り戻し）＝データ更新の監査線（監査ガイド §4b）。保持 30 日 |
 | 箱内のログファイル | `/var/log/polyarchy/*.log`（rsyslog）は logrotate 日次×30 世代（30 日）・journal は `MaxRetentionSec=30day`（2026-10-09 の版の配布から＝bootstrap の変更はその配布で効く。それまでは週次×4 で約 5 週・journal は期限なし）。捕捉ログ本体（query_log）は 30 日 prune＝保持の正典は deploy/README「捕捉ログの保持」 |
@@ -154,6 +155,32 @@ fields @timestamp, @message
   5. 起動の後に確かめる：ダッシュボード①（全サービスが起動・メモリ・外からの確認が ok）・起動の行の「計算のスレッド M」が新しい機種の物理コアの数（8 vCPU なら 4）・各クライアントからツールを 1 回ずつ呼べる。
 - **戻す**＝`INSTANCE_TYPE=` を空に（既定の `t3.xlarge`）して、同じ plan → apply-plan。戻す目安は、山が過ぎて `wait` が 0 近くに戻ったとき。上げたままにすると費用が続く。
 - 変えないもの＝同時に動かす数（unit の `MCP_TOOL_CONCURRENCY`）。変えるなら配布で（機種と同時に変えない＝どちらが効いたか分からなくなる）。
+
+### アラーム「top-user」（1 人が直近 1 時間に閾値以上ツールを呼んだ・2026-10-15）
+**障害ではない。** 箱が 5 分ごとに全サービスの捕捉ログを利用者ごとに数え、最多の 1 人の数（`top_user_calls_1h`）が閾値（既定 200・
+env の `TOP_USER_CALLS_THRESHOLD`→`deploy.sh plan`→`apply-plan`）以上になった。数える単位はツールの呼び出し（捕捉ログの行＝POST の本数ではない）。
+- まず、ふつうの重い利用か、機械的な連打かを分ける。重い問 1 つで 5〜9 本＝200 本は 1 時間に重い問 20〜40 個。
+  1 つのクライアントが多数の人の問を 1 つのアカウントで中継している形（チャットの bot 等）は、全員が 1 人に見える＝その経路は別に扱う（[残タスク](../docs/残タスク.md) B44）。
+- **誰か**（運営者が手元で・利用者のハッシュは箱からは出ない）：捕捉ログは毎時 S3 に写る（最長 1 時間の遅れ）＝アラームの時刻を窓の終わりにして数える。
+```
+T=$(mktemp -d)                                                              # 手元の一時フォルダ（確かめ終わったら消す）
+for p in query_log stats/query_log companies/query_log deliberations/query_log; do
+  aws s3 cp "s3://<BUCKET>/data/$p/queries.jsonl" "$T/${p%%/*}.jsonl" --profile <profile> || true   # 無いサービスは飛ばす
+done
+python -m polyarchy_common.top_user $(for f in "$T"/*.jsonl; do echo --log "$f"; done) --at 2026-10-15T12:00:00 --show 5   # 多い順に「ハッシュ 回数」
+python -m polyarchy_common.top_user --hash-of <メール>                     # IdP の利用者一覧の候補のメール → 同じハッシュか
+rm -rf "$T"
+```
+  時刻は箱の捕捉ログと同じ表し方（`ts`）。運営者自身のハッシュは週次レポートの除外に使うもの（SSM `usage_operator_hashes`）と同じ。
+  写しは確かめ終わったら消す（捕捉ログの保持の約束＝30 日の外に手元の写しを残さない）。
+- 止めるか決めたら → 下の「特定の利用者を止める」。決めるのは運営者（利用規約の停止の条項）。止めない（正当な重い利用）なら何もしない＝閾値を上げるかを見直す。
+
+### 特定の利用者を止める（2026-10-15）
+**止めるのは IdP の画面だけ**（決定・残タスク §E-B44）＝箱に利用者の拒否リストは持たない。
+1. IdP の管理画面の利用者一覧で、そのメールの利用者を止める（削除または無効化）。以後、新しいサインインとトークンの更新は通らない。
+2. **発行済みのアクセストークンは寿命のあいだ通る**（寿命は IdP の設定・未確認＝§E-B44 の未了）。急ぐときは、その間の呼び出しを捕捉ログで見続ける。
+3. 別のメールでの登録し直しは止まらない（箱の拒否リストでも同じ）＝続くなら、登録の入口の設定（IdP の側）を見直す。
+4. 何をいつ止めたかは社内ノートに残す（メールは git に書かない）。
 
 ### アラーム「idp」（IdP のディスカバリか公開鍵が取れない）
 - 稼働中のサービスは公開鍵を覚えている＝すぐには落ちない。落ちるのはサービスの再起動の後と IdP が鍵を入れ替えた後（auth のアラームが続けて鳴る）＝**鳴っている間は配布と再起動を控える**。

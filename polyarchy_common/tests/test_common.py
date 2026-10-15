@@ -862,7 +862,7 @@ def test_box_metrics_and_alarms_paired():
     read = lambda p: (root / p).read_text(encoding="utf-8")   # noqa: E731
     sent = set()
     for src in ("deploy/bootstrap/health_metric.sh", "deploy/bootstrap/unit_failed.sh", "deploy/bootstrap/apply_data_update.sh",
-                "deploy/bootstrap/edge_probe.sh"):
+                "deploy/bootstrap/edge_probe.sh", "deploy/bootstrap/top_user_metric.sh"):
         sent |= set(re.findall(r"MetricName=(\w+)", read(src)))
     tf = read("deploy/terraform/observability.tf")
     alarms = re.findall(r'resource "aws_cloudwatch_metric_alarm" "\w+" \{(.*?)\n\}', tf, re.S)
@@ -871,7 +871,7 @@ def test_box_metrics_and_alarms_paired():
     assert from_logs and sent, (from_logs, sent)
     assert set(custom) == sent | from_logs, (sorted(set(custom) ^ (sent | from_logs)))
     assert {"health", "disk_used_percent", "mem_available_percent", "service_restarts", "unit_failed", "dataapply",
-            "edge", "idp_reachable"} == sent, sent
+            "edge", "idp_reachable", "top_user_calls_1h"} == sent, sent
 
 
 def test_health_metric_script_runs():
@@ -1642,6 +1642,128 @@ def test_env_backup_not_shipped():
     ign = subprocess.run(["git", "check-ignore", "--no-index", "deploy/env/staging.env.bak-20261004", "deploy/env/staging.env.example"],
                          cwd=root, capture_output=True, text=True).stdout.split()
     assert ign == ["deploy/env/staging.env.bak-20261004"], ign   # 控えは外れ、ひな型は追跡のまま
+
+
+def test_top_user_counts():
+    """直近 1 時間の最多の 1 人の呼び出しの数（B44 第 1 便・2026-10-15）。数える単位はツールの呼び出し＝捕捉ログの行（§E-B44 の
+    判断 1）。全サービスを合わせて利用者ごとに数え、利用者の無い行（未認証・stdio）・窓の外の行・壊れた行は数えない。箱が送るのは
+    最多の数だけ＝利用者のハッシュは出さない（運営者が手元で特定するときだけ --show）。捕捉ログは 30 日ぶん溜まる＝末尾から
+    窓の外に出るまでだけ読む（ブロックの境目で行を取り違えない）。"""
+    import io
+    import json
+    import tempfile
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    from polyarchy_common import top_user as tu
+    from polyarchy_common.access import user_hash
+    d = Path(tempfile.mkdtemp())
+    now = datetime(2026, 10, 15, 12, 0, 0)
+
+    def rec(minutes_ago: float, uh: str | None, **kw) -> str:
+        r = {"ts": (now - timedelta(minutes=minutes_ago)).isoformat(timespec="seconds"), "query": "q" * 40, **kw}
+        if uh:
+            r["user_hash"] = uh
+        return json.dumps(r, ensure_ascii=False)
+
+    a, b, c = "a" * 16, "b" * 16, "c" * 16
+    rows_r = [rec(60 * 24 * 3 - i, a) for i in range(3000)]                  # 3 日前の山（窓の外）＝ブロックを何度もまたぐ
+    rows_r += [rec(61, b), rec(59, a), rec(30, a), rec(1, a), rec(0.5, None), "{壊れた行", rec(0, b)]
+    rows_s = [rec(45, a), rec(10, c), rec(5, b)]
+    (d / "r.jsonl").write_text("\n".join(rows_r) + "\n", encoding="utf-8")
+    (d / "s.jsonl").write_text("\n".join(rows_s) + "\n", encoding="utf-8")
+    paths = [d / "r.jsonl", d / "s.jsonl", d / "none.jsonl"]                  # 無いファイルは 0 件
+    counts = tu.count_by_user(paths, now=now, block=257)                       # 小さいブロック＝境目の取り違えを確かめる
+    assert counts == {a: 4, b: 2, c: 1}, counts                                # b の 61 分前は窓の外
+    assert tu.count_by_user(paths, now=now, block=1 << 16) == counts
+    assert tu.count_by_user([d / "none.jsonl"], now=now) == {}
+
+    out = io.StringIO()
+    assert tu.main(["--log", str(paths[0]), "--log", str(paths[1]), "--at", now.isoformat()], out=out) == 0
+    assert out.getvalue() == "top_user 4\n", out.getvalue()                    # 箱が送る形＝数だけ・ハッシュは出ない
+    out = io.StringIO()
+    tu.main(["--log", str(d / "none.jsonl"), "--at", now.isoformat()], out=out)
+    assert out.getvalue() == "top_user 0\n", out.getvalue()                    # 利用の無い時間帯は 0（アラームは鳴らない）
+    out = io.StringIO()
+    tu.main(["--log", str(paths[0]), "--log", str(paths[1]), "--at", now.isoformat(), "--show", "2"], out=out)
+    assert out.getvalue().splitlines() == [f"{a} 4", f"{b} 2"], out.getvalue()   # 運営者が手元で特定するとき
+    out = io.StringIO()
+    tu.main(["--hash-of", " Someone@Example.COM "], out=out)
+    assert out.getvalue().strip() == user_hash("someone@example.com"), out.getvalue()   # 捕捉ログと同じハッシュ
+
+
+def test_top_user_script_sends_metric():
+    """top_user_metric.sh＝最多の 1 人の数をメトリクス top_user_calls_1h にして送る（偽の python・aws で実行）。数えるのが
+    落ちたら送らずに非 0（→ OnFailure → unit-failed＝数えるのが止まったまま「静か」に見えない）。数でない出力も送らない。"""
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    (d / "bin").mkdir()
+    (d / "deploy.env").write_text(f"AWS_REGION=ap-northeast-1\nREPO_DIR={d}\n")
+    (d / "bin" / "aws").write_text(f'#!/bin/bash\necho "$*" >> "{d}/aws.log"\n')
+    (d / "bin" / "fakepy").write_text(f'#!/bin/bash\necho "$*" > "{d}/py.args"\ncat "{d}/lines"; exit $(cat "{d}/rc")\n')
+    for f in (d / "bin").iterdir():
+        f.chmod(0o755)
+    env = {**os.environ, "PATH": f"{d / 'bin'}:{os.environ['PATH']}", "POLYARCHY_DEPLOY_ENV": str(d / "deploy.env"),
+           "POLYARCHY_TOPUSER_PY": str(d / "bin" / "fakepy")}
+
+    def run(lines: str, rc: int = 0):
+        (d / "lines").write_text(lines)
+        (d / "rc").write_text(str(rc))
+        (d / "aws.log").write_text("")
+        r = subprocess.run(["bash", str(root / "deploy/bootstrap/top_user_metric.sh")], env=env, capture_output=True, text=True)
+        return r.returncode, (d / "aws.log").read_text().splitlines()
+
+    rc, sent = run("top_user 37\n")
+    assert rc == 0 and len(sent) == 1, (rc, sent)
+    assert "MetricName=top_user_calls_1h,Dimensions=[{Name=service,Value=box}],Value=37,Unit=Count" in sent[0], sent
+    args = (d / "py.args").read_text()
+    for svc in ("recommendations", "stats", "companies", "deliberations"):    # 捕捉ログを持つ 4 サービスを合わせて数える
+        assert f"{svc}/data/query_log/queries.jsonl" in args, args
+    assert run("top_user 0\n")[1] and "Value=0," in run("top_user 0\n")[1][0]
+    rc, sent = run("", rc=1)
+    assert rc != 0 and sent == [], (rc, sent)
+    rc, sent = run("top_user abc\n")
+    assert rc != 0 and sent == [], (rc, sent)
+
+
+def test_top_user_wiring():
+    """第 1 便の配線（2026-10-15）＝5 分ごとの timer（毎時のダッシュボードの生成と重ねない）・bootstrap が置いて有効にする・
+    アラーム top-user の閾値は terraform の変数（env の TOP_USER_CALLS_THRESHOLD から渡せる）・RUNBOOK に読み方と
+    「特定の利用者を止める」（止めるのは IdP の画面だけ＝§E-B44 の決定）・運用設計の表に 1 行。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    read = lambda p: (root / p).read_text(encoding="utf-8")   # noqa: E731
+    timer = read("deploy/systemd/polyarchy-topuser.timer")
+    cal = re.search(r"^OnCalendar=\*:(\d+)/5$", timer, re.M)
+    assert cal, timer
+    dash = re.search(r"^OnCalendar=\S+ \*:(\d+)", read("deploy/systemd/polyarchy-dashboard.timer"), re.M).group(1)
+    assert dash == "05", dash
+    assert int(dash) % 5 != int(cal.group(1)), (dash, cal.group(1))
+    unit = read("deploy/systemd/polyarchy-topuser.service")
+    assert "ExecStart=/usr/local/bin/polyarchy-top-user" in unit and "User=polyarchy" in unit, unit
+    boot = read("deploy/bootstrap/bootstrap.sh")
+    assert 'deploy/bootstrap/top_user_metric.sh" /usr/local/bin/polyarchy-top-user' in boot
+    assert '"$UNIT_SRC/polyarchy-topuser.service"' in boot and '"$UNIT_SRC/polyarchy-topuser.timer"' in boot
+    assert "systemctl enable --now polyarchy-topuser.timer" in boot
+    tf = read("deploy/terraform/observability.tf")
+    alarm = re.search(r'resource "aws_cloudwatch_metric_alarm" "top_user" \{(.*?)\n\}', tf, re.S).group(1)
+    assert 'metric_name         = "top_user_calls_1h"' in alarm and "var.top_user_calls_threshold" in alarm, alarm
+    assert "GreaterThanOrEqualToThreshold" in alarm and 'treat_missing_data  = "notBreaching"' in alarm, alarm
+    var = read("deploy/terraform/variables.tf").split('variable "top_user_calls_threshold"')[1].split("\n}")[0]
+    assert re.search(r"default\s*=\s*\d+", var), var
+    assert 'TF_ARGS+=(-var "top_user_calls_threshold=$TOP_USER_CALLS_THRESHOLD")' in read("deploy/scripts/lib.sh")
+    for ex in ("staging", "prod"):
+        assert re.search(r"^TOP_USER_CALLS_THRESHOLD=$", read(f"deploy/env/{ex}.env.example"), re.M), ex
+    rb = read("deploy/RUNBOOK_OPS.md")
+    sec = rb.split("### アラーム「top-user」")[1].split("\n### ")[0]
+    assert "--show" in sec and "--hash-of" in sec and "IdP" in sec, "RUNBOOK"
+    assert "### 特定の利用者を止める" in rb
+    assert "polyarchy-topuser" in read("docs/運用設計.md")
+
 
 if __name__ == "__main__":
     import sys

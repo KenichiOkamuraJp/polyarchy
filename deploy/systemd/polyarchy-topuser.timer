@@ -1,0 +1,11 @@
+# 最多の 1 人の呼び出しの数を 5 分ごとに（時計の 5 分の区切りの 2 分後＝CloudWatch の 5 分の期間に 1 点ずつ入る・
+# 毎時のダッシュボード〔05 分〕と外からの到達の確認〔4 分後〕に重ねない）。窓は直近 1 時間＝5 分ごとにずらして数え直す。
+[Unit]
+Description=Run polyarchy-topuser every 5 minutes
+
+[Timer]
+OnCalendar=*:2/5
+AccuracySec=10
+
+[Install]
+WantedBy=timers.target

@@ -482,6 +482,7 @@ install -m 755 "$REPO_DIR/deploy/bootstrap/ops_dashboard.sh" /usr/local/bin/poly
 install -m 755 "$REPO_DIR/deploy/bootstrap/update_check.sh" /usr/local/bin/polyarchy-update-check
 install -m 755 "$REPO_DIR/deploy/bootstrap/apply_data_update.sh" /usr/local/bin/polyarchy-data-apply
 install -m 755 "$REPO_DIR/deploy/bootstrap/edge_probe.sh" /usr/local/bin/polyarchy-edge-probe  # 外からの到達の確認（2026-10-12）
+install -m 755 "$REPO_DIR/deploy/bootstrap/top_user_metric.sh" /usr/local/bin/polyarchy-top-user  # 最多の 1 人の呼び出しの数（2026-10-15）
 install -m 644 "$UNIT_SRC/polyarchy-health.service" /etc/systemd/system/polyarchy-health.service
 install -m 644 "$UNIT_SRC/polyarchy-health.timer" /etc/systemd/system/polyarchy-health.timer
 install -m 644 "$UNIT_SRC/polyarchy-usagereport.service" /etc/systemd/system/polyarchy-usagereport.service
@@ -494,6 +495,8 @@ install -m 644 "$UNIT_SRC/polyarchy-dataapply.service" /etc/systemd/system/polya
 install -m 644 "$UNIT_SRC/polyarchy-dataapply.timer" /etc/systemd/system/polyarchy-dataapply.timer
 install -m 644 "$UNIT_SRC/polyarchy-edgeprobe.service" /etc/systemd/system/polyarchy-edgeprobe.service
 install -m 644 "$UNIT_SRC/polyarchy-edgeprobe.timer" /etc/systemd/system/polyarchy-edgeprobe.timer
+install -m 644 "$UNIT_SRC/polyarchy-topuser.service" /etc/systemd/system/polyarchy-topuser.service
+install -m 644 "$UNIT_SRC/polyarchy-topuser.timer" /etc/systemd/system/polyarchy-topuser.timer
 systemctl daemon-reload
 systemctl enable --now polyarchy-health.timer
 systemctl enable --now polyarchy-usagereport.timer
@@ -501,6 +504,7 @@ systemctl enable --now polyarchy-dashboard.timer
 systemctl enable --now polyarchy-updatecheck.timer
 systemctl enable --now polyarchy-dataapply.timer
 systemctl enable --now polyarchy-edgeprobe.timer
+systemctl enable --now polyarchy-topuser.timer
 systemctl restart polyarchy-edgeprobe.timer   # 稼働中の timer に刻みの変更を効かせる（時計の刻みの timer＝restart では走らない）
 systemctl restart polyarchy-health.timer      # 同上（2026-10-13＝前の実行から数える刻みを時計の分ごとに替えた）
 

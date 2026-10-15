@@ -86,6 +86,10 @@ load_env() {
   if [[ -n "${INSTANCE_TYPE:-}" ]]; then
     TF_ARGS+=(-var "instance_type=$INSTANCE_TYPE")
   fi
+  # アラーム top-user の閾値（2026-10-15・B44 第 1 便）。空＝terraform の既定（variables.tf）。
+  if [[ -n "${TOP_USER_CALLS_THRESHOLD:-}" ]]; then
+    TF_ARGS+=(-var "top_user_calls_threshold=$TOP_USER_CALLS_THRESHOLD")
+  fi
 
   log "env=$ENVIRONMENT profile=$AWS_PROFILE region=$AWS_REGION account=$ACCOUNT_ID web=$ENABLE_WEB_APP instance=${INSTANCE_TYPE:-既定}"
   log "bucket=$BUCKET  ssm=$SSM_PREFIX/*"

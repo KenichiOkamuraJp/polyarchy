@@ -275,6 +275,26 @@ resource "aws_cloudwatch_metric_alarm" "edge" {
 
 # IdP（発行者）のディスカバリと公開鍵が取れない。サービスごとに分けない＝IdP の障害でメールをサービスの数だけ出さない。
 # 稼働中のサービスは公開鍵を覚えている＝すぐには落ちない（再起動・鍵の入れ替えの後に全員が通らなくなる）。
+# 1 人の大量の利用（B44 第 1 便・2026-10-15）。箱が 5 分ごとに、全サービスの捕捉ログを利用者ごとに数え、直近 1 時間の最多の
+# 1 人の数を送る（deploy/bootstrap/top_user_metric.sh・利用者のハッシュは送らない）。障害ではない＝誰かを確かめて、
+# 止めるかを運営者が決める（RUNBOOK §1「top-user」）。数えるのが止まったとき（missing）はここでは鳴らさない＝unit-failed が知らせる。
+resource "aws_cloudwatch_metric_alarm" "top_user" {
+  alarm_name          = "${var.project}-${var.environment}-top-user"
+  alarm_description   = "1 人が直近 1 時間に ${var.top_user_calls_threshold} 回以上ツールを呼んだ（全サービスの合計）"
+  namespace           = "polyarchy"
+  metric_name         = "top_user_calls_1h"
+  dimensions          = { service = "box" }
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = var.top_user_calls_threshold
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+  tags                = var.extra_tags
+}
+
 resource "aws_cloudwatch_metric_alarm" "idp_reachable" {
   alarm_name          = "${var.project}-${var.environment}-idp"
   alarm_description   = "IdP のディスカバリか公開鍵が箱から取れない（2 回続けて失敗）"

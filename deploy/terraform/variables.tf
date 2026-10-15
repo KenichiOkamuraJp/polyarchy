@@ -142,6 +142,12 @@ variable "alert_email" {
   default     = ""
 }
 
+variable "top_user_calls_threshold" {
+  description = "アラーム top-user の閾値＝1 人が直近 1 時間に呼んだツールの数（全サービスの合計・B44 第 1 便）。既定 200 は暫定（重い問 1 つで 5〜9 本＝1 時間に重い問 20〜40 個）。env の TOP_USER_CALLS_THRESHOLD から渡せる。"
+  type        = number
+  default     = 200
+}
+
 variable "extra_tags" {
   description = "追加タグ（コスト配賦など）。"
   type        = map(string)

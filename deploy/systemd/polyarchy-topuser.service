@@ -1,0 +1,20 @@
+# 直近 1 時間の最多の 1 人の呼び出しの数（B44 第 1 便・運用設計 §1.2・2026-10-15）：全サービスの捕捉ログを利用者ごとに数え、
+# 最多の数だけを CloudWatch へ送る（top_user_calls_1h{service=box}）。利用者のハッシュは送らない。対＝polyarchy-topuser.timer。
+# 設置は bootstrap ⑪。User=polyarchy＝捕捉ログ（サービスが polyarchy で書く）を読める最小の利用者。
+[Unit]
+Description=Polyarchy 最多の 1 人の呼び出しの数（捕捉ログ -> CloudWatch put-metric-data）
+After=network-online.target
+Wants=network-online.target
+# 失敗はメトリクス unit_failed へ（→ アラーム・運用設計 §1.2）。
+OnFailure=polyarchy-unit-failed@%p.service
+
+[Service]
+Type=oneshot
+User=polyarchy
+Group=polyarchy
+EnvironmentFile=/etc/polyarchy/deploy.env
+ExecStart=/usr/local/bin/polyarchy-top-user
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polyarchy-topuser
