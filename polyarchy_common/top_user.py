@@ -12,8 +12,11 @@
 捕捉ログは 30 日ぶん溜まる＝ファイルの末尾からブロックで読み、窓より古い行に当たったら止める（行は時刻順に追記される）。
 
 実行：python -m polyarchy_common.top_user --log <捕捉ログ> [--log …]            → `top_user <数>`（箱）
-      python -m polyarchy_common.top_user --log … --at 2026-10-15T12:00 --show 5  → 多い順に `<ハッシュ> <数>`（手元）
+      python -m polyarchy_common.top_user --log … --at 2026-10-15T21:00+09:00 --show 5  → 多い順に `<ハッシュ> <数>`（手元）
       python -m polyarchy_common.top_user --hash-of <メール>                      → 捕捉ログと同じハッシュ（手元）
+
+捕捉ログの ts は箱の時計（UTC・時差の表記なし）。手元の PC の「いま」は時差でずれる＝--show には --at が要る（2026-10-16）。
+--at に時差を書けば UTC に直して比べる（書かなければ UTC として読む）。
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ import argparse
 import json
 import sys
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -79,7 +82,7 @@ def main(argv=None, out=None) -> int:
     out = out or sys.stdout
     ap = argparse.ArgumentParser(description="直近 1 時間の最多の 1 人の呼び出しの数（捕捉ログの行）")
     ap.add_argument("--log", action="append", default=[], help="捕捉ログ（JSONL）。複数可＝合わせて数える")
-    ap.add_argument("--at", help="窓の終わり（ISO・箱と同じ時刻の表し方）。既定＝いま")
+    ap.add_argument("--at", help="窓の終わり（ISO）。時差なし＝UTC（箱の時計）・時差あり（+09:00 等）＝UTC に直す。既定＝いま（箱で流すとき）")
     ap.add_argument("--show", type=int, metavar="N", help="多い順に N 人のハッシュと数を出す（運営者が手元で特定するときだけ）")
     ap.add_argument("--hash-of", metavar="EMAIL", help="メールから、捕捉ログと同じハッシュを出す")
     a = ap.parse_args(argv)
@@ -87,7 +90,11 @@ def main(argv=None, out=None) -> int:
         from polyarchy_common.access import user_hash
         print(user_hash(a.hash_of), file=out)
         return 0
+    if a.show and not a.at:
+        ap.error("--show には --at が要る（捕捉ログの時刻は UTC＝手元の「いま」では窓がずれる）")
     now = datetime.fromisoformat(a.at) if a.at else None
+    if now and now.tzinfo:
+        now = now.astimezone(timezone.utc).replace(tzinfo=None)
     counts = count_by_user([Path(p) for p in a.log], now=now)
     if a.show:
         for uh, n in Counter(counts).most_common(a.show):

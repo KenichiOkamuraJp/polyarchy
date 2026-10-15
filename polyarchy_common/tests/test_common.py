@@ -639,6 +639,24 @@ def test_ops_dashboard_failed_units_and_restarts():
         od.subprocess.run, od.shutil.which, od.companies_enabled, od.deliberations_enabled = saved
 
 
+def test_ops_dashboard_lists_every_timer():
+    """ダッシュボード①のユニットの表（ops_dashboard.UNITS）に、bootstrap が置いて有効にする timer が全部ある（2026-10-16＝
+    polyarchy-topuser.timer を足したとき固定の一覧に足し忘れ、staging の表に行が出なかった）。timer のファイル・bootstrap の
+    install と enable・表の 4 つが揃っていること。"""
+    import re
+    from pathlib import Path
+    from polyarchy_common import ops_dashboard as od
+    root = Path(__file__).resolve().parents[2]
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    files = {t.name for t in (root / "deploy/systemd").glob("polyarchy-*.timer")}
+    installed = set(re.findall(r'^install [^\n]*"\$UNIT_SRC/(polyarchy-[\w-]+\.timer)"', boot, re.M))
+    enabled = set(re.findall(r"^systemctl enable --now (polyarchy-[\w-]+\.timer)", boot, re.M))
+    shown = {u for u in od.UNITS if u.endswith(".timer")}
+    assert files and files == installed == enabled == shown, {
+        "ファイルだけ": files - shown, "表に無い": (installed | enabled) - shown,
+        "install だけ": installed - enabled, "enable だけ": enabled - installed, "表だけ": shown - files}
+
+
 def _sync_cmds(path) -> list[str]:
     """deploy のシェルの aws s3 sync を 1 コマンドずつ（行末の \\ でつないだ継続行を 1 行に・コメント行は除く）。"""
     import re
@@ -1686,6 +1704,18 @@ def test_top_user_counts():
     out = io.StringIO()
     tu.main(["--log", str(paths[0]), "--log", str(paths[1]), "--at", now.isoformat(), "--show", "2"], out=out)
     assert out.getvalue().splitlines() == [f"{a} 4", f"{b} 2"], out.getvalue()   # 運営者が手元で特定するとき
+    # 捕捉ログの ts は箱の時計＝UTC。手元（JST の PC）の「いま」を既定にすると窓が 9 時間ずれて黙って 0 件になる（2026-10-16 の
+    # 運用側の照合）＝--show は --at を求める。--at に時差を書けば UTC に直して比べる（JST のまま書ける）。
+    import contextlib
+    with contextlib.redirect_stderr(io.StringIO()):
+        try:
+            tu.main(["--log", str(paths[0]), "--show", "2"], out=io.StringIO())
+            raise AssertionError("--show に --at が無いのに通った")
+        except SystemExit as e:
+            assert e.code == 2, e.code
+    out = io.StringIO()
+    tu.main(["--log", str(paths[0]), "--log", str(paths[1]), "--at", "2026-10-15T21:00:00+09:00", "--show", "2"], out=out)
+    assert out.getvalue().splitlines() == [f"{a} 4", f"{b} 2"], out.getvalue()   # JST の 21 時＝UTC の 12 時
     out = io.StringIO()
     tu.main(["--hash-of", " Someone@Example.COM "], out=out)
     assert out.getvalue().strip() == user_hash("someone@example.com"), out.getvalue()   # 捕捉ログと同じハッシュ
@@ -1761,6 +1791,7 @@ def test_top_user_wiring():
     rb = read("deploy/RUNBOOK_OPS.md")
     sec = rb.split("### アラーム「top-user」")[1].split("\n### ")[0]
     assert "--show" in sec and "--hash-of" in sec and "IdP" in sec, "RUNBOOK"
+    assert "--hash-of <" not in sec and "UTC" in sec, "RUNBOOK"   # <メール> を貼ると zsh が止まる・ts は UTC（2026-10-16）
     assert "### 特定の利用者を止める" in rb
     assert "polyarchy-topuser" in read("docs/運用設計.md")
 

@@ -17,7 +17,7 @@
 |---|---|
 | 毎分 timer `polyarchy-health` | 各サービスの localhost の `/healthz` → CW metric `polyarchy/health`＋disk＋空きメモリ＋常駐のユニットの自動再起動の回数 |
 | 5 分ごと timer `polyarchy-edgeprobe` | 箱自身が公開 URL を資格情報なしで叩く（`/healthz`・守るパスの 401・ディスカバリの照合・IdP の公開鍵）→ CW metric `polyarchy/edge`・`idp_reachable`。結果はダッシュボード①「外からの確認」 |
-| 5 分ごと timer `polyarchy-topuser` | 全サービスの捕捉ログを利用者ごとに数え、直近 1 時間の最多の 1 人の呼び出しの数 → CW metric `polyarchy/top_user_calls_1h`（数だけ・利用者のハッシュは送らない） |
+| 5 分ごと timer `polyarchy-topuser` | 全サービスの捕捉ログを利用者ごとに数え、直近 1 時間の最多の 1 人の呼び出しの数 → CW metric `polyarchy/top_user_calls_1h`（数だけ・利用者のハッシュは送らない）。記録はメトリクスが正（同じ数の行は箱の `/var/log/polyarchy/polyarchy-topuser.log` だけ＝CW Logs には送らない・edgeprobe と同じ扱い） |
 | CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・空きメモリ<10% が 15 分・自動再起動・定期実行の失敗・外からの到達の確認が 2 回続けて失敗（edge・idp）・1 人が直近 1 時間に閾値以上の呼び出し（top-user）・5xx>5/5分・トークンの検証の失敗≧10/5分・**dataapply-rollback**（自動適用の切り戻し＝§5）＝一覧と意味は [運用設計](../docs/運用設計.md) §1.2 |
 | CW Logs（サービスごとのロググループ＝`polyarchy/mcp` ほか） | httplog（時刻・パス・status・ms・user_hash・cf-ray）と認証の警告の行。保持 30 日 |
 | CW Logs `polyarchy/dataapply` | 自動適用の全出力（退避→反映→smoke→判定/切り戻し）＝データ更新の監査線（監査ガイド §4b）。保持 30 日 |
@@ -148,12 +148,12 @@ fields @timestamp, @message
   3. 初回は staging で、上げて戻すのを 1 度通す（停止の長さと、下の起動の後の確認を記録する）。
 - **上げる**
   1. 配布・自動適用が動いていない時間に（`release.sh` を流さない・直前の自動適用が終わっている）。
-  2. `deploy/env/<env>.env` の `INSTANCE_TYPE=` に機種を書く（例 `c7i.2xlarge`）。
+  2. `deploy/env/<env>.env` の `INSTANCE_TYPE=` に機種を書く（例 `c7i.2xlarge`・値の行の書き換えは運営者）。**env ファイルが正**＝シェルの変数で渡す形（`INSTANCE_TYPE=… deploy.sh …`）は、上げている間に変数を付けずに `deploy.sh` を流すと、黙って戻す差分が出る（plan では見える）。env ファイルに `INSTANCE_TYPE=` の行があると、シェルの変数は効かない（ファイルの空の値が勝つ）。
   3. `deploy.sh <env> plan` → 差分が **`aws_instance.app` の `instance_type` の 1 か所だけ・update in-place**であることを読む。replace（作り直し）や、ほかの差分が出たら止める。
-  4. `deploy.sh <env> apply-plan` → 箱は停止 → 機種の変更 → 起動（数分）。**その間は全サービスが止まる**＝health・edge のアラームが鳴って戻る（障害ではない）。
+  4. `deploy.sh <env> apply-plan` → 箱は停止 → 機種の変更 → 起動。**その間は全サービスが止まる**＝staging の実測は上げても戻しても約 2 分（terraform 30〜45 秒＋起動からモデルの読み込みまで約 1 分半・2026-10-15）。health（3 分続けて）・edge（2 回続けて）の線に届かず、**アラームは鳴らないのがふつう**。長引いて鳴っても、戻れば障害ではない。
      止まらないもの＝ルートのディスクとデータ・インスタンス ID（アラームはそのまま）。変わるもの＝パブリック IP（入口はトンネル＝箱から外へつなぐ形＝影響なし）。
-  5. 起動の後に確かめる：ダッシュボード①（全サービスが起動・メモリ・外からの確認が ok）・起動の行の「計算のスレッド M」が新しい機種の物理コアの数（8 vCPU なら 4）・各クライアントからツールを 1 回ずつ呼べる。
-- **戻す**＝`INSTANCE_TYPE=` を空に（既定の `t3.xlarge`）して、同じ plan → apply-plan。戻す目安は、山が過ぎて `wait` が 0 近くに戻ったとき。上げたままにすると費用が続く。
+  5. 起動の後に確かめる：ダッシュボード①（全サービスが起動・メモリ・外からの確認が ok・毎時の生成を待つ）・起動の行の「計算のスレッド M」が新しい機種の物理コアの数（8 vCPU なら 4）・各クライアントからツールを 1 回ずつ呼べる。起動し直した後の最初の呼び出しは遅い（索引とモデルが温まっていない・2 サービスに同時に来ると CPU を取り合う＝10 秒前後〜）＝2 本目から見る。
+- **戻す**＝env ファイルの `INSTANCE_TYPE=` を空に（既定の `t3.xlarge`）して、同じ plan → apply-plan（止まる長さは上げたときと同じ）。戻す目安は、山が過ぎて `wait` が 0 近くに戻ったとき。上げたままにすると費用が続く。
 - 変えないもの＝同時に動かす数（unit の `MCP_TOOL_CONCURRENCY`）。変えるなら配布で（機種と同時に変えない＝どちらが効いたか分からなくなる）。
 
 ### アラーム「top-user」（1 人が直近 1 時間に閾値以上ツールを呼んだ・2026-10-15）
@@ -167,11 +167,12 @@ T=$(mktemp -d)                                                              # �
 for p in query_log stats/query_log companies/query_log deliberations/query_log; do
   aws s3 cp "s3://<BUCKET>/data/$p/queries.jsonl" "$T/${p%%/*}.jsonl" --profile <profile> || true   # 無いサービスは飛ばす
 done
-python -m polyarchy_common.top_user $(for f in "$T"/*.jsonl; do echo --log "$f"; done) --at 2026-10-15T12:00:00 --show 5   # 多い順に「ハッシュ 回数」
-python -m polyarchy_common.top_user --hash-of <メール>                     # IdP の利用者一覧の候補のメール → 同じハッシュか
+python -m polyarchy_common.top_user $(for f in "$T"/*.jsonl; do echo --log "$f"; done) --at 2026-10-15T21:00:00+09:00 --show 5   # 窓の終わり（JST）→ 多い順に「ハッシュ 回数」
+printf "メール: "; read -r EMAIL                                             # IdP の利用者一覧の候補のメール（履歴に残さない）
+python -m polyarchy_common.top_user --hash-of "$EMAIL"; unset EMAIL         # → 上のハッシュと同じか
 rm -rf "$T"
 ```
-  時刻は箱の捕捉ログと同じ表し方（`ts`）。運営者自身のハッシュは週次レポートの除外に使うもの（SSM `usage_operator_hashes`）と同じ。
+  **`--show` には `--at` が要る**（無いと止まる）＝捕捉ログの `ts` は箱の時計＝**UTC**（時差の表記なし）。`+09:00` を付ければ JST のまま書ける（付けなければ UTC として読む）。日をまたいで確かめるときも、照合したい呼び出しの時刻を窓の終わり（窓は 1 時間）に。`--show` を付けると最後の `top_user N` の行は出ない。運営者自身のハッシュは週次レポートの除外に使うもの（SSM `usage_operator_hashes`）と同じ。
   写しは確かめ終わったら消す（捕捉ログの保持の約束＝30 日の外に手元の写しを残さない）。
 - 止めるか決めたら → 下の「特定の利用者を止める」。決めるのは運営者（利用規約の停止の条項）。止めない（正当な重い利用）なら何もしない＝閾値を上げるかを見直す。
 
@@ -216,6 +217,7 @@ curl -sI https://recommendations.<domain>/healthz | head -1   # staging は reco
 | polyarchy-dashboard.timer | 運用ダッシュボード→S3 ops/dashboard/（毎時 05 分） | — |
 | polyarchy-dataapply.timer | 15 分毎に S3 release/data.json を検知→自動適用（退避→コード反映→同期→smoke→切り戻し）＝§5 | root・qdrant/mcp/stats(/companies) を止める |
 | polyarchy-edgeprobe.timer | 外からの到達の確認（5 分ごと・本体は `/usr/local/bin/polyarchy-edge-probe`＝公開 URL を資格情報なしで叩き、結果をメトリクスとダッシュボード①へ） | — |
+| polyarchy-topuser.timer | 1 人の大量の利用（5 分ごと・区切りの 2 分後・本体は `/usr/local/bin/polyarchy-top-user`＝直近 1 時間の最多の 1 人の数をメトリクス `top_user_calls_1h` へ＝§1「top-user」） | — |
 | polyarchy-updatecheck.timer | 更新チェック（freshness＋提言新着→ダッシュボード反映・毎日 06:10 JST。手動キック＝SSM ドキュメント check-updates） | — |
 
 ## 3. データ復元（S3 が原本）

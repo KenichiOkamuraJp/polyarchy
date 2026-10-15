@@ -58,7 +58,8 @@ DELIB_UNITS = ("polyarchy-deliberations", "qdrant-deliberations")  # 審議会DB
 UNITS = ("qdrant", "polyarchy-mcp", "polyarchy-stats", "cloudflared",
          "polyarchy-health.timer", "polyarchy-fuelsync.timer",
          "polyarchy-logprune.timer", "polyarchy-usagereport.timer", "polyarchy-dashboard.timer",
-         "polyarchy-updatecheck.timer", "polyarchy-dataapply.timer", "polyarchy-edgeprobe.timer")
+         "polyarchy-updatecheck.timer", "polyarchy-dataapply.timer", "polyarchy-edgeprobe.timer",
+         "polyarchy-topuser.timer")   # timer を足したらここにも（test_common が bootstrap の enable と突き合わせる）
 EDGE_PROBE_PATH = ROOT / "ops" / "dashboard" / "edge_probe.json"  # polyarchy_common.edge_probe が書く（2026-10-12）
 
 
