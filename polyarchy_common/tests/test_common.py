@@ -1174,6 +1174,52 @@ def test_deploy_plan_then_apply_saved_plan():
     assert "-auto-approve" not in (root / "deploy/scripts/deploy.sh").read_text(encoding="utf-8")
 
 
+def test_instance_type_from_env():
+    """箱の機種は env の INSTANCE_TYPE から（2026-10-15・B45 段 4）＝書けば plan に -var instance_type が渡り、空なら渡さない
+    （既定は variables.tf の 1 か所）。Graviton（arm64）は variables.tf の validation が止める。env のひな形の両方に行があり、
+    RUNBOOK に上げる・戻す手順がある。偽の terraform・aws で、スクリプトの写しを実行する。"""
+    import os
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    for sub in ("deploy/scripts", "deploy/env", "deploy/terraform", "bin"):
+        (d / sub).mkdir(parents=True)
+    for name in ("deploy.sh", "lib.sh"):
+        shutil.copy(root / "deploy/scripts" / name, d / "deploy/scripts" / name)
+    (d / "bin/aws").write_text("#!/bin/bash\necho 123456789012\n")
+    (d / "bin/terraform").write_text(f'#!/bin/bash\necho "$*" >> "{d}/tf.log"\nexit 0\n')
+    for f in ("aws", "terraform"):
+        (d / "bin" / f).chmod(0o755)
+    env = {**os.environ, "PATH": f"{d / 'bin'}:{os.environ['PATH']}"}
+    env.pop("INSTANCE_TYPE", None)
+
+    def plan_line(extra: str) -> str:
+        (d / "deploy/env/t.env").write_text("ENVIRONMENT=t\nAWS_PROFILE=x\nAWS_REGION=ap-northeast-1\n" + extra)
+        (d / "tf.log").write_text("")
+        subprocess.run(["bash", str(d / "deploy/scripts/deploy.sh"), "t", "plan"], env=env, capture_output=True, text=True,
+                       stdin=subprocess.DEVNULL)
+        return next(ln for ln in (d / "tf.log").read_text().splitlines() if ln.startswith("plan "))
+
+    assert "-var instance_type=c7i.2xlarge" in plan_line("INSTANCE_TYPE=c7i.2xlarge\n")
+    assert "instance_type" not in plan_line("INSTANCE_TYPE=\n")
+    assert "instance_type" not in plan_line("")
+    var = (root / "deploy/terraform/variables.tf").read_text(encoding="utf-8").split('variable "instance_type"')[1].split("\n}")[0]
+    assert 'default     = "t3.xlarge"' in var and "validation" in var, var
+    rx = re.search(r'regex\("([^"]+)"', var).group(1)
+    for t, ok in (("t3.xlarge", True), ("c7i.2xlarge", True), ("c7i.4xlarge", True), ("m7i-flex.large", True),
+                  ("c7g.2xlarge", False), ("t4g.xlarge", False), ("m7gd.large", False)):
+        assert (re.match(rx, t) is None) == ok, t
+    for ex in ("staging", "prod"):
+        assert re.search(r"^INSTANCE_TYPE=$", (root / f"deploy/env/{ex}.env.example").read_text(encoding="utf-8"), re.M), ex
+    rb = (root / "deploy/RUNBOOK_OPS.md").read_text(encoding="utf-8")
+    sec = rb.split("### 機種を上げる・戻す")[1].split("\n### ")[0]
+    assert "INSTANCE_TYPE" in sec and "L-1216C47A" in sec and "update in-place" in sec and "戻す" in sec, "RUNBOOK"
+
+
 def test_edge_probe_tick_clear_of_apply_start():
     """外からの到達の確認の刻みを、自動適用の始まりから離す（2026-10-13）。自動適用は 15 分の刻みで始まり、約 2 分後に
     サービスが起動する＝始まりの 2 分後に定刻があると、毎回、起動の間際に当たって APPLIED の直後のダッシュボードに NG が載る

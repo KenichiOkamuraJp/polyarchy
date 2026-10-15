@@ -134,6 +134,27 @@ fields @timestamp, @message
   ★同時に動いた呼び出しの `run` の合計は、重なった時間を本数ぶん数える＝CPU を使った量ではない（直列のときの合計と比べない）。
   捌いた速さは、呼び出しの続いた時間（最初の着から最後の終わりまで）で比べる。
 
+### 機種を上げる・戻す（2026-10-15・計画の段 4）
+上げるのは「混んでいる」が何度も出る・上の集計で `wait` の大きい時間帯が続く・山（導入の告知など）が前もって分かっているとき。判断は運営者。
+効くのは呼び出しが重なったときだけ（1 人の検索はほとんど速くならない＝[性能と同時実行の開発計画](../docs/性能と同時実行_開発計画.md) §4）。
+
+- **候補は一段ずつ**＝8 vCPU の `c7i.2xlarge`（16 GB）→ 16 vCPU の `c7i.4xlarge`（32 GB）。単価は計画 §4。**x86 の機種だけ**（Graviton＝世代の数字の後ろに `g` の機種は arm64＝AMI・ロック・Qdrant が起動しない＝`variables.tf` が plan の段で止める）。
+- **前もって（アカウントごとに 1 度・導入の前に）**
+  1. vCPU の上限＝Service Quotas の「Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances」（`L-1216C47A`）が、上げたい機種の vCPU 以上か。作ったばかりのアカウントは低いことがあり、引き上げの申請は日数がかかる。
+     `aws service-quotas get-service-quota --service-code ec2 --quota-code L-1216C47A --profile <profile> --query Quota.Value`
+  2. 箱のサブネットのアベイラビリティゾーンで、その機種が使えるか。
+     `aws ec2 describe-instance-type-offerings --location-type availability-zone --filters Name=instance-type,Values=c7i.2xlarge --profile <profile>`
+  3. 初回は staging で、上げて戻すのを 1 度通す（停止の長さと、下の起動の後の確認を記録する）。
+- **上げる**
+  1. 配布・自動適用が動いていない時間に（`release.sh` を流さない・直前の自動適用が終わっている）。
+  2. `deploy/env/<env>.env` の `INSTANCE_TYPE=` に機種を書く（例 `c7i.2xlarge`）。
+  3. `deploy.sh <env> plan` → 差分が **`aws_instance.app` の `instance_type` の 1 か所だけ・update in-place**であることを読む。replace（作り直し）や、ほかの差分が出たら止める。
+  4. `deploy.sh <env> apply-plan` → 箱は停止 → 機種の変更 → 起動（数分）。**その間は全サービスが止まる**＝health・edge のアラームが鳴って戻る（障害ではない）。
+     止まらないもの＝ルートのディスクとデータ・インスタンス ID（アラームはそのまま）。変わるもの＝パブリック IP（入口はトンネル＝箱から外へつなぐ形＝影響なし）。
+  5. 起動の後に確かめる：ダッシュボード①（全サービスが起動・メモリ・外からの確認が ok）・起動の行の「計算のスレッド M」が新しい機種の物理コアの数（8 vCPU なら 4）・各クライアントからツールを 1 回ずつ呼べる。
+- **戻す**＝`INSTANCE_TYPE=` を空に（既定の `t3.xlarge`）して、同じ plan → apply-plan。戻す目安は、山が過ぎて `wait` が 0 近くに戻ったとき。上げたままにすると費用が続く。
+- 変えないもの＝同時に動かす数（unit の `MCP_TOOL_CONCURRENCY`）。変えるなら配布で（機種と同時に変えない＝どちらが効いたか分からなくなる）。
+
 ### アラーム「idp」（IdP のディスカバリか公開鍵が取れない）
 - 稼働中のサービスは公開鍵を覚えている＝すぐには落ちない。落ちるのはサービスの再起動の後と IdP が鍵を入れ替えた後（auth のアラームが続けて鳴る）＝**鳴っている間は配布と再起動を控える**。
 - IdP の側の障害か（IdP の稼働状況のページ）、発行者の設定の誤りか（SSM `auth_issuer`＝直近に替えたか）を見分ける。ダッシュボード①の IdP の行＝`discovery(…)` は発行者の URL が引けない・`jwks(…)` は公開鍵が取れない。

@@ -82,8 +82,12 @@ load_env() {
     # アラーム通知の宛先（運用機能・A1）。空＝SNS 購読なし（トピック/アラームは作られる）。
     -var "alert_email=${ALERT_EMAIL:-}"
   )
+  # 箱の機種（2026-10-15・B45 段 4）。空＝terraform の既定（variables.tf）。上げる・戻すは RUNBOOK §1「機種を上げる・戻す」。
+  if [[ -n "${INSTANCE_TYPE:-}" ]]; then
+    TF_ARGS+=(-var "instance_type=$INSTANCE_TYPE")
+  fi
 
-  log "env=$ENVIRONMENT profile=$AWS_PROFILE region=$AWS_REGION account=$ACCOUNT_ID web=$ENABLE_WEB_APP"
+  log "env=$ENVIRONMENT profile=$AWS_PROFILE region=$AWS_REGION account=$ACCOUNT_ID web=$ENABLE_WEB_APP instance=${INSTANCE_TYPE:-既定}"
   log "bucket=$BUCKET  ssm=$SSM_PREFIX/*"
 }
 

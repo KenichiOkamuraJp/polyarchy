@@ -100,6 +100,7 @@ SSO の権限セットか IAM ユーザーのインラインに `<BUCKET>` を�
 aws configure --profile adopter-prod       # 導入団体のアクセスキー / region= ap-northeast-1 / output= json
 aws sts get-caller-identity --profile adopter-prod   # user/adopter-deployer とアカウントIDを確認
 ```
+- ★**vCPU の上限を先に確かめる**（2026-10-15）＝導入の直後に箱の機種を上げる可能性があるなら（RUNBOOK §1「機種を上げる・戻す」）、上げたい機種の vCPU（8 vCPU・16 vCPU）がアカウントの上限の内か。作ったばかりのアカウントは低いことがあり、引き上げの申請は日数がかかる＝稼働の前に申請しておく（確かめ方は同じ節）。
 
 ---
 

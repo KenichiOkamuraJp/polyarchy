@@ -32,9 +32,14 @@ variable "aws_profile" {
 }
 
 variable "instance_type" {
-  description = "EC2 インスタンスタイプ。仕様§3.3 で t3.xlarge(4vCPU/16GB) 確定（Lightsail/Lambda 却下）。定常多人数なら m7i.xlarge。"
+  description = "EC2 インスタンスタイプ。既定は t3.xlarge(4vCPU/16GB)。上げる・戻すは env の INSTANCE_TYPE から（RUNBOOK §1「機種を上げる・戻す」）。x86 だけ。"
   type        = string
   default     = "t3.xlarge"
+  # Graviton（c7g・t4g など、世代の数字の後ろに g）は arm64＝AMI・ロック・Qdrant のビルドが x86 前提で起動しない。
+  validation {
+    condition     = !can(regex("^[a-z]+[0-9]+[a-z-]*g", var.instance_type))
+    error_message = "Graviton（arm64）の機種は使えない（AMI・依存のロック・Qdrant が x86 前提）。c7i・m7i・t3 などの x86 の機種を指定する。"
+  }
 }
 
 variable "root_volume_gb" {
