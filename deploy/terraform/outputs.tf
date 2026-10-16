@@ -19,6 +19,22 @@ output "tail_bootstrap_log" {
   value       = "sudo tail -f /var/log/polyarchy-bootstrap.log /var/log/cloud-init-output.log"
 }
 
+# 中継の口（B44 第 2 便）＝中継のクライアント（bot）を同じ VPC に置くときに要る値。口を開くかは env の RELAY_SOURCE_CIDRS（PROD_MIGRATION §2.6）。
+output "relay_vpc_id" {
+  description = "中継のクライアントを置く VPC（箱と同じ・CIDR 10.0.0.0/16）。"
+  value       = aws_vpc.main.id
+}
+
+output "relay_subnet_id" {
+  description = "箱のサブネット（10.0.1.0/24）。中継のクライアントを同じサブネットに置くなら RELAY_SOURCE_CIDRS はその IP の /32 か 10.0.1.0/24。"
+  value       = aws_subnet.public.id
+}
+
+output "relay_private_ip" {
+  description = "中継のクライアントが呼ぶ箱の IP（http://<この IP>:8865〜8868/<各サービスのパス>）。"
+  value       = aws_instance.app.private_ip
+}
+
 output "next_steps" {
   description = "apply 後の手順（詳細は deploy/README.md）。"
   value = join("\n", [

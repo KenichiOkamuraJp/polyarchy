@@ -90,6 +90,10 @@ load_env() {
   if [[ -n "${TOP_USER_CALLS_THRESHOLD:-}" ]]; then
     TF_ARGS+=(-var "top_user_calls_threshold=$TOP_USER_CALLS_THRESHOLD")
   fi
+  # 中継の口の送り元（2026-10-16・B44 第 2 便）。空＝規則を作らない（口は閉）。同じ値を secrets が SSM relay_allow_cidrs へ。
+  if [[ -n "${RELAY_SOURCE_CIDRS:-}" ]]; then
+    TF_ARGS+=(-var "relay_source_cidrs=[\"${RELAY_SOURCE_CIDRS//,/\",\"}\"]")
+  fi
 
   log "env=$ENVIRONMENT profile=$AWS_PROFILE region=$AWS_REGION account=$ACCOUNT_ID web=$ENABLE_WEB_APP instance=${INSTANCE_TYPE:-既定}"
   log "bucket=$BUCKET  ssm=$SSM_PREFIX/*"
@@ -182,6 +186,18 @@ do_register_secrets() {
           --name "$SSM_PREFIX/auth_aud_$svc" --value "$aval" >/dev/null
       fi
     done
+  fi
+
+  # 中継の口の許可の範囲（2026-10-16・B44 第 2 便・秘密ではないが SSM を単一の真実にする）。値の正は env の RELAY_SOURCE_CIDRS
+  # （terraform の網の規則にも同じ値が渡る）。空にしたら、登録があるときだけ off に（次の配布で口が閉じる）。
+  if [[ -n "${RELAY_SOURCE_CIDRS:-}" ]]; then
+    log "SSM: $SSM_PREFIX/relay_allow_cidrs"
+    aws ssm put-parameter --overwrite --type String \
+      --name "$SSM_PREFIX/relay_allow_cidrs" --value "$RELAY_SOURCE_CIDRS" >/dev/null
+  elif aws ssm get-parameter --name "$SSM_PREFIX/relay_allow_cidrs" --query Parameter.Name --output text >/dev/null 2>&1; then
+    log "SSM: $SSM_PREFIX/relay_allow_cidrs＝off（env の RELAY_SOURCE_CIDRS が空＝中継の口を閉じる）"
+    aws ssm put-parameter --overwrite --type String \
+      --name "$SSM_PREFIX/relay_allow_cidrs" --value off >/dev/null
   fi
 
   log "登録済み（名前のみ）:"

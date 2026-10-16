@@ -20,6 +20,7 @@
 | `httplog` | アクセスログ 1 行形式／`client_label`・`current_client`（接続元のクライアントの種別＝User-Agent を決まったラベルに丸める） | CloudWatch 設定と結合＝**形式変更は deploy と同時**。ラベルは `capture` が捕捉ログの `client` に付ける＝足すときは実測してから・公開のプライバシーページも同じ変更で |
 | `usage_report` | 週次利用レポート生成 | 数字のみ・検索語なし（運用設計 §4.2） |
 | `edge_probe` | 外からの到達の確認（公開 URL の `/healthz`・守るパスの 401・ディスカバリの照合・IdP の公開鍵） | 資格情報なし・読み取りだけ。認証の env は `access.idp_config` 経由で読む。パスを出力に出さない（運用設計 §1.1） |
+| `relay` | `relay_config(env, public_port, log)`／`relay_dispatch(...)`＝中継の口（bot 専用・ログインなし・既定は閉・2026-10-16） | 直接は使わない（`mcp_http` が env `MCP_RELAY_PORT`・`MCP_RELAY_ALLOW_CIDRS` を見て装着）。ルート CLAUDE.md §3 の唯一の例外＝条件（プライベートの範囲・会員の印が必須・公開の口では印を信じない）を緩めない。会員の印は `access.user_hash()`・経路は `httplog.current_client()`＝`relay` |
 | `top_user` | 直近 1 時間の最多の 1 人の呼び出しの数（全サービスの捕捉ログを利用者ごとに数える＝箱の `polyarchy-topuser.timer` が `top_user_calls_1h` に送る・B44 第 1 便） | 箱から出すのは数だけ（利用者のハッシュは出さない）。`--show`（多い順のハッシュ）と `--hash-of`（メール → ハッシュ）は運営者が手元で誰かを確かめるときだけ |
 
 ## 2. 入口の作法（全サービス共通の約束＝MCP サーバの不変条件）

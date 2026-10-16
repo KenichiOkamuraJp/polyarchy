@@ -28,7 +28,8 @@ from polyarchy_common.logsetup import get_logger
 # Claude Code＝Anthropic のサーバ経由）は `Claude-User`、ChatGPT は `openai-mcp/<版>`。それ以外（サーバを直に登録した
 # クライアント等）は other。★User-Agent は送る側が名乗る値＝利用の内訳を読む目安であって、不正利用の判定には使わない。
 # ラベルを足すときは実測してから・公開のプライバシーページ（deploy/pages/privacy.html）の記述も同じ変更で。
-CLIENT_LABELS = ("claude", "chatgpt", "other")
+# relay＝中継の口（polyarchy_common.relay）に着いた要求。User-Agent ではなく着いた口で決まる（運営者の箱では口が閉じていて出ない）。
+CLIENT_LABELS = ("claude", "chatgpt", "other", "relay")
 _current_client: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("polyarchy_current_client", default=None)
 
 
@@ -57,7 +58,9 @@ def access_log_middleware(app, logger_name: str = "polyarchy.http"):
         status = {"code": 0}
         headers = dict(scope.get("headers") or [])
         # 捕捉ログが読む（利用者の contextvar と同じ渡し方）。User-Agent はここでラベルに丸め、文字列は持ち回らない。
-        tok = _current_client.set(client_label((headers.get(b"user-agent") or b"").decode("latin-1")))
+        from polyarchy_common.access import relay_member
+        label = "relay" if relay_member() else client_label((headers.get(b"user-agent") or b"").decode("latin-1"))
+        tok = _current_client.set(label)
 
         async def send_wrap(msg):
             if msg.get("type") == "http.response.start":

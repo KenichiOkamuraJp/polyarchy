@@ -29,6 +29,9 @@ from polyarchy_common.logsetup import get_logger
 
 # 認証済み利用者（{"email": str, "sub": str}）。未認証・stdio では None。
 _current_user: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar("polyarchy_current_user", default=None)
+# 中継の口（polyarchy_common.relay）で着いた要求の会員の印（16 桁の 16 進＝中継のクライアントが作る、元に戻せない文字列）。
+# 置くのは relay.relay_dispatch だけ（公開の口では印を信じない）。それ以外の要求・stdio では None。
+_relay_member: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("polyarchy_relay_member", default=None)
 
 # 「トークンを出したのに通らない」の警告の行に付ける目印。CloudWatch のメトリクスフィルタ（deploy/terraform/observability.tf の
 # auth_invalid_token）がこの文字列を数える＝日本語の文言の一致に頼らない・`test_common` がフィルタと行を突き合わせる。
@@ -41,12 +44,20 @@ def current_user() -> Optional[dict]:
     return _current_user.get()
 
 
+def relay_member() -> Optional[str]:
+    """中継の口で着いた要求の会員の印。それ以外は None。"""
+    return _relay_member.get()
+
+
 def user_hash(email: Optional[str] = None) -> Optional[str]:
     """捕捉ログ用の利用者キー＝メール（小文字化）の sha256 先頭 16 桁。平文は残さない。未認証なら None。
 
     IdP のアクセストークンにメールが載らない構成（案 B で IdP 依存）では `sub` で代替する
-    （`sub:` 接頭辞を付けて衝突空間を分ける）＝利用者キーが取れない状態を作らない。"""
+    （`sub:` 接頭辞を付けて衝突空間を分ける）＝利用者キーが取れない状態を作らない。
+    中継の口の要求（ログインが無い）では、会員の印をそのまま利用者キーにする（同じ 16 桁の 16 進＝数え方は同じ）。"""
     if email is None:
+        if current_user() is None and _relay_member.get():
+            return _relay_member.get()
         u = current_user() or {}
         email = u.get("email") or (f"sub:{u['sub']}" if u.get("sub") else None)
     if not email:

@@ -228,6 +228,30 @@ prod で用意するのは IdP 側の設定：
 > **AUD＝上記 3 の URL（パス込み）**。resource URL 自体は bootstrap が `TUNNEL_HOST_<SVC>＋SSM のパス`から合成する（env に書くのは AUD だけ）。
 > Production 環境では登録時のメールアドレスの確認（コードの入力）が必須だった＝利用者への案内に入れる。
 
+### 2.6 中継の口（任意・千人規模の問を 1 つの bot が中継するとき・2026-10-16）
+
+各自のクライアント（Claude・ChatGPT）から使う利用者は §2.5 のログインで入る。チャットの bot のように **1 つのクライアントが多数の会員の問を中継する**ときは、
+bot だけが使う**中継の口**を開ける。ルート CLAUDE.md §3「利用者はログイン必須」の唯一の例外で、次の条件をサーバと箱の網が守る：
+
+- **既定は閉**。env の `RELAY_SOURCE_CIDRS` を書いたときだけ開く（空＝箱の網に規則が無く、サービスも待ち受けない）。
+- **同じネットワークの中だけ**。送り元はプライベートの範囲（10/8・172.16/12・192.168/16 の内側）だけ＝箱の網の規則（terraform）とサーバの照合の二重。トンネル（公開の入口）には載せない。
+- **会員の印が必須**。bot は HTTP の要求ごとに `X-Polyarchy-Member: <16 桁の小文字の 16 進>` を付ける。会員の ID から作る、元に戻せない値にする（例：bot だけが持つ秘密の塩つきの sha256 の先頭 16 桁）。同じ会員には毎回同じ値。会員の ID・メールそのものは送らない。印が無い・形が違う要求は 400、範囲の外からは 403。
+- **公開の口では印を信じない**（印を付けてきても、ログインを求める）。
+
+印は捕捉ログの利用者（`user_hash`）になり、経路は `relay`。top-user のメトリクス・週次レポートの利用者数は、そのまま会員ごとに数える。「混んでいる」の応答は公開の口と同じ形で返る（同時に動かす数も共有）。
+
+**開け方**
+1. bot を箱と同じ VPC に置く（`terraform output relay_vpc_id`・`relay_subnet_id`。箱の VPC は 10.0.0.0/16・サブネットは 10.0.1.0/24）。
+2. env に `RELAY_SOURCE_CIDRS=<bot のプライベート IP>/32`（複数はカンマ区切り）。
+3. `deploy.sh prod secrets`（SSM `relay_allow_cidrs` に同じ値）→ `deploy.sh prod plan` で差分が `aws_vpc_security_group_ingress_rule.relay` の追加だけ（と output）であることを確かめて → `apply-plan`。
+4. 次の配布（`release.sh`）の自動適用で、bootstrap が各サービスの env に `MCP_RELAY_PORT`・`MCP_RELAY_ALLOW_CIDRS` を書き、口が開く（サービスの起動の行に「中継の口=有効」）。
+5. bot から `http://<terraform output relay_private_ip>:<ポート><各サービスのパス>` を、印つきで 200・印なしで 400 になることを確かめる。
+   ポート＝政策主張DB 8865・統計DB 8866・企業情報DB 8867・審議会DB 8868（公開の口＋100）。パスは SSM `<識別子>_http_path` と同じ。
+
+**閉じ方**＝env の `RELAY_SOURCE_CIDRS` を空に → `deploy.sh prod secrets`（SSM が `off` に）→ plan → `apply-plan`（規則が消える）→ 次の配布でサービスの env から消える。
+
+**プライバシーページ**：会員の印と経路 `relay` が利用記録に残る＝自団体のページ（SSM `privacy_url`）の「収集する情報」に、中継のクライアント経由の利用では会員ごとの印（元に戻せない値）を記録することを書く。
+
 ---
 
 ## 3. env/prod.env と SSM
@@ -251,6 +275,7 @@ cp env/prod.env.example env/prod.env
 | `ALERT_EMAIL` | アラームの宛先（§4 の後に AWS から確認のメールが届く＝Confirm を押すまで通知は来ない） |
 | `BUCKET` | 配布用のクローンから `release.sh` を流すとき（terraform の state を持たないフォルダ）に要る＝`polyarchy-prod-<アカウントID>` |
 | `INSTANCE_TYPE`・`TOP_USER_CALLS_THRESHOLD` | 空＝既定（t3.xlarge・200）。変えるときの手順は RUNBOOK §1 |
+| `RELAY_SOURCE_CIDRS` | 空＝中継の口は閉。bot が中継するときだけ（§2.6） |
 
 ### 3.2 SSM のパラメータ（`/polyarchy/prod/…`）
 
@@ -263,6 +288,7 @@ cp env/prod.env.example env/prod.env
 | `privacy_url` | 推奨 | `put-parameter --type String --value https://<自団体のプライバシーポリシー>` | 政策主張DB のサーバの説明が案内するページ（無ければ上流のページが案内される＝§6） |
 | `usage_operator_hashes` | 任意 | RUNBOOK §5「週次利用レポートで運営者自身の利用を除く」 | 週次レポートの除外 |
 | `openai_apps_challenge_<識別子>` | 任意 | README §9.5 | OpenAI のディレクトリへの掲載の確認 |
+| `relay_allow_cidrs` | 任意 | `deploy.sh prod secrets`（env の `RELAY_SOURCE_CIDRS` から・空にしたら `off`） | 中継の口（§2.6） |
 | `tool_offload_<識別子>` | 使わない | — | 上流の一時の事情のための切る口（RUNBOOK §1「busy」）。入れない＝既定のまま |
 
 API キー（Anthropic・OpenAI・EDINET）は SSM にも箱にも置かない。取り込みに使うキーは導入団体名義で手元の `.env`（git 外）に（RUNBOOK §5「手元の製作環境」）。

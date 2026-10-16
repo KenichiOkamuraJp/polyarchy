@@ -148,6 +148,21 @@ variable "top_user_calls_threshold" {
   default     = 200
 }
 
+variable "relay_source_cidrs" {
+  description = "中継の口（B44 第 2 便・ログインなしの bot 専用の口）に届いてよい送り元＝同じ VPC の中のプライベートの範囲。空＝規則を作らない（口は閉）。env の RELAY_SOURCE_CIDRS から渡す（同じ値を deploy.sh secrets が SSM relay_allow_cidrs へ）。"
+  type        = list(string)
+  default     = []
+  # プライベートの範囲（10/8・172.16/12・192.168/16）の内側だけ＝0.0.0.0/0 や公開の範囲は plan の段で止める（サーバの照合と同じ線）。
+  validation {
+    condition = alltrue([for c in var.relay_source_cidrs : try(
+      (can(regex("^10\\.", cidrhost(c, 0))) && tonumber(split("/", c)[1]) >= 8) ||
+      (can(regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.", cidrhost(c, 0))) && tonumber(split("/", c)[1]) >= 12) ||
+      (can(regex("^192\\.168\\.", cidrhost(c, 0))) && tonumber(split("/", c)[1]) >= 16),
+    false)])
+    error_message = "relay_source_cidrs はプライベートの範囲（10/8・172.16/12・192.168/16 の内側）の CIDR だけ。0.0.0.0/0 や公開の範囲は書けない。"
+  }
+}
+
 variable "extra_tags" {
   description = "追加タグ（コスト配賦など）。"
   type        = map(string)

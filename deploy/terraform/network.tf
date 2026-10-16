@@ -1,5 +1,5 @@
 # ── ネットワーク ─────────────────────────────────────────────────────────────
-# Cloudflare Tunnel が「箱→外」への outbound 接続で入口を張るため、inbound は一切開けない
+# Cloudflare Tunnel が「箱→外」への outbound 接続で入口を張るため、inbound は開けない（例外＝中継の口・既定は無し・末尾の relay）
 # （ロードマップ§2.1「public subnet 1つ・SG は egress のみ・管理は SSM Session Manager」）。
 # public subnet＋IGW＋public IP で egress を確保（NAT Gateway を置かずコストを抑える）。
 # 管理は SSM Session Manager 経由＝22/SSH を開けない（キー漏洩・踏み台の面を無くす）。
@@ -38,7 +38,7 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# セキュリティグループ：inbound 全閉／egress のみ許可。
+# セキュリティグループ：inbound 全閉／egress のみ許可（中継の口を開けたときだけ、末尾の relay の規則が VPC の中から足される）。
 #   - inbound: ルール無し＝全拒否（Tunnel は outbound で張るので公開ポート不要）。
 #   - egress : 全許可。理由＝HFモデルDL(443)・apt/conda(80/443)・DNS(53)・SSM(443)・S3(443)・
 #              cloudflared のエッジ接続(7844/QUIC・443 fallback) を一括で通すため。
@@ -60,4 +60,20 @@ resource "aws_security_group" "instance" {
   }
 
   tags = merge({ Name = "${var.project}-${var.environment}-sg" }, var.extra_tags)
+}
+
+# 中継の口（2026-10-16・B44 第 2 便・既定は無し）＝同じ VPC の中の中継のクライアント（bot）だけが、ログインなしで 4 サービスの
+# 中継のポート（公開の口＋100＝8865〜8868）に届く規則。送り元は var.relay_source_cidrs（env の RELAY_SOURCE_CIDRS・空＝規則を
+# 作らない＝今の箱は変わらない）。サーバも同じ範囲で送り元を確かめ、会員の印の無い要求を断る（polyarchy_common/relay.py）。
+# SG 本体（inline の egress）には足さない＝別の規則のリソースにして、空のときの plan を No changes に保つ。
+resource "aws_vpc_security_group_ingress_rule" "relay" {
+  for_each = toset(var.relay_source_cidrs)
+
+  security_group_id = aws_security_group.instance.id
+  description       = "relay entrance for in-VPC relay client (no login; member label required)"
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = 8865
+  to_port           = 8868
+  tags              = merge({ Name = "${var.project}-${var.environment}-relay" }, var.extra_tags)
 }

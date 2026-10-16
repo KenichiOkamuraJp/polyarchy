@@ -293,8 +293,11 @@ auth_env_lines() { # $1=サービス名（ログ用） $2=秘密パス $3=Access
     return 1
   fi
 }
+relay_port() { # $1=サービス名 → 中継の口のポート（公開の口＋100・unit の --port と対＝test_common が突き合わせる）
+  case "$1" in mcp) echo 8865;; stats) echo 8866;; companies) echo 8867;; deliberations) echo 8868;; esac
+}
 write_service_env() { # $1=サービス名 $2=env ファイル $3=秘密パス $4=Access AUD $5=IdP AUD $6=公開ホスト → 内容があれば 600 で書く・無ければ削除
-  local svc="$1" f="$2" p="$3" auth challenge offload privacy
+  local svc="$1" f="$2" p="$3" auth challenge offload privacy relay
   auth="$(auth_env_lines "$svc" "$p" "$4" "${5:-}" "${6:-}")" || exit 1
   # 掲載先によるドメインの確認（任意）＝SSM openai_apps_challenge_<svc> があれば、そのサービスが確認用の文字列を返す
   #   （polyarchy_common.httplog.domain_challenge_middleware。無ければ行を書かない＝そのパスは 404 のまま）。
@@ -313,7 +316,19 @@ write_service_env() { # $1=サービス名 $2=env ファイル $3=秘密パス $
     echo "[bootstrap] ⚠ SSM privacy_url の形が想定外（https:// で始まり空白なし）＝使わない" >&2
     privacy=""
   fi
-  if [[ -z "$p" && -z "$auth" && -z "$challenge" && -z "$offload" && -z "$privacy" ]]; then rm -f "$f"; return 0; fi
+  # 中継の口（任意・既定は閉・SSM relay_allow_cidrs・2026-10-16・B44 第 2 便）＝同じネットワークの中の中継のクライアント（bot）だけが
+  #   使う、ログインの無い口（ルート CLAUDE.md §3 の唯一の例外・polyarchy_common/relay.py）。値の正は env ファイルの RELAY_SOURCE_CIDRS
+  #   （deploy.sh secrets が SSM へ・空にしたら off）。プライベートの範囲かはサーバが確かめる＝ここでは env の行を壊さない形だけ見る。
+  relay="$(ssm_get relay_allow_cidrs)"
+  if [[ "$relay" == "off" ]]; then
+    relay=""
+  elif [[ -n "$relay" && ! "$relay" =~ ^[0-9./,]+$ ]]; then
+    echo "[bootstrap] ⚠ SSM relay_allow_cidrs の形が想定外（CIDR のカンマ区切り）＝中継の口は開かない" >&2
+    relay=""
+  elif [[ -n "$relay" ]]; then
+    echo "[bootstrap] $svc: 中継の口を開く（:$(relay_port "$svc")・許可の範囲 ${relay}）" >&2
+  fi
+  if [[ -z "$p" && -z "$auth" && -z "$challenge" && -z "$offload" && -z "$privacy" && -z "$relay" ]]; then rm -f "$f"; return 0; fi
   umask 077
   : > "$f"
   [[ -n "$p" ]] && printf 'MCP_HTTP_PATH=%s\n' "$p" >> "$f"
@@ -321,6 +336,7 @@ write_service_env() { # $1=サービス名 $2=env ファイル $3=秘密パス $
   [[ -n "$challenge" ]] && printf 'MCP_OPENAI_APPS_CHALLENGE=%s\n' "$challenge" >> "$f"
   [[ -n "$offload" ]] && printf 'MCP_TOOL_OFFLOAD=0\n' >> "$f"
   [[ -n "$privacy" ]] && printf 'MCP_PRIVACY_URL=%s\n' "$privacy" >> "$f"
+  [[ -n "$relay" ]] && printf 'MCP_RELAY_PORT=%s\nMCP_RELAY_ALLOW_CIDRS=%s\n' "$(relay_port "$svc")" "$relay" >> "$f"
   chown "$SVC_USER:$SVC_USER" "$f"; chmod 600 "$f"; umask 022
 }
 write_service_env mcp /etc/polyarchy/mcp.env "$MCP_PATH" "$(ssm_get access_aud_mcp)" "$(ssm_get auth_aud_mcp)" "${TUNNEL_HOST_MCP:-}"

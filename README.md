@@ -38,7 +38,7 @@ Polyarchy はサービス全体の名前。実体は**コーパス（文書ジ�
 - **サーバ側で生成 AI を呼ばない**：意味検索はローカルモデル（`cl-nagoya/ruri-v3-310m`）で完結・stats／companies はモデル不要。文章生成は各利用者の Claude／ChatGPT 側（ランタイム秘密ゼロ）
 - **データ層は公開固定＋フェイルクローズ**：検索経路は公開層に固定され、非公開データは構造的に返らない（`recommendations/core/search_api.py`・不変条件の定義は `polyarchy_common/metadata_core.py`）
 - **受信ポートを開けない**：公開は Cloudflare Tunnel 経由（サーバから外向き接続のみ）。管理は AWS Session Manager
-- **利用者はログイン必須**（外部 IdP＝WorkOS AuthKit・案 B・2026-09-02〜）＋秘密パス＋レート制限。IP 許可は使えない（コネクタは Anthropic／OpenAI 側から接続）
+- **利用者はログイン必須**（外部 IdP＝WorkOS AuthKit・案 B・2026-09-02〜）＋秘密パス＋レート制限。IP 許可は使えない（コネクタは Anthropic／OpenAI 側から接続）。例外は、同じネットワークの中の bot だけが使う中継の口（既定は閉・会員の印が必須＝[PROD_MIGRATION](deploy/PROD_MIGRATION.md) §2.6）
 - **残る壊れ方は供給元と資格情報**（汚染された依存・箱のロールによる配布物改ざん・捕捉ログ・可用性）＝対策の設計は [docs/運用設計.md](docs/運用設計.md) §2.6・実施は [docs/残タスク.md](docs/残タスク.md) B17（依存の sha256 固定と箱ロールの最小化は 2026-09-04 済）。最後の砦＝冪等な bootstrap＋S3 のデータで箱を数分で作り直せること
 
 ## 構成（リポジトリ＝Polyarchy 全体・**フォルダ名＝コーパスID**）

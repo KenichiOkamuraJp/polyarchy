@@ -18,6 +18,8 @@ Bearer 検証）＋秘密パス＋エッジのレート制限で守る構成の"
 - `MCP_TOOL_WAIT_SECONDS`  … 並んだ呼び出しが待つ上限の秒数（既定 45）。超えたら「混んでいる」と返す。
 - 認証の env（`MCP_ACCESS_*`＝案 A・`MCP_AUTH_*`＝案 B）は `access.install_auth` が読む（装着点はそこ 1 か所。
   契約と差し替えの約束は同関数の docstring・`docs/個人認証_案B設計.md`）。
+- `MCP_RELAY_PORT`・`MCP_RELAY_ALLOW_CIDRS`（・`MCP_RELAY_HOST`）… 中継の口（既定は閉・`polyarchy_common.relay`）。揃って形が
+                              正しいときだけ、同じアプリを 2 つ目のポートでも待ち受ける。
 """
 import os
 
@@ -189,14 +191,45 @@ def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, pat
         log.info("ツールの実行=イベントループの上（MCP_TOOL_OFFLOAD=0）")
 
     # ASGI は常に自前で組む（mcp.run(streamable-http) と同じ uvicorn 経路）。
-    # ラップ順（外→内）：ドメインの確認（env があるときだけ）→ healthz →（認証：install_auth）→ アクセスログ → MCP アプリ。
     import uvicorn
+    from polyarchy_common.relay import relay_config
+    relay = relay_config(os.environ, public_port=port, log=log)
+    app = build_asgi_app(mcp.streamable_http_app(), host=host, port=port, path=path, logger_name=logger_name,
+                         health_check=health_check, relay=relay)
+    if relay is None:
+        uvicorn.run(app, host=host, port=port, log_level="warning")
+        return
+    # 中継の口＝同じアプリ・同じサーバを 2 つ目のソケットでも（lifespan は 1 つ・同時に動かす数と「混んでいる」は公開の口と共有）。
+    log.info("中継の口=有効（http://%s:%d%s・ログインなし・会員の印が必須・許可の範囲 %s）", relay["host"], relay["port"], path,
+             ",".join(str(n) for n in relay["allow"]))
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    server.run(sockets=[_bind(host, port), _bind(relay["host"], relay["port"])])
+
+
+def _bind(host: str, port: int):
+    import socket
+    sock = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((host, port))
+    sock.set_inheritable(True)
+    return sock
+
+
+def build_asgi_app(mcp_app, *, host: str, port: int, path: str, logger_name: str = "polyarchy.mcp",
+                   health_check=None, relay: dict = None):
+    """MCP アプリ（ASGI）に入口の部品を被せて返す。ラップ順（外→内）：ドメインの確認（env があるときだけ）→ healthz →
+    〔中継の口があれば：着いた口で分ける＝公開の口は認証へ・中継の口は送り元と会員の印を確かめて認証の内側へ〕→
+    （認証：install_auth）→ アクセスログ → MCP アプリ。"""
+    log = get_logger(logger_name)
     from polyarchy_common.httplog import access_log_middleware, domain_challenge_middleware, healthz_middleware
-    app = access_log_middleware(mcp.streamable_http_app(), logger_name=logger_name)
+    inner = access_log_middleware(mcp_app, logger_name=logger_name)
 
     # 認証は access.install_auth の 1 か所で装着する（env を見て案 A／案 B・差し替え点もそこ）。
     from polyarchy_common.access import install_auth
-    app = install_auth(app, host=host, port=port, path=path, logger_name=logger_name)
+    app = install_auth(inner, host=host, port=port, path=path, logger_name=logger_name)
+    if relay is not None:
+        from polyarchy_common.relay import relay_dispatch
+        app = relay_dispatch(app, inner, port=relay["port"], allow=relay["allow"], logger_name=logger_name)
     if health_check is not None:
         app = healthz_middleware(app, health_check, service=logger_name, logger_name=logger_name)
         log.info("healthz=有効（GET /healthz・認証不要）")
@@ -204,4 +237,4 @@ def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, pat
     if challenged is not app:
         app = challenged
         log.info("ドメインの確認の口=有効（GET /.well-known/openai-apps-challenge・認証不要）")
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    return app

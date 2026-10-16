@@ -463,7 +463,7 @@ def test_usage_report_people():
         assert h not in dump and h not in page and h not in dash, "利用者ハッシュが出力に出ている"
     assert "直近の完了した週（2026-W34" in page                       # 月曜の朝の生成で、始まったばかりの週を見出しにしない
     assert "今週（途中・2026-W34" in render_html([w], {}, [], "2026-08-21T00:00:00")                    # 完了した週が無ければ今週
-    assert "<td>2026-W34</td><td>4</td><td>3</td><td>2・2・1・1</td><td>2</td><td>55%</td><td>0・0・1・1</td><td>1・1・0</td><td>5</td><td>3</td><td>2</td><td>1・1・1・1</td><td>1・1・0</td>" in page, page
+    assert "<td>2026-W34</td><td>4</td><td>3</td><td>2・2・1・1</td><td>2</td><td>55%</td><td>0・0・1・1</td><td>1・1・0・0</td><td>5</td><td>3</td><td>2</td><td>1・1・1・1</td><td>1・1・0・0</td>" in page, page
     assert "<td>2026-W31</td><td>1</td><td>—</td>" in page and "<th>経路別の利用者</th>" in page
     assert "<th>companies</th><th>deliberations</th>" in page and "<th>companies</th><th>deliberations</th>" in dash
     assert "<td>2026-W34</td><td>12</td><td>3</td><td>7</td><td>1</td><td>1</td><td>4</td><td>5</td><td>3</td>" in dash, dash
@@ -512,7 +512,7 @@ def test_client_label_capture():
     from polyarchy_common import httplog
     from polyarchy_common.capture import append_record, load_records
 
-    assert httplog.CLIENT_LABELS == ("claude", "chatgpt", "other")
+    assert httplog.CLIENT_LABELS == ("claude", "chatgpt", "other", "relay")   # relay＝中継の口（User-Agent ではなく着いた口で決まる）
     cases = {"Claude-User": "claude", "claude-user/1.0": "claude", "openai-mcp/1.0.0": "chatgpt", "OpenAI-MCP/2": "chatgpt",
              "polyarchy-edge-probe/1": "other", "Mozilla/5.0 (Macintosh)": "other", "curl/8.4.0": "other", "": "other", None: "other",
              "x-Claude-User": "other", "not-openai-mcp/1": "other"}
@@ -1908,6 +1908,185 @@ def test_secrets_without_tunnel_credentials_file():
     assert "--name /polyarchy/t/cloudflared_credentials --value" not in log and "auth_issuer" in log, log
     rc, log, err = run(1)                      # 未登録＝ファイルが要る
     assert rc != 0 and "auth_issuer" not in log, (rc, log)
+
+
+def _asgi_call(app, *, port, client="10.0.1.5", headers=(), path="/mcp", method="POST", server_host="0.0.0.0"):
+    """ASGI アプリを 1 回呼んで (status, body) を返す（中継の口の検査用）。"""
+    import asyncio
+    out = {"status": 0, "body": b""}
+
+    async def receive():
+        return {"type": "http.request", "body": b"{}", "more_body": False}
+
+    async def send(msg):
+        if msg["type"] == "http.response.start":
+            out["status"] = msg["status"]
+        elif msg["type"] == "http.response.body":
+            out["body"] += msg.get("body", b"")
+
+    scope = {"type": "http", "method": method, "path": path, "headers": [(k.lower(), v) for k, v in headers],
+             "server": (server_host, port), "client": (client, 50000), "query_string": b""}
+    asyncio.run(app(scope, receive, send))
+    return out["status"], out["body"]
+
+
+def test_relay_entrance():
+    """中継の口（2026-10-16・B44 第 2 便 ①）。千人規模の問を 1 つの bot が中継する導入団体のために、同じネットワークの中の bot
+    だけが使う、ログインの無い 2 つ目の口を、同じプロセス・同じアプリに開く（同時に動かす数と「混んでいる」は公開の口と共有）。
+    ルート CLAUDE.md §3「利用者はログイン必須」の唯一の例外＝固定すること：① env が無ければ開かない（運営者の箱は閉じたまま）・
+    許可の範囲が無い／公開の範囲・広すぎる・ポートが公開の口と同じなら開かない ② 中継の口は、送り元が許可の範囲の外なら 403・
+    会員の印（16 桁の 16 進）が無い／形が違えば 400＝中身に渡さない ③ 印があれば Bearer なしで通り、要求の中の利用者は印・
+    経路は relay（捕捉ログ・アクセスログ・top-user がそのまま会員ごとに数える）④ 公開の口は印を付けてきてもログインを求める
+    （公開の口から会員を名乗れない）⑤ 断った行に目印 relay_reject= ⑥ 待受は 2 つのソケットを 1 つのサーバで。"""
+    import inspect
+    import logging
+    import os
+    from polyarchy_common import access, httplog, mcp_http, relay
+
+    log = logging.getLogger("t.relay")
+    ok_env = {"MCP_RELAY_PORT": "8865", "MCP_RELAY_ALLOW_CIDRS": "10.0.1.0/24,172.31.0.0/16"}
+    assert relay.relay_config({}, public_port=8765, log=log) is None                                  # ① 既定は閉
+    assert relay.relay_config({"MCP_RELAY_PORT": "8865"}, public_port=8765, log=log) is None          # 範囲が無い
+    for bad in ("0.0.0.0/0", "8.8.8.0/24", "10.0.0.0/7", "10.0.1.0/24,203.0.113.0/24", "x", "10.0.1.0/24;rm"):
+        assert relay.relay_config({**ok_env, "MCP_RELAY_ALLOW_CIDRS": bad}, public_port=8765, log=log) is None, bad
+    assert relay.relay_config({**ok_env, "MCP_RELAY_PORT": "8765"}, public_port=8765, log=log) is None   # 公開の口と同じ
+    assert relay.relay_config({**ok_env, "MCP_RELAY_PORT": "x"}, public_port=8765, log=log) is None
+    cfg = relay.relay_config(ok_env, public_port=8765, log=log)
+    assert cfg["port"] == 8865 and cfg["host"] == "0.0.0.0" and len(cfg["allow"]) == 2, cfg
+
+    seen = []
+
+    async def inner(scope, receive, send):                             # MCP アプリの代わり＝要求の中の利用者と経路を記録
+        seen.append((access.user_hash(), httplog.current_client()))
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    auth_env = {"MCP_AUTH_ISSUER": "https://idp.example", "MCP_AUTH_AUD": "aud", "MCP_AUTH_RESOURCE_URL": "https://h.example/mcp"}
+    saved = {k: os.environ.get(k) for k in auth_env}
+    os.environ.update(auth_env)
+    try:
+        app = mcp_http.build_asgi_app(inner, host="127.0.0.1", port=8765, path="/mcp", logger_name="t.relay", relay=cfg)
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+    member = "0123456789abcdef"
+    hdr = ((b"x-polyarchy-member", member.encode()),)
+    # ② 送り元・印
+    assert _asgi_call(app, port=8865, client="203.0.113.9", headers=hdr)[0] == 403
+    assert _asgi_call(app, port=8865, client="not-an-ip", headers=hdr)[0] == 403
+    assert _asgi_call(app, port=8865)[0] == 400
+    for bad in (b"0123456789ABCDEF", b"0123456789abcde", b"0123456789abcdef0", b"g123456789abcdef", b""):
+        assert _asgi_call(app, port=8865, headers=((b"x-polyarchy-member", bad),))[0] == 400, bad
+    assert seen == []                                                  # 断ったものは中身に届かない
+    # ③ 通る＝Bearer なし・利用者は印・経路は relay
+    st, body = _asgi_call(app, port=8865, client="10.0.1.5", headers=hdr)
+    assert st == 200 and body == b"ok" and seen == [(member, "relay")], (st, seen)
+    assert access.user_hash() is None and httplog.current_client() is None   # 要求の外へ漏れない
+    # ④ 公開の口は印を付けてきてもログインを求める
+    seen.clear()
+    st, _ = _asgi_call(app, port=8765, client="127.0.0.1", headers=hdr, server_host="127.0.0.1")
+    assert st == 401 and seen == [], st
+    # healthz は両方の口で認証なし（最外）・中継の口で印は要らない
+    app_h = mcp_http.build_asgi_app(inner, host="127.0.0.1", port=8765, path="/mcp", logger_name="t.relay", relay=cfg,
+                                    health_check=lambda: {"ok": True})
+    assert _asgi_call(app_h, port=8865, path="/healthz", method="GET")[0] == 200
+    # 中継の口が無いときは、どのポートでも公開の口と同じ（印は信じない）
+    seen.clear()
+    plain = mcp_http.build_asgi_app(inner, host="127.0.0.1", port=8765, path="/mcp", logger_name="t.relay")
+    _asgi_call(plain, port=8865, headers=hdr)
+    assert seen == [(None, "other")], seen
+    # ⑤ 断った行の目印
+    src = inspect.getsource(relay)
+    assert "relay_reject=source" in src and "relay_reject=member" in src
+    # ⑥ 待受＝env を読んで、開くときは 2 つのソケットを 1 つのサーバで
+    serve = inspect.getsource(mcp_http.serve_streamable_http)
+    assert "relay_config(" in serve and "build_asgi_app(" in serve and "sockets=" in serve, "serve"
+
+
+def test_relay_wiring():
+    """中継の口の配線（2026-10-16・B44 第 2 便 ①）。値の正は env ファイルの RELAY_SOURCE_CIDRS の 1 つ＝① terraform の -var
+    （箱の網の入口の規則）と ② `deploy.sh secrets` が SSM relay_allow_cidrs（空にしたら off）→ ③ bootstrap がサービスの env に
+    MCP_RELAY_PORT（公開の口＋100）と MCP_RELAY_ALLOW_CIDRS を書く（off・無い・形が違う＝書かない）。④ 中継のポートはトンネルの
+    規則に載せない ⑤ terraform は範囲が空なら規則を作らず、公開の範囲は plan で止める。"""
+    import json
+    import os
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    fn = re.search(r"^write_service_env\(\) \{.*?^\}\n", boot, re.M | re.S).group(0)
+    pf = re.search(r"^relay_port\(\) \{.*?^\}\n", boot, re.M | re.S)
+    assert pf, "bootstrap に relay_port が無い"
+    d = Path(tempfile.mkdtemp())
+
+    def run(svc: str, ssm: dict) -> str:
+        f = d / "svc.env"
+        f.unlink(missing_ok=True)
+        stub = "ssm_get() { case \"$1\" in " + " ".join(f'{k}) printf %s "{v}";;' for k, v in ssm.items()) + " esac; }\n"
+        script = stub + "auth_env_lines() { :; }\nchown() { :; }\nSVC_USER=x\n" + pf.group(0) + fn + f'write_service_env {svc} "{f}" "" "" "" ""\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return f.read_text() if f.exists() else ""
+
+    # ③ ポートは各サービスの公開の口（unit の --port）＋100
+    for svc, unit in (("mcp", "polyarchy-mcp"), ("stats", "polyarchy-stats"), ("companies", "polyarchy-companies"),
+                      ("deliberations", "polyarchy-deliberations")):
+        pub = int(re.search(r"--port (\d+)", (root / f"deploy/systemd/{unit}.service").read_text()).group(1))
+        got = run(svc, {"relay_allow_cidrs": "10.0.1.0/24"})
+        assert got == f"MCP_RELAY_PORT={pub + 100}\nMCP_RELAY_ALLOW_CIDRS=10.0.1.0/24\n", (svc, got)
+    assert run("mcp", {}) == "" and run("mcp", {"relay_allow_cidrs": "off"}) == ""
+    assert run("mcp", {"relay_allow_cidrs": "10.0.1.0/24 x"}) == "" and run("mcp", {"relay_allow_cidrs": "10.0.0.0/8;id"}) == ""
+    # ④ トンネルの規則（⑦ の ingress）に中継のポートが無い
+    seventh = boot[boot.index("# ── ⑦ cloudflared"):boot.index("# ── ⑧")]
+    assert not re.search(r"localhost:88\d\d", seventh), "中継のポートがトンネルの規則にある"
+    # ⑤ terraform
+    tf = (root / "deploy/terraform/network.tf").read_text(encoding="utf-8")
+    rule = re.search(r'resource "aws_vpc_security_group_ingress_rule" "relay" \{.*?\n\}', tf, re.S)
+    assert rule and "for_each" in rule.group(0) and "var.relay_source_cidrs" in rule.group(0), "network.tf"
+    assert re.search(r"from_port\s*=\s*8865\b", rule.group(0)) and re.search(r"to_port\s*=\s*8868\b", rule.group(0)), rule.group(0)
+    var = (root / "deploy/terraform/variables.tf").read_text(encoding="utf-8")
+    vb = re.search(r'variable "relay_source_cidrs" \{.*?\n\}', var, re.S)
+    assert vb and re.search(r"default\s*=\s*\[\]", vb.group(0)) and "validation" in vb.group(0), "variables.tf"
+    outs = (root / "deploy/terraform/outputs.tf").read_text(encoding="utf-8")
+    assert all(f'output "{o}"' in outs for o in ("relay_vpc_id", "relay_subnet_id", "relay_private_ip")), "outputs.tf"
+    # ① ② lib.sh＝偽の aws と terraform で、deploy.sh の写しを流す
+    for sub in ("deploy/scripts", "deploy/env", "deploy/terraform", "bin"):
+        (d / sub).mkdir(parents=True, exist_ok=True)
+    for name in ("deploy.sh", "lib.sh"):
+        shutil.copy(root / "deploy/scripts" / name, d / "deploy/scripts" / name)
+    (d / "bin/aws").write_text(f'#!/bin/bash\necho "$*" >> "{d}/aws.log"\n'
+                               f'case "$*" in "sts "*) echo 123456789012;; *get-parameter*relay_allow_cidrs*) exit $(cat "{d}/has");; esac\n'
+                               'exit 0\n')
+    (d / "bin/terraform").write_text(f'#!/bin/bash\nprintf "%s\\n" "$@" >> "{d}/tf.log"\nexit 0\n')
+    for b in ("aws", "terraform"):
+        (d / "bin" / b).chmod(0o755)
+    env = {**os.environ, "PATH": f"{d / 'bin'}:{os.environ['PATH']}"}
+    (d / "cred.json").write_text("{}")
+    base = (f"ENVIRONMENT=t\nAWS_PROFILE=x\nAWS_REGION=ap-northeast-1\nTUNNEL_ID=u\nCLOUDFLARED_CRED_FILE={d}/cred.json\n")
+
+    def deploy(phase: str, extra: str, has: int = 1):
+        (d / "deploy/env/t.env").write_text(base + extra)
+        (d / "has").write_text(str(has))
+        for lg in ("aws.log", "tf.log"):
+            (d / lg).write_text("")
+        r = subprocess.run(["bash", str(d / "deploy/scripts/deploy.sh"), "t", phase], env=env, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+        return r.returncode, (d / "aws.log").read_text(), (d / "tf.log").read_text(), r.stderr
+
+    rc, aws, _, err = deploy("secrets", "RELAY_SOURCE_CIDRS=10.0.1.0/24,10.0.2.0/24\n")
+    assert rc == 0, err[-400:]
+    assert "--name /polyarchy/t/relay_allow_cidrs --value 10.0.1.0/24,10.0.2.0/24" in aws, aws
+    rc, aws, _, err = deploy("secrets", "", has=0)                    # 空にした＋登録がある＝off に
+    assert rc == 0 and "--name /polyarchy/t/relay_allow_cidrs --value off" in aws, aws
+    rc, aws, _, err = deploy("secrets", "", has=1)                    # 空のまま・登録も無い＝作らない
+    assert rc == 0 and "relay_allow_cidrs --value" not in aws, aws
+    rc, _, tf, err = deploy("plan", "RELAY_SOURCE_CIDRS=10.0.1.0/24,10.0.2.0/24\n")
+    assert "relay_source_cidrs=" + json.dumps(["10.0.1.0/24", "10.0.2.0/24"], separators=(",", ":")) in tf, tf[-600:]
+    rc, _, tf, err = deploy("plan", "")
+    assert "relay_source_cidrs" not in tf, tf[-600:]
 
 
 if __name__ == "__main__":
