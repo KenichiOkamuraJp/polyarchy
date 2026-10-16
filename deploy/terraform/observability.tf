@@ -405,3 +405,34 @@ resource "aws_cloudwatch_metric_alarm" "tool_busy" {
   alarm_actions       = [aws_sns_topic.alerts.arn]
   tags                = var.extra_tags
 }
+
+# 利用者ごとの上限で断った呼び出し（2026-10-16・B44 第 2 便 ②・上限は SSM user_calls_per_hour＝既定は無し＝鳴らない）。警告の行の
+# 目印を数える。障害ではない＝誰かが上限に届いた合図（連打か、上限が低すぎるか＝RUNBOOK §1「limited-<サービス>」）。
+resource "aws_cloudwatch_log_metric_filter" "tool_limited" {
+  for_each       = local.log_filter_groups
+  name           = "polyarchy-${each.key}-tool-limited"
+  log_group_name = each.value
+  pattern        = "\"tool_limited=\""
+  metric_transformation {
+    name          = "tool_limited_${each.key}"
+    namespace     = "polyarchy"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "tool_limited" {
+  for_each            = local.log_filter_groups
+  alarm_name          = "${var.project}-${var.environment}-limited-${each.key}"
+  alarm_description   = "${each.key} で利用者ごとの上限に届いた呼び出しを断った（5 分で 1 回以上）＝障害ではなく、連打か上限が低すぎるかの合図"
+  namespace           = "polyarchy"
+  metric_name         = "tool_limited_${each.key}"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  tags                = var.extra_tags
+}

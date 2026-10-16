@@ -18,6 +18,7 @@ Bearer 検証）＋秘密パス＋エッジのレート制限で守る構成の"
 - `MCP_TOOL_WAIT_SECONDS`  … 並んだ呼び出しが待つ上限の秒数（既定 45）。超えたら「混んでいる」と返す。
 - 認証の env（`MCP_ACCESS_*`＝案 A・`MCP_AUTH_*`＝案 B）は `access.install_auth` が読む（装着点はそこ 1 か所。
   契約と差し替えの約束は同関数の docstring・`docs/個人認証_案B設計.md`）。
+- `MCP_USER_CALLS_PER_HOUR` … 1 人が直近 1 時間に呼べるツールの数（サービスごと・既定 0＝上限なし）。超えた呼び出しは「上限」と返す。
 - `MCP_RELAY_PORT`・`MCP_RELAY_ALLOW_CIDRS`（・`MCP_RELAY_HOST`）… 中継の口（既定は閉・`polyarchy_common.relay`）。揃って形が
                               正しいときだけ、同じアプリを 2 つ目のポートでも待ち受ける。
 """
@@ -111,6 +112,95 @@ def offload_tools(mcp, *, enabled: bool = True, concurrency: int = 1, queue_max:
     return wrapped
 
 
+# ── 利用者ごとの上限（2026-10-16・B44 第 2 便 ②）────────────────────────────────────────
+# 1 人が直近 1 時間に呼べるツールの数を、サービスごと（プロセスの中）に数えて止める。利用者＝要求の中の `access.user_hash()`
+# （公開の口＝メールのハッシュ・中継の口＝会員の印）。利用者の無い呼び出し（stdio・手元）は数えない。
+# - 既定は上限なし（env MCP_USER_CALLS_PER_HOUR＝0・bootstrap が SSM user_calls_per_hour から書く）＝運営者の箱の動きは変わらない。
+#   値は第 1 便のメトリクス（top_user_calls_1h＝全サービスの合計）を見てから決める。4 サービスの合計の上限ではない（1 サービスごと）。
+# - 数は起動し直すと 0 から（プロセスの中だけ＝箱の外に利用者ごとの数を持たない）。
+# - 超えた呼び出しは実行せず、エラーの結果で「上限・実行していない・あと何分」と返す＝「該当なし」とも「混んでいる」とも形を分ける。
+#   「混んでいる」で断った呼び出しは数えない（実行していない）。
+# - 断った行はログの目印 `tool_limited=hour`（利用者のハッシュは出さない＝誰かはアクセスログと捕捉ログで）。observability.tf の
+#   フィルタが tool_limited_<サービス> に数える（アラームは無い＝量はアラーム top-user が見る）。
+# - 包むのは offload の外側＝上限を超えた呼び出しは並びの枠を使わない。ツールの定義は変えない。
+LIMIT_MARK = "[limit]"
+LIMIT_WINDOW_SECONDS = 3600
+
+
+class ToolLimited(Exception):
+    """利用者ごとの上限を超えて実行しなかった呼び出し（SDK がエラーの結果〔isError〕にして返す）。"""
+
+
+def limit_message(per_hour: int, minutes: int) -> str:
+    return (f"{LIMIT_MARK} 利用の上限（1 時間に {per_hour} 回）に達したため、この呼び出しは実行していません"
+            f"（該当なしという意味ではありません）。約 {minutes} 分後に使えるようになります。"
+            "そのことを利用者に伝えてください。ほかの情報源で代わりに埋めないでください。")
+
+
+def limit_tools(mcp, *, per_hour: int, clock=None, logger_name: str = "polyarchy.mcp") -> list[str]:
+    """登録済みのツールを、利用者ごとに直近 1 時間 per_hour 本までに抑える形に包む。包んだツールの名前を返す（per_hour<=0 なら何もしない）。"""
+    if per_hour <= 0:
+        return []
+    import collections
+    import functools
+    import math
+    import time
+    from polyarchy_common.access import user_hash
+    clock = clock or time.monotonic
+    log = get_logger(logger_name)
+    calls: dict = {}                                   # 利用者 → 受け付けた時刻の並び
+
+    def admit(name: str):
+        """受け付けたら (利用者, 時刻) を返す（利用者が無ければ None）。上限を超えていれば ToolLimited。"""
+        who = user_hash()
+        if not who:
+            return None
+        now = clock()
+        q = calls.setdefault(who, collections.deque())
+        while q and q[0] <= now - LIMIT_WINDOW_SECONDS:
+            q.popleft()
+        if len(q) >= per_hour:
+            minutes = max(1, math.ceil((q[0] + LIMIT_WINDOW_SECONDS - now) / 60))
+            log.warning("利用者ごとの上限で断った [tool_limited=hour] tool=%s", name)
+            raise ToolLimited(limit_message(per_hour, minutes))
+        q.append(now)
+        if len(calls) > 10000:                         # 長く動いたプロセスで、窓の外になった利用者を捨てる
+            for k in [k for k, v in calls.items() if not v or v[-1] <= now - LIMIT_WINDOW_SECONDS]:
+                del calls[k]
+        return who, now
+
+    def forget(ticket):
+        """「混んでいる」で断った（実行していない）呼び出しは数えない。"""
+        if ticket:
+            q = calls.get(ticket[0])
+            if q and ticket[1] in q:
+                q.remove(ticket[1])
+
+    def wrap(name: str, fn, is_async: bool):
+        if is_async:
+            @functools.wraps(fn)
+            async def run(**kwargs):
+                ticket = admit(name)
+                try:
+                    return await fn(**kwargs)
+                except ToolBusy:
+                    forget(ticket)
+                    raise
+            return run
+
+        @functools.wraps(fn)
+        def run_sync(**kwargs):
+            admit(name)
+            return fn(**kwargs)
+        return run_sync
+
+    wrapped = []
+    for tool in mcp._tool_manager.list_tools():
+        tool.fn = wrap(tool.name, tool.fn, tool.is_async)
+        wrapped.append(tool.name)
+    return wrapped
+
+
 TOOL_CONCURRENCY_MAX = 16
 
 
@@ -189,6 +279,9 @@ def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, pat
                  f"・計算のスレッド {torch.get_num_threads()}" if torch is not None else "")
     else:
         log.info("ツールの実行=イベントループの上（MCP_TOOL_OFFLOAD=0）")
+    per_hour = _env_number("MCP_USER_CALLS_PER_HOUR", 0, int, log)
+    if limit_tools(mcp, per_hour=per_hour, logger_name=logger_name):
+        log.info("利用者ごとの上限=1 時間に %d 回（このサービスの中で数える）", per_hour)
 
     # ASGI は常に自前で組む（mcp.run(streamable-http) と同じ uvicorn 経路）。
     import uvicorn

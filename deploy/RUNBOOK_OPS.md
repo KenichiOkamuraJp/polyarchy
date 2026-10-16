@@ -18,7 +18,7 @@
 | 毎分 timer `polyarchy-health` | 各サービスの localhost の `/healthz` → CW metric `polyarchy/health`＋disk＋空きメモリ＋常駐のユニットの自動再起動の回数 |
 | 5 分ごと timer `polyarchy-edgeprobe` | 箱自身が公開 URL を資格情報なしで叩く（`/healthz`・守るパスの 401・ディスカバリの照合・IdP の公開鍵）→ CW metric `polyarchy/edge`・`idp_reachable`。結果はダッシュボード①「外からの確認」 |
 | 5 分ごと timer `polyarchy-topuser` | 全サービスの捕捉ログを利用者ごとに数え、直近 1 時間の最多の 1 人の呼び出しの数 → CW metric `polyarchy/top_user_calls_1h`（数だけ・利用者のハッシュは送らない）。記録はメトリクスが正（同じ数の行は箱の `/var/log/polyarchy/polyarchy-topuser.log` だけ＝CW Logs には送らない・edgeprobe と同じ扱い） |
-| CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・空きメモリ<10% が 15 分・自動再起動・定期実行の失敗・外からの到達の確認が 2 回続けて失敗（edge・idp）・1 人が直近 1 時間に閾値以上の呼び出し（top-user）・5xx>5/5分・トークンの検証の失敗≧10/5分・**dataapply-rollback**（自動適用の切り戻し＝§5）＝一覧と意味は [運用設計](../docs/運用設計.md) §1.2 |
+| CloudWatch Alarm → SNS → メール | health 3分連続 0/missing・EC2 StatusCheckFailed・disk>80%・空きメモリ<10% が 15 分・自動再起動・定期実行の失敗・外からの到達の確認が 2 回続けて失敗（edge・idp）・1 人が直近 1 時間に閾値以上の呼び出し（top-user）・利用者ごとの上限に届いた（limited）・5xx>5/5分・トークンの検証の失敗≧10/5分・**dataapply-rollback**（自動適用の切り戻し＝§5）＝一覧と意味は [運用設計](../docs/運用設計.md) §1.2 |
 | CW Logs（サービスごとのロググループ＝`polyarchy/mcp` ほか） | httplog（時刻・パス・status・ms・user_hash・cf-ray）と認証の警告の行。保持 30 日 |
 | CW Logs `polyarchy/dataapply` | 自動適用の全出力（退避→反映→smoke→判定/切り戻し）＝データ更新の監査線（監査ガイド §4b）。保持 30 日 |
 | 箱内のログファイル | `/var/log/polyarchy/*.log`（rsyslog）は logrotate 日次×30 世代（30 日）・journal は `MaxRetentionSec=30day`（2026-10-09 の版の配布から＝bootstrap の変更はその配布で効く。それまでは週次×4 で約 5 週・journal は期限なし）。捕捉ログ本体（query_log）は 30 日 prune＝保持の正典は deploy/README「捕捉ログの保持」 |
@@ -134,6 +134,16 @@ fields @timestamp, @message
   **1 人の形の団体横断を 8 本以上**（3 つの問を 1 人で 3 回ずつ等）集めてから割る。3 人の形も重なり方で揺れる＝2〜3 回出して並べる。
   ★同時に動いた呼び出しの `run` の合計は、重なった時間を本数ぶん数える＝CPU を使った量ではない（直列のときの合計と比べない）。
   捌いた速さは、呼び出しの続いた時間（最初の着から最後の終わりまで）で比べる。
+
+### アラーム「limited-<サービス>」・利用者ごとの上限（2026-10-16・B44 第 2 便）
+**障害ではない。** 1 人（公開の口＝ログインしたメール・中継の口＝会員の印）が、そのサービスで直近 1 時間に呼べるツールの数（SSM `user_calls_per_hour`）に届き、
+超えた呼び出しを実行せずに「上限・あと何分」と返した（「該当なし」とも「混んでいる」とも形が違う）。ログの警告の目印は `tool_limited=hour`・メトリクスは `tool_limited_<サービス>`。
+- **既定は上限なし**（SSM が無い・`0`＝bootstrap が env に書かない＝鳴らない）。入れ方＝`aws ssm put-parameter --overwrite --type String --name /polyarchy/<env>/user_calls_per_hour --value <数>`
+  → 次の配布の適用から効く（4 サービスに同じ値・サービスの起動の行に「利用者ごとの上限=1 時間に N 回」）。外すときは値を `0` に（パラメータは消さない）。
+- **値の決め方**：数はサービスごと（4 サービスの合計ではない）。アラーム top-user のメトリクス（全サービスの合計）で、ふつうの利用者の 1 時間の最大を見て、その数倍に置く
+  （重い問 1 つで 5〜9 本＝[§E-B45](../docs/残タスク.md#e-b45)）。数はプロセスの中だけ＝サービスを起動し直すと 0 から。
+- 鳴ったら：誰か＝同じ時刻のアクセスログの `user=`（または「top-user」の `--show`）。連打なら様子を見るか止める（「特定の利用者を止める」・中継の会員は bot の側で）。
+  ふつうの使い方で届いているなら、上限を上げる。
 
 ### 機種を上げる・戻す（2026-10-15・計画の段 4）
 上げるのは「混んでいる」が何度も出る・上の集計で `wait` の大きい時間帯が続く・山（導入の告知など）が前もって分かっているとき。判断は運営者。

@@ -2089,6 +2089,143 @@ def test_relay_wiring():
     assert "relay_source_cidrs" not in tf, tf[-600:]
 
 
+def test_user_call_limit():
+    """利用者ごとの上限（2026-10-16・B44 第 2 便 ②）。1 人（公開の口＝メールのハッシュ・中継の口＝会員の印）が直近 1 時間に呼べる
+    ツールの数を、サービスごと（プロセスの中）に数えて止める。固定すること＝① 既定は上限なし（運営者の箱の動きは変わらない）
+    ② 上限までは通る・超えた 1 本は実行せずに「上限」と返す・1 時間たてば戻る・ほかの利用者は影響を受けない（合成の時計）
+    ③ 利用者の無い呼び出し（stdio・手元）は数えない ④ 会員の印も 1 人として数える ⑤ 「上限」の形は「該当なし」（found=false・
+    results 空）とも「混んでいる」とも違う＝エラーの結果・実行していない・ほかで埋めない ⑥ 「混んでいる」で断った呼び出しは
+    数えない ⑦ ツールの定義は変わらない ⑧ 断った行に目印 tool_limited=（利用者のハッシュは出さない）・フィルタで数える
+    ⑨ 待受が env を読み、bootstrap が SSM から書く。"""
+    import asyncio
+    import logging
+    import re
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp.exceptions import ToolError
+    from polyarchy_common import access, mcp_http
+    root = Path(__file__).resolve().parents[2]
+    now = {"t": 1000.0}
+    ran = {"n": 0}
+    records = []
+
+    class H(logging.Handler):
+        def emit(self, r):
+            records.append((r.levelname, r.getMessage()))
+
+    def build():
+        mcp = FastMCP("t")
+
+        @mcp.tool(title="検索")
+        def q(query: str = "") -> dict:
+            """検索の代わり。"""
+            ran["n"] += 1
+            return {"found": False, "results": [], "query": query}
+
+        return mcp
+
+    async def defs(mcp):
+        return [t.model_dump() for t in await mcp.list_tools()]
+
+    lg = logging.getLogger("polyarchy.test_user_limit")
+    lg.addHandler(H())
+    lg.setLevel(logging.INFO)
+    A, B = {"email": "a@example.org", "sub": "a"}, {"email": "b@example.org", "sub": "b"}
+
+    async def call(mcp, user=None, member=None):
+        t1 = access._current_user.set(user)
+        t2 = access._relay_member.set(member)
+        try:
+            return await mcp.call_tool("q", {"query": "x"})
+        finally:
+            access._current_user.reset(t1)
+            access._relay_member.reset(t2)
+
+    async def run():
+        mcp = build()
+        assert mcp_http.limit_tools(mcp, per_hour=0) == []                                  # ① 既定は上限なし
+        before = await defs(mcp)
+        assert mcp_http.limit_tools(mcp, per_hour=3, clock=lambda: now["t"], logger_name=lg.name) == ["q"]
+        assert await defs(mcp) == before                                                    # ⑦ 定義は同じ
+        for _ in range(3):                                                                  # ② 上限まで通る
+            await call(mcp, A)
+        n0 = ran["n"]
+        try:
+            await call(mcp, A)
+            raise AssertionError("4 本目が通った")
+        except ToolError as e:
+            msg = str(e)
+        assert ran["n"] == n0                                                               # 実行していない
+        assert mcp_http.LIMIT_MARK in msg and mcp_http.BUSY_MARK not in msg, msg            # ⑤
+        assert "実行していません" in msg and "該当なし" in msg and "埋めない" in msg and "60 分" in msg, msg
+        assert "found" not in msg and "results" not in msg, msg
+        await call(mcp, B)                                                                  # ほかの利用者は通る
+        for _ in range(10):                                                                 # ③ 利用者の無い呼び出しは数えない
+            await call(mcp)
+        now["t"] += 1800
+        try:
+            await call(mcp, A)
+            raise AssertionError("30 分後に通った")
+        except ToolError as e:
+            assert "30 分" in str(e), str(e)
+        now["t"] += 1801                                                                    # 1 時間たてば戻る
+        await call(mcp, A)
+        member = "0123456789abcdef"                                                         # ④ 会員の印も 1 人
+        for _ in range(3):
+            await call(mcp, member=member)
+        try:
+            await call(mcp, member=member)
+            raise AssertionError("会員の 4 本目が通った")
+        except ToolError:
+            pass
+        # ⑥ 「混んでいる」で断った呼び出しは数えない＝並べられない状態で 2 本 → 1 本は busy → その分は上限に数えない
+        mcp2 = build()
+        mcp_http.offload_tools(mcp2, queue_max=0, wait_seconds=1.0)
+        mcp_http.limit_tools(mcp2, per_hour=2, clock=lambda: now["t"], logger_name=lg.name)
+        rs = await asyncio.gather(call(mcp2, A), call(mcp2, A), return_exceptions=True)   # 2 本目は並べられない＝busy
+        busy_n = sum(isinstance(r, ToolError) and mcp_http.BUSY_MARK in str(r) for r in rs)
+        assert busy_n == 1, rs
+        for _ in range(busy_n):                     # busy の分は数えていない＝もう 1 本通る
+            await call(mcp2, A)
+        try:
+            await call(mcp2, A)
+            raise AssertionError("上限を超えて通った")
+        except ToolError as e:
+            assert mcp_http.LIMIT_MARK in str(e), str(e)
+
+    asyncio.run(run())
+    # ⑧ 目印・ハッシュを出さない・フィルタ
+    warn = [m for lv, m in records if lv == "WARNING"]
+    assert warn and all("tool_limited=hour" in m for m in warn), records
+    assert not any(access.user_hash(u["email"]) in m for _, m in records for u in (A, B)), records
+    assert not any("0123456789abcdef" in m or "example.org" in m for _, m in records), records
+    tf = (root / "deploy/terraform/observability.tf").read_text(encoding="utf-8")
+    f = re.search(r'resource "aws_cloudwatch_log_metric_filter" "tool_limited" \{.*?pattern\s*=\s*"\\"([^"\\]+)\\"".*?name\s*=\s*"(tool_limited_\$\{each\.key\})"', tf, re.S)
+    assert f and f.group(1) in warn[0], "tool_limited のフィルタ"
+    # ⑨ 待受と bootstrap
+    import inspect
+    serve = inspect.getsource(mcp_http.serve_streamable_http)
+    assert "limit_tools(" in serve and "MCP_USER_CALLS_PER_HOUR" in serve, "serve"
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    fn = re.search(r"^write_service_env\(\) \{.*?^\}\n", boot, re.M | re.S).group(0)
+    pf = re.search(r"^relay_port\(\) \{.*?^\}\n", boot, re.M | re.S).group(0)
+    d = Path(tempfile.mkdtemp())
+
+    def env_of(ssm: dict) -> str:
+        f = d / "svc.env"
+        f.unlink(missing_ok=True)
+        stub = "ssm_get() { case \"$1\" in " + " ".join(f'{k}) printf %s "{v}";;' for k, v in ssm.items()) + " esac; }\n"
+        script = stub + "auth_env_lines() { :; }\nchown() { :; }\nSVC_USER=x\n" + pf + fn + f'write_service_env mcp "{f}" "" "" "" ""\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return f.read_text() if f.exists() else ""
+    assert env_of({"user_calls_per_hour": "60"}) == "MCP_USER_CALLS_PER_HOUR=60\n"
+    for bad in ("", "0", "abc", "6 0", "-1"):
+        assert env_of({"user_calls_per_hour": bad} if bad else {}) == "", bad
+
+
 if __name__ == "__main__":
     import sys
 

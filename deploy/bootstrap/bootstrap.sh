@@ -297,7 +297,7 @@ relay_port() { # $1=サービス名 → 中継の口のポート（公開の口�
   case "$1" in mcp) echo 8865;; stats) echo 8866;; companies) echo 8867;; deliberations) echo 8868;; esac
 }
 write_service_env() { # $1=サービス名 $2=env ファイル $3=秘密パス $4=Access AUD $5=IdP AUD $6=公開ホスト → 内容があれば 600 で書く・無ければ削除
-  local svc="$1" f="$2" p="$3" auth challenge offload privacy relay
+  local svc="$1" f="$2" p="$3" auth challenge offload privacy relay limit
   auth="$(auth_env_lines "$svc" "$p" "$4" "${5:-}" "${6:-}")" || exit 1
   # 掲載先によるドメインの確認（任意）＝SSM openai_apps_challenge_<svc> があれば、そのサービスが確認用の文字列を返す
   #   （polyarchy_common.httplog.domain_challenge_middleware。無ければ行を書かない＝そのパスは 404 のまま）。
@@ -328,7 +328,14 @@ write_service_env() { # $1=サービス名 $2=env ファイル $3=秘密パス $
   elif [[ -n "$relay" ]]; then
     echo "[bootstrap] $svc: 中継の口を開く（:$(relay_port "$svc")・許可の範囲 ${relay}）" >&2
   fi
-  if [[ -z "$p" && -z "$auth" && -z "$challenge" && -z "$offload" && -z "$privacy" && -z "$relay" ]]; then rm -f "$f"; return 0; fi
+  # 利用者ごとの上限（任意・既定は上限なし・SSM user_calls_per_hour＝1 人が直近 1 時間に呼べるツールの数・サービスごと・2026-10-16・
+  #   B44 第 2 便）。正の整数だけ書く（0・数でない値は書かない＝上限なし）。値の決め方は RUNBOOK §1「利用者ごとの上限」。
+  limit="$(ssm_get user_calls_per_hour)"
+  if [[ -n "$limit" && ! "$limit" =~ ^[1-9][0-9]*$ ]]; then
+    [[ "$limit" != "0" ]] && echo "[bootstrap] ⚠ SSM user_calls_per_hour の形が想定外（正の整数）＝上限なし" >&2
+    limit=""
+  fi
+  if [[ -z "$p" && -z "$auth" && -z "$challenge" && -z "$offload" && -z "$privacy" && -z "$relay" && -z "$limit" ]]; then rm -f "$f"; return 0; fi
   umask 077
   : > "$f"
   [[ -n "$p" ]] && printf 'MCP_HTTP_PATH=%s\n' "$p" >> "$f"
@@ -337,6 +344,7 @@ write_service_env() { # $1=サービス名 $2=env ファイル $3=秘密パス $
   [[ -n "$offload" ]] && printf 'MCP_TOOL_OFFLOAD=0\n' >> "$f"
   [[ -n "$privacy" ]] && printf 'MCP_PRIVACY_URL=%s\n' "$privacy" >> "$f"
   [[ -n "$relay" ]] && printf 'MCP_RELAY_PORT=%s\nMCP_RELAY_ALLOW_CIDRS=%s\n' "$(relay_port "$svc")" "$relay" >> "$f"
+  [[ -n "$limit" ]] && printf 'MCP_USER_CALLS_PER_HOUR=%s\n' "$limit" >> "$f"
   chown "$SVC_USER:$SVC_USER" "$f"; chmod 600 "$f"; umask 022
 }
 write_service_env mcp /etc/polyarchy/mcp.env "$MCP_PATH" "$(ssm_get access_aud_mcp)" "$(ssm_get auth_aud_mcp)" "${TUNNEL_HOST_MCP:-}"

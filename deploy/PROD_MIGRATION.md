@@ -238,7 +238,7 @@ bot だけが使う**中継の口**を開ける。ルート CLAUDE.md §3「利�
 - **会員の印が必須**。bot は HTTP の要求ごとに `X-Polyarchy-Member: <16 桁の小文字の 16 進>` を付ける。会員の ID から作る、元に戻せない値にする（例：bot だけが持つ秘密の塩つきの sha256 の先頭 16 桁）。同じ会員には毎回同じ値。会員の ID・メールそのものは送らない。印が無い・形が違う要求は 400、範囲の外からは 403。
 - **公開の口では印を信じない**（印を付けてきても、ログインを求める）。
 
-印は捕捉ログの利用者（`user_hash`）になり、経路は `relay`。top-user のメトリクス・週次レポートの利用者数は、そのまま会員ごとに数える。「混んでいる」の応答は公開の口と同じ形で返る（同時に動かす数も共有）。
+印は捕捉ログの利用者（`user_hash`）になり、経路は `relay`。top-user のメトリクス・週次レポートの利用者数・利用者ごとの上限（SSM `user_calls_per_hour`）は、そのまま会員ごとに数える（bot 全体を 1 人とは数えない）。上限に届いた会員の呼び出しは「上限・あと何分」のエラーの結果で返る＝bot はそれを会員に伝える。「混んでいる」の応答は公開の口と同じ形で返る（同時に動かす数も共有）。
 
 **開け方**
 1. bot を箱と同じ VPC に置く（`terraform output relay_vpc_id`・`relay_subnet_id`。箱の VPC は 10.0.0.0/16・サブネットは 10.0.1.0/24）。
@@ -288,6 +288,7 @@ cp env/prod.env.example env/prod.env
 | `privacy_url` | 推奨 | `put-parameter --type String --value https://<自団体のプライバシーポリシー>` | 政策主張DB のサーバの説明が案内するページ（無ければ上流のページが案内される＝§6） |
 | `usage_operator_hashes` | 任意 | RUNBOOK §5「週次利用レポートで運営者自身の利用を除く」 | 週次レポートの除外 |
 | `openai_apps_challenge_<識別子>` | 任意 | README §9.5 | OpenAI のディレクトリへの掲載の確認 |
+| `user_calls_per_hour` | 任意 | `put-parameter --type String --value <数>`（RUNBOOK §1「利用者ごとの上限」） | 1 人が直近 1 時間に呼べるツールの数（サービスごと・無い＝上限なし） |
 | `relay_allow_cidrs` | 任意 | `deploy.sh prod secrets`（env の `RELAY_SOURCE_CIDRS` から・空にしたら `off`） | 中継の口（§2.6） |
 | `tool_offload_<識別子>` | 使わない | — | 上流の一時の事情のための切る口（RUNBOOK §1「busy」）。入れない＝既定のまま |
 
