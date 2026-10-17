@@ -84,14 +84,23 @@ def access_log_middleware(app, logger_name: str = "polyarchy.http"):
     return middleware
 
 
+# healthz の検査の待ち（2026-10-17・導入直前の点検 ②）＝箱の毎分の確認（deploy/bootstrap/health_metric.sh の curl -m 5）より短く
+# ＝超えたら箱には 503 が届く（打ち切りの 0 ではなく、サービスが「検査が終わらない」と答えた 0）。`test_common` が大小を固定する。
+HEALTH_TIMEOUT_SECONDS = 3.0
+
+
 def healthz_middleware(app, health_check: Callable[[], dict], *, service: str,
                        path: str = "/healthz", logger_name: str = "polyarchy.http",
-                       version: Optional[str] = None):
+                       version: Optional[str] = None, timeout_seconds: float = HEALTH_TIMEOUT_SECONDS):
     """GET/HEAD <path> に {ok, service, checks} を返す（認証不要・最外に置く）。
 
     `health_check()` はサービスが渡す軽い検査（例：レジストリ読込数・代表 1 系列の lookup・Qdrant count）。
     dict を返し、キー `ok`（bool）が無ければ「例外なし＝ok」とみなす。例外・ok=False は 503。
+    検査は別のスレッドで動かす＝検査が固まっても（例：Qdrant が応えない）イベントループは回り、`timeout_seconds` を超えたら
+    503（`checks.error` に timeout）を返す。超えた検査のスレッドは置き去り（終わり次第消える）＝検査の側の待ちも短くしておく。
     """
+    import anyio
+
     log = get_logger(logger_name)
 
     async def middleware(scope, receive, send):
@@ -99,8 +108,12 @@ def healthz_middleware(app, health_check: Callable[[], dict], *, service: str,
                 or scope.get("method") not in ("GET", "HEAD"):
             return await app(scope, receive, send)
         try:
-            checks = health_check() or {}
+            with anyio.fail_after(timeout_seconds):
+                checks = await anyio.to_thread.run_sync(health_check, abandon_on_cancel=True) or {}
             ok = bool(checks.pop("ok", True))
+        except TimeoutError:  # 検査が終わらない＝異常（固まった検査を待ち続けない）
+            checks, ok = {"error": f"timeout({timeout_seconds:g}s)"}, False
+            log.warning("healthz 検査が %g 秒で終わらない＝503", timeout_seconds)
         except Exception as e:  # 検査自体の失敗＝異常
             checks, ok = {"error": str(e)}, False
             log.warning("healthz 検査で例外: %s", e)

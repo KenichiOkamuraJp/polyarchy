@@ -23,9 +23,21 @@ HTTP で公開する全 MCP 入口（recommendations / stats / …）が同じ�
 import contextvars
 import hashlib
 import json
+import threading
+import time
 from typing import Callable, Optional
 
 from polyarchy_common.logsetup import get_logger
+
+# ── IdP の公開鍵（JWKS）の覚え方（2026-10-17・導入直前の点検 ①）────────────────────────────
+# PyJWT の PyJWKClient の既定（5 分で忘れる・取り直しの待ち 30 秒・取り直せなければ例外）は使わない＝IdP の JWKS が
+# 取れなくなると 5 分後に全利用者が invalid token になり、1 回の検証が 30 秒ループを塞ぐ。ここでは `JwksKeyring` が
+# ① 鍵を 24 時間覚える ② 取り直しに失敗したら覚えている鍵で検証を続ける（運用設計 §1.2「稼働中のサービスは公開鍵を
+# 覚えている」）③ 取り直すのは鍵が古くなったときと kid に合う鍵が無いとき（IdP の鍵の入れ替え）だけで、間隔より短くは
+# IdP を叩かない（合わない kid を投げ続けられても IdP への取得が増えない）④ 取得の待ちは数秒＝`test_common` が固定する。
+JWKS_LIFESPAN_SECONDS = 24 * 3600          # 覚えた鍵を「古い」とみなすまで
+JWKS_FETCH_TIMEOUT_SECONDS = 5             # ディスカバリ・JWKS の 1 回の取得の待ち
+JWKS_REFRESH_MIN_INTERVAL_SECONDS = 60     # 取り直しの最短の間隔（古い鍵での継続中・合わない kid）
 
 # 認証済み利用者（{"email": str, "sub": str}）。未認証・stdio では None。
 _current_user: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar("polyarchy_current_user", default=None)
@@ -65,19 +77,100 @@ def user_hash(email: Optional[str] = None) -> Optional[str]:
     return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:16]
 
 
-def make_access_verifier(team_domain: str, aud: str) -> Callable[[str], dict]:
-    """Cloudflare Access 標準の検証関数（RS256・JWKS・aud・iss）を返す。失敗は例外。"""
+def _fetch_json(url: str, timeout: float = JWKS_FETCH_TIMEOUT_SECONDS) -> dict:
+    """URL の JSON を 1 回取る（待ちは数秒）。失敗は例外。"""
+    import urllib.request
+
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError(f"JSON のオブジェクトではない（{url}）")
+    return data
+
+
+class JwksKeyring:
+    """IdP の公開鍵の置き場（冒頭の規則 ①〜④）。`fetch()` は JWKS（`{"keys": [...]}`）を返す callable＝HTTP はそこだけ。
+
+    `signing_key(kid)` が kid に合う公開鍵（`jwt.PyJWK`）を返す。無ければ `PyJWKClientError`。
+    スレッドから同時に呼ばれる（認証はループの外で検証する）＝取り直しはロックの中で 1 本ずつ。"""
+
+    def __init__(self, fetch: Callable[[], dict], *, lifespan: float = JWKS_LIFESPAN_SECONDS,
+                 min_interval: float = JWKS_REFRESH_MIN_INTERVAL_SECONDS, clock: Callable[[], float] = time.monotonic,
+                 logger_name: str = "polyarchy.mcp"):
+        self._fetch, self._lifespan, self._min_interval, self._clock = fetch, lifespan, min_interval, clock
+        self._log = get_logger(logger_name)
+        self._lock = threading.Lock()
+        self._keys = None            # jwt.PyJWKSet（取れたことが無ければ None）
+        self._fetched_at = -1e18     # 最後に取れた時刻
+        self._attempted_at = -1e18   # 最後に取りに行った時刻（失敗も含む）
+
+    def _refresh(self, now: float, reason: str) -> None:
+        """取り直す。覚えている鍵があれば失敗しても捨てない（警告だけ）。無ければ例外＝検証は失敗。"""
+        import jwt
+
+        self._attempted_at = now
+        try:
+            self._keys = jwt.PyJWKSet.from_dict(self._fetch())
+            self._fetched_at = now
+        except Exception as e:
+            if self._keys is None:
+                raise
+            self._log.warning("IdP の公開鍵の取り直しに失敗（%s）＝覚えている鍵で検証を続ける: %s", reason, e)
+
+    def _match(self, kid):
+        if self._keys is None:
+            return None
+        for k in self._keys.keys:
+            if k.key_id == kid and (k.public_key_use in (None, "sig")):
+                return k
+        return None
+
+    def signing_key(self, kid):
+        import jwt
+
+        with self._lock:
+            now = self._clock()
+            can_try = self._keys is None or now - self._attempted_at >= self._min_interval
+            if can_try and (self._keys is None or now - self._fetched_at >= self._lifespan):
+                self._refresh(now, "鍵が古い" if self._keys is not None else "初回")
+            key = self._match(kid)
+            if key is None and self._keys is not None and now - self._attempted_at >= self._min_interval:
+                self._refresh(now, f"kid={kid!r} に合う鍵が無い")   # 鍵の入れ替えを疑って 1 回だけ取り直す
+                key = self._match(kid)
+            if key is None:
+                raise jwt.exceptions.PyJWKClientError(f'kid "{kid}" に合う公開鍵が無い')
+            return key
+
+    def signing_key_from_jwt(self, token: str):
+        import jwt
+
+        header = jwt.get_unverified_header(token)
+        return self.signing_key(header.get("kid"))
+
+
+def make_access_verifier(team_domain: str, aud: str, *, jwks_fetch: Optional[Callable[[], dict]] = None,
+                         clock: Callable[[], float] = time.monotonic) -> Callable[[str], dict]:
+    """Cloudflare Access 標準の検証関数（RS256・JWKS・aud・iss）を返す。失敗は例外。鍵の覚え方は `JwksKeyring`。
+    `jwks_fetch` はテスト用の差し替え口（既定＝`https://<team>/cdn-cgi/access/certs` を取る）。"""
     import jwt  # PyJWT（cryptography で RS256 検証）
 
     jwks_url = f"https://{team_domain}/cdn-cgi/access/certs"
     issuer = f"https://{team_domain}"
-    jwk_client = jwt.PyJWKClient(jwks_url)
+    keyring = JwksKeyring(jwks_fetch or (lambda: _fetch_json(jwks_url)), clock=clock)
 
     def verify(token: str) -> dict:
-        key = jwk_client.get_signing_key_from_jwt(token)
+        key = keyring.signing_key_from_jwt(token)
         return jwt.decode(token, key.key, algorithms=["RS256"], audience=aud, issuer=issuer)
 
     return verify
+
+
+async def _verify_off_loop(verify: Callable[[str], dict], token: str) -> dict:
+    """トークンの検証を別のスレッドで（2026-10-17・導入直前の点検 ②）。署名の検証はミリ秒だが、初回のディスカバリと公開鍵の
+    取り直しは HTTP を待つ＝イベントループの上で呼ぶと、その間ほかの利用者の接続の手続きも /healthz も止まる。"""
+    import anyio
+
+    return await anyio.to_thread.run_sync(verify, token)
 
 
 def access_jwt_middleware(app, team_domain: str, aud: str, protect_path: str,
@@ -104,7 +197,7 @@ def access_jwt_middleware(app, team_domain: str, aud: str, protect_path: str,
             log.warning("Access JWT 欠如＝Cloudflare Access 非経由のリクエストを遮断")
             return await _reject(send, "missing Cf-Access-Jwt-Assertion")
         try:
-            claims = verify(token.decode())
+            claims = await _verify_off_loop(verify, token.decode())
         except Exception as e:  # 署名/aud/iss/期限いずれか不正
             log.warning("Access JWT 検証失敗 [%s]: %s", REJECT_INVALID, e)
             return await _reject(send, "invalid token")
@@ -120,39 +213,40 @@ def access_jwt_middleware(app, team_domain: str, aud: str, protect_path: str,
 
 # ── 案 B：外部 IdP（個人認証）＝Bearer JWT 検証＋Protected Resource Metadata ────────
 
-def make_oidc_verifier(issuer: str, aud: Optional[str]) -> Callable[[str], dict]:
+def make_oidc_verifier(issuer: str, aud: Optional[str], *, jwks_fetch: Optional[Callable[[], dict]] = None,
+                       clock: Callable[[], float] = time.monotonic) -> Callable[[str], dict]:
     """外部 IdP の Bearer JWT を検証する関数を返す。失敗は例外。
 
     ディスカバリ（OIDC → RFC 8414 の順に試す）で `jwks_uri` を引き（初回検証時に取得・以後キャッシュ
-    ＝IdP が一時不達でもサービス起動は落とさない）、署名・`iss`・期限を検証する。`issuer` はトークンの
-    `iss` と**完全一致**で書く（Auth0 は末尾スラッシュ付き）。`aud` は与えられたときだけ検証する
+    ＝IdP が一時不達でもサービス起動は落とさない）、署名・`iss`・期限を検証する。公開鍵の覚え方は `JwksKeyring`
+    （24 時間覚える・取り直せなければ覚えている鍵で続ける・kid が合わないときだけ取り直す・待ちは数秒）。
+    `issuer` はトークンの `iss` と**完全一致**で書く（Auth0 は末尾スラッシュ付き）。`aud` は与えられたときだけ検証する
     （IdP がトークンに aud を載せるかは dev 検証で確定＝載るなら必ず設定する。空でもエッジの
-    レート制限・秘密パスの層は残る）。
+    レート制限・秘密パスの層は残る）。`jwks_fetch`・`clock` はテスト用の差し替え口（既定＝ディスカバリ→`jwks_uri` を取る）。
+    ★この関数が返す `verify` は HTTP を待つことがある＝ミドルウェアはイベントループの外（スレッド）で呼ぶ。
     """
-    import urllib.request
-
     import jwt  # PyJWT（cryptography で RS256/ES256 検証）
 
     state: dict = {}
 
-    def _jwk_client():
-        if "client" not in state:
+    def _jwks_uri() -> str:
+        if "jwks_uri" not in state:
             meta = None
             for well_known in ("openid-configuration", "oauth-authorization-server"):
-                url = f"{issuer.rstrip('/')}/.well-known/{well_known}"
                 try:
-                    with urllib.request.urlopen(url, timeout=10) as r:
-                        meta = json.loads(r.read().decode("utf-8"))
+                    meta = _fetch_json(f"{issuer.rstrip('/')}/.well-known/{well_known}")
                     break
                 except Exception:
                     continue
             if not isinstance(meta, dict) or not meta.get("jwks_uri"):
                 raise RuntimeError(f"IdP ディスカバリ失敗（issuer={issuer}）")
-            state["client"] = jwt.PyJWKClient(meta["jwks_uri"])
-        return state["client"]
+            state["jwks_uri"] = meta["jwks_uri"]
+        return state["jwks_uri"]
+
+    keyring = JwksKeyring(jwks_fetch or (lambda: _fetch_json(_jwks_uri())), clock=clock)
 
     def verify(token: str) -> dict:
-        key = _jwk_client().get_signing_key_from_jwt(token)
+        key = keyring.signing_key_from_jwt(token)
         kwargs: dict = {"algorithms": ["RS256", "ES256"], "issuer": issuer}
         if aud:
             kwargs["audience"] = aud
@@ -207,7 +301,7 @@ def oidc_bearer_middleware(app, issuer: str, aud: Optional[str], protect_path: s
             log.warning("Bearer 欠如＝未認証リクエストを遮断（401＋resource_metadata で誘導）")
             return await _reject(send, "missing bearer token")
         try:
-            claims = verify(auth[7:].strip())
+            claims = await _verify_off_loop(verify, auth[7:].strip())
         except Exception as e:  # 署名/iss/aud/期限いずれか不正
             log.warning("IdP トークン検証失敗 [%s]: %s", REJECT_INVALID, e)
             return await _reject(send, "invalid token")

@@ -505,8 +505,10 @@ def main_http(host: str = "127.0.0.1", port: int = 8765, path: str = "/mcp") -> 
 
     def _health() -> dict:
         # 生き死に判定（運用設計 §1.1）＝Qdrant へ live に count を取る（qdrant 死亡を検出）。
+        # 待ちは healthz の打ち切り（httplog.HEALTH_TIMEOUT_SECONDS）より短く＝既定の 60 秒だと固まったスレッドが毎分残る（2026-10-17）。
         from recommendations.core.qdrant_store import QdrantCorpusStore
-        n = QdrantCorpusStore().count(service.collection_name)
+        from polyarchy_common.httplog import HEALTH_TIMEOUT_SECONDS
+        n = QdrantCorpusStore(timeout=max(1, int(HEALTH_TIMEOUT_SECONDS))).count(service.collection_name)
         return {"ok": n > 0, "chunks": n, "collection": service.collection_name}
 
     serve_streamable_http(

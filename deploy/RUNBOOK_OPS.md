@@ -33,7 +33,8 @@ curl -s localhost:8765/healthz; curl -s localhost:8766/healthz; curl -s localhos
 journalctl -u polyarchy-mcp -n 50 --no-pager     # or polyarchy-stats / polyarchy-companies
 ```
 - unit が落ちている → `sudo systemctl restart polyarchy-mcp`（Restart=always なのに落ち続ける場合はログの Traceback を読む）
-- recommendations の healthz が `ok:false`／chunks=0 → qdrant を疑う：`systemctl status qdrant`・`curl -s localhost:6333/collections`
+- recommendations の healthz が `ok:false`／chunks=0 → qdrant を疑う：`systemctl status qdrant`・`curl -s localhost:6333/collections`。deliberations の `points=0`・`error` → 専用の qdrant（:6340・unit は `qdrant-deliberations`）を同じ形で（2026-10-17 の版から Qdrant へ live に count を取る＝それより前の版は起動時の点数で、Qdrant が落ちても ok のままだった）
+- `checks.error` が `timeout(3s)` → 検査（Qdrant の count）が 3 秒で終わらない＝Qdrant が固まっている（サービス本体は応えている＝待受は止まらない・2026-10-17）。`systemctl restart qdrant`（審議会DB は `qdrant-deliberations`）の前に `journalctl -u qdrant -n 50`
 - 箱ごと無応答（missing）→ EC2 再起動：`aws ec2 reboot-instances --instance-ids <id>`（systemd が全部 enable 済＝自動復帰）
 - unit は active のまま・いま叩くと `ok:true` なのに 0 の点が続いた → **重い要求の最中**を疑う。ツールの実行は別のスレッドで動く（2026-10-14 の版から＝ツールの実行中も `/healthz` は返る・政策主張DB と審議会DB は同時に unit の `MCP_TOOL_CONCURRENCY` 本まで・ほかは 1 本ずつ順に動く）。それより前の版と、切っているサービス（運営者の箱の SSM `tool_offload_<サービス>`＝`0`・2026-10-15〜＝企業情報DB は掲載の審査のあいだ）では、ツールの実行中は `/healthz` も待つ＝箱の確認は 5 秒で打ち切って 0 を送る（2026-10-12 staging＝運営者 1 人の検索の重なりで 1 分の点が 2 つ続けて 0）。同じ時刻のアクセスログに数秒〜数十秒の POST が並んでいれば、落ちたのではなく混んでいた。再起動はしない（処理中の要求を落とすだけ）。誰の量かは捕捉ログの側で読む（[残タスク](../docs/残タスク.md) B44）。★切っているサービスでは、アクセスログの所要時間に、処理の最中に届いた要求が受け取られるまでの待ちが写らない（手元の最小サーバの実測＝利用側で 8.5 秒待った要求の行が 4 ms）。別のスレッドで動くサービスでは、並んで待った時間も所要時間に入る。
 
@@ -45,7 +46,7 @@ journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep -E " 50[0-9] "
 
 ### アラーム「auth-<サービス>」（トークンの検証の失敗の急増・旧「401 急増」）
 - **数えているもの**＝「トークンを出したのに通らない」要求（警告の行「IdP トークン検証失敗」の目印 `auth_reject=invalid_token`）が 5 分で 10 件以上。トークン無しの 401（警告「Bearer 欠如」）は新しい接続の最初の 1 回に必ず出る＝数えない（2026-10-12・B35＝それまではアクセスログの 401 を数えていて、認証の拒否では鳴らなかった）。
-- **鳴ったら**＝全員がつながらない疑い。原因は 2 つ＝①設定壊れ（aud・発行者の食い違い＝下の三点一致）②IdP の障害（公開鍵が取れない＝警告の行の末尾に取得の失敗が出る）。行を読む：`journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep "IdP トークン検証失敗" | tail`（サービスごとのユニット名に読み替える・箱に入らないなら CW Logs のロググループで同じ文字列を探す）。
+- **鳴ったら**＝全員がつながらない疑い。原因は 2 つ＝①設定壊れ（aud・発行者の食い違い＝下の三点一致）②IdP の障害（公開鍵が取れない＝稼働中は覚えている鍵で検証が続くので、起きるのはサービスの再起動の直後〔鍵を 1 つも持たない〕か IdP が鍵を入れ替えた後だけ。取り直しの失敗は別の警告「IdP の公開鍵の取り直しに失敗」で出て、それだけでは auth は鳴らない・2026-10-17 の版から）。行を読む：`journalctl -u polyarchy-mcp --since "-30min" --no-pager | grep "IdP トークン検証失敗" | tail`（サービスごとのユニット名に読み替える・箱に入らないなら CW Logs のロググループで同じ文字列を探す）。
 - **鳴らなくても起きている場合**＝利用が少ない時間帯は件数が届かない。利用者から「つながらない」と来たら、鳴るのを待たずに同じ行を数える。
 - **トークン無しの 401 は正常系**（新しい接続の最初の 1 回・未認証の探り）＝アラームは数えない。探りの量が気になるときは警告「Bearer 欠如」の件数と、レート制限が効いているか（§1「公開 URL」の `cloudflare-guard.sh status`）を見る。でたらめなトークンを付けた探りは数に入る＝行の末尾の理由（署名・発行者）で設定壊れと見分ける。
 - 案 B の照合（三点一致）：SSM `auth_issuer`／`auth_aud_<svc>` と WorkOS の Resource indicator と実 URL（ホスト＋秘密パス）が一致しているか。壊れていたら SSM を直して箱で `bootstrap.sh` 再走行 → restart。issuer 変更（テナント差し替え）時は利用者は再ログインになる。
@@ -199,7 +200,7 @@ rm -rf "$T"
 - 中継の呼び出しは、捕捉ログの `client` が `relay`・利用者は会員の印。top-user が鳴ったら、手元の `--show` で多い順の印を見る（誰かの特定は bot の側の対応表で＝箱は会員の ID を知らない）。会員を止めるのは bot の側（IdP では止められない＝bot はログインしていない）。
 
 ### アラーム「idp」（IdP のディスカバリか公開鍵が取れない）
-- 稼働中のサービスは公開鍵を覚えている＝すぐには落ちない。落ちるのはサービスの再起動の後と IdP が鍵を入れ替えた後（auth のアラームが続けて鳴る）＝**鳴っている間は配布と再起動を控える**。
+- 稼働中のサービスは公開鍵を 24 時間覚え、取り直せないあいだは覚えている鍵で検証を続ける（2026-10-17 の版から。それより前の版は 5 分で忘れ、取り直せないと全員が invalid token になった）＝すぐには落ちない。落ちるのはサービスの再起動の後（鍵を 1 つも持たない）と IdP が鍵を入れ替えた後（auth のアラームが続けて鳴る）＝**鳴っている間は配布と再起動を控える**。取り直しの失敗はサービスのログに警告「IdP の公開鍵の取り直しに失敗」で並ぶ（60 秒に 1 回まで）。
 - IdP の側の障害か（IdP の稼働状況のページ）、発行者の設定の誤りか（SSM `auth_issuer`＝直近に替えたか）を見分ける。ダッシュボード①の IdP の行＝`discovery(…)` は発行者の URL が引けない・`jwks(…)` は公開鍵が取れない。
 
 ### 公開 URL が落ちている（origin は健全）

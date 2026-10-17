@@ -2226,6 +2226,220 @@ def test_user_call_limit():
         assert env_of({"user_calls_per_hour": bad} if bad else {}) == "", bad
 
 
+def _rsa_jwk(kid: str):
+    """テスト用の RSA 鍵＝（秘密鍵, JWKS に載せる公開鍵の dict）。"""
+    import jwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pub = jwt.algorithms.RSAAlgorithm.to_jwk(priv.public_key(), as_dict=True)
+    pub.update({"kid": kid, "use": "sig", "alg": "RS256"})
+    return priv, pub
+
+
+def test_jwks_keyring_keeps_old_keys():
+    """IdP の公開鍵（JWKS）の覚え方（2026-10-17・導入直前の点検 ①）。PyJWKClient の既定＝5 分で忘れる・取り直しの待ちは
+    30 秒＝IdP の JWKS が取れなくなると 5 分後に全利用者が invalid token になる。固定すること＝① 鍵は長く（24 時間以上）覚える
+    ② 覚えている鍵があれば、取り直しに失敗しても古い鍵で検証を続ける（運用設計 §1.2「稼働中のサービスは公開鍵を覚えている」）
+    ③ 取り直すのは、覚えた鍵が古くなったときと、トークンの kid に合う鍵が無いとき（鍵の入れ替え）だけ＝合わない kid を
+    投げ続けられても、決めた間隔より短くは IdP を叩かない ④ 取得の待ちは数秒 ⑤ 鍵を 1 つも覚えていないときの失敗は失敗のまま。"""
+    import time
+
+    import jwt
+
+    from polyarchy_common import access
+
+    assert access.JWKS_LIFESPAN_SECONDS >= 24 * 3600 and access.JWKS_FETCH_TIMEOUT_SECONDS <= 10          # ①④
+    assert 10 <= access.JWKS_REFRESH_MIN_INTERVAL_SECONDS <= 600
+    import inspect
+    assert "PyJWKClient(" not in inspect.getsource(access), "PyJWKClient の既定（5 分・30 秒）に戻さない"
+
+    priv_a, pub_a = _rsa_jwk("a")
+    priv_b, pub_b = _rsa_jwk("b")
+    jwks = {"keys": [pub_a]}
+    calls = {"n": 0, "fail": False}
+    clock = {"t": 1000.0}
+
+    def fetch() -> dict:
+        calls["n"] += 1
+        if calls["fail"]:
+            raise OSError("IdP down")
+        return json.loads(json.dumps(jwks))
+
+    def sign(priv, kid, **over) -> str:
+        claims = {"iss": "https://idp.example", "aud": "aud1", "sub": "u1", "email": "a@example.com",
+                  "exp": int(time.time()) + 600, **over}
+        return jwt.encode(claims, priv, algorithm="RS256", headers={"kid": kid})
+
+    verify = access.make_oidc_verifier("https://idp.example", "aud1", jwks_fetch=fetch, clock=lambda: clock["t"])
+    assert verify(sign(priv_a, "a"))["sub"] == "u1" and calls["n"] == 1
+    assert verify(sign(priv_a, "a"))["email"] == "a@example.com" and calls["n"] == 1                       # 覚えている＝取らない
+    # ② 古くなった鍵の取り直しに失敗＝古い鍵で通る
+    clock["t"] += access.JWKS_LIFESPAN_SECONDS + 1
+    calls["fail"] = True
+    assert verify(sign(priv_a, "a"))["sub"] == "u1" and calls["n"] == 2
+    assert verify(sign(priv_a, "a"))["sub"] == "u1" and calls["n"] == 2                                   # ③ 間隔の内側は叩かない
+    clock["t"] += access.JWKS_REFRESH_MIN_INTERVAL_SECONDS + 1
+    assert verify(sign(priv_a, "a"))["sub"] == "u1" and calls["n"] == 3                                   # 間隔が空けばもう一度
+    # 鍵の入れ替え＝合う kid が無いときだけ取り直す
+    calls["fail"] = False
+    jwks["keys"] = [pub_a, pub_b]
+    clock["t"] += access.JWKS_REFRESH_MIN_INTERVAL_SECONDS + 1
+    assert verify(sign(priv_b, "b"))["sub"] == "u1" and calls["n"] == 4
+    assert verify(sign(priv_a, "a"))["sub"] == "u1" and calls["n"] == 4
+    # 合わない kid を投げ続けられても、間隔より短くは叩かない（取り直しは 1 回・結果は失敗）
+    clock["t"] += access.JWKS_REFRESH_MIN_INTERVAL_SECONDS + 1
+    for _ in range(3):
+        try:
+            verify(sign(priv_a, "zzz"))
+            raise AssertionError("合わない kid が通った")
+        except jwt.exceptions.PyJWTError:
+            pass
+    assert calls["n"] == 5, calls
+    # 署名・aud の検証は変わらない（kid が合えば取り直さない）
+    other, _ = _rsa_jwk("a")
+    for bad in (sign(other, "a"), sign(priv_a, "a", aud="aud2"), sign(priv_a, "a", iss="https://evil.example")):
+        try:
+            verify(bad)
+            raise AssertionError("不正なトークンが通った")
+        except jwt.exceptions.PyJWTError:
+            pass
+    assert calls["n"] == 5, calls
+    # ⑤ 1 つも覚えていなければ失敗のまま（起動直後に IdP が不達＝案内どおり落ちる）。取れれば以後は通る
+    calls2 = {"n": 0, "fail": True}
+
+    def fetch2() -> dict:
+        calls2["n"] += 1
+        if calls2["fail"]:
+            raise OSError("IdP down")
+        return {"keys": [pub_a]}
+
+    v2 = access.make_oidc_verifier("https://idp.example", None, jwks_fetch=fetch2, clock=lambda: clock["t"])
+    try:
+        v2(sign(priv_a, "a"))
+        raise AssertionError("鍵が無いのに通った")
+    except Exception:
+        pass
+    calls2["fail"] = False
+    assert v2(sign(priv_a, "a"))["sub"] == "u1" and calls2["n"] == 2
+    # 案 A（Cloudflare Access・温存）も同じ覚え方
+    v3 = access.make_access_verifier("team.example", "audA", jwks_fetch=fetch)
+    assert v3(sign(priv_a, "a", iss="https://team.example", aud="audA"))["sub"] == "u1"
+
+
+def test_auth_and_health_run_off_event_loop():
+    """認証の検証と healthz の検査をイベントループの外へ出す（2026-10-17・導入直前の点検 ②）。verify() は鍵の取得・初回の
+    ディスカバリで HTTP を待つ＝ループの上で呼ぶと、その間ほかの利用者の接続も /healthz も止まる。health_check() も同じ
+    （recommendations の Qdrant の count は timeout 60 秒＝固まると毎分の /healthz がループを止める）。固定すること＝
+    ① 検証の最中もループが回る・検証は別のスレッド ② 検査の最中もループが回る ③ 検査が決めた秒数を超えたら 503（timeout）
+    ＝箱の毎分の確認（health_metric.sh の curl -m）より短い ④ 結果（200／401／503）は変わらない。"""
+    import asyncio
+    import re
+    import threading
+    import time
+    from pathlib import Path
+
+    from polyarchy_common import httplog
+    from polyarchy_common.access import access_jwt_middleware, oidc_bearer_middleware
+
+    root = Path(__file__).resolve().parents[2]
+    m = re.search(r"curl\s+\S*\s+-m\s+(\d+)", (root / "deploy/bootstrap/health_metric.sh").read_text(encoding="utf-8"))
+    assert m and 0 < httplog.HEALTH_TIMEOUT_SECONDS < int(m.group(1)), (m, httplog.HEALTH_TIMEOUT_SECONDS)   # ③ 箱の確認より短い
+
+    main_thread = threading.get_ident()
+    seen: dict = {}
+
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    async def call(app, path="/mcp", headers=()):
+        out = []
+
+        async def send(msg):
+            out.append(msg)
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await app({"type": "http", "path": path, "method": "GET", "headers": list(headers)}, receive, send)
+        return out
+
+    def slow_verify(token: str) -> dict:
+        seen["thread"] = threading.get_ident()
+        time.sleep(0.3)
+        if token != "good":
+            raise ValueError("bad")
+        return {"email": "a@example.com", "sub": "s"}
+
+    async def run():
+        ticks = {"n": 0}
+
+        async def ticker():
+            while True:
+                await asyncio.sleep(0.01)
+                ticks["n"] += 1
+
+        tk = asyncio.create_task(ticker())
+        try:
+            # ① 認証（案 B・案 A）
+            oidc = oidc_bearer_middleware(inner, "https://idp.example", "aud1", "/mcp", "https://x.example/mcp", verify=slow_verify)
+            acc = access_jwt_middleware(inner, "team.example", "audA", "/mcp", verify=slow_verify)
+            for app, hdr in ((oidc, b"authorization"), (acc, b"cf-access-jwt-assertion")):
+                val = b"Bearer good" if hdr == b"authorization" else b"good"
+                seen.clear()
+                t0 = ticks["n"]
+                assert (await call(app, headers=[(hdr, val)]))[0]["status"] == 200
+                assert ticks["n"] - t0 >= 20 and seen["thread"] != main_thread, (ticks["n"] - t0, seen)
+                bad = b"Bearer evil" if hdr == b"authorization" else b"evil"
+                assert (await call(app, headers=[(hdr, bad)]))[0]["status"] == 401                       # ④ 結果は同じ
+            # ② healthz の検査
+            state = {"sleep": 0.3}
+
+            def check() -> dict:
+                seen["hthread"] = threading.get_ident()
+                time.sleep(state["sleep"])
+                return {"ok": True, "n": 1}
+
+            app = httplog.healthz_middleware(inner, check, service="polyarchy.test", timeout_seconds=0.5)
+            seen.clear()
+            t0 = ticks["n"]
+            out = await call(app, path="/healthz")
+            assert out[0]["status"] == 200 and ticks["n"] - t0 >= 20 and seen["hthread"] != main_thread, (out[0], ticks["n"] - t0, seen)
+            # ③ 超過＝503・timeout と書く・待たない
+            state["sleep"] = 3.0
+            t1 = time.monotonic()
+            out = await call(app, path="/healthz")
+            assert out[0]["status"] == 503 and time.monotonic() - t1 < 1.5, out[0]
+            assert "timeout" in json.loads(out[1]["body"])["checks"].get("error", ""), out[1]
+            assert (await call(app, path="/mcp"))[0]["status"] == 200                                     # ④ 他パスは素通し
+        finally:
+            tk.cancel()
+
+    asyncio.run(run())
+
+
+def test_health_checks_hit_qdrant_live():
+    """生き死にの判定は Qdrant へ live に count を取る（2026-10-17・導入直前の点検 ③）。審議会DB の health_check は
+    `svc().count`＝起動時に読んだ点数（len(self.meta)）で、専用の Qdrant（:6340）の生死を見ていなかった。固定すること＝
+    ① 審議会DB・政策主張DB の `_health` は QdrantCorpusStore の count を毎回取る（起動時の数を返さない）② その Qdrant の
+    クライアントの待ちは短い（timeout を渡す＝既定の 60 秒のまま固まったスレッドを毎分残さない）③ ok は count>0。"""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    for rel in ("deliberations/serving/mcp_server.py", "recommendations/serving/mcp_server.py"):
+        src = (root / rel).read_text(encoding="utf-8")
+        fn = re.search(r"^( *)def _health\(\) -> dict:\n(?:\1    .*\n|\n)+", src, re.M)   # 関数の中の定義（字下げ）も可
+        assert fn, f"{rel}: _health が無い"
+        body = fn.group(0)
+        assert "QdrantCorpusStore(" in body and ".count(" in body, f"{rel}: Qdrant へ count を取っていない"   # ①
+        assert "timeout=" in body, f"{rel}: Qdrant の待ちを短くしていない"                                      # ②
+        assert re.search(r'"ok":\s*n > 0', body), f"{rel}: ok は count>0"                                        # ③
+        assert "health_check=_health" in src, f"{rel}: _health を渡していない"
+        assert "svc().count" not in src, f"{rel}: 起動時の点数で判定している"
+
+
 if __name__ == "__main__":
     import sys
 

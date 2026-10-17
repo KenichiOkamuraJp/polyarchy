@@ -117,6 +117,18 @@ def list_meeting(org: str, session_no: int) -> dict:
     return {"found": True, **r}
 
 
+def _health() -> dict:
+    # 生き死にの判定（運用設計 §1.1）＝専用の Qdrant（config.QDRANT_URL）へ live に count を取る（Qdrant の死亡を検出）。
+    # 起動時に読んだ点数（len(self.meta)）では Qdrant が落ちても ok のまま＝使わない（2026-10-17）。待ちは healthz の打ち切りより短く。
+    from polyarchy_retrieval.qdrant import QdrantCorpusStore
+
+    from deliberations.core import config
+    from polyarchy_common.httplog import HEALTH_TIMEOUT_SECONDS
+    n = QdrantCorpusStore({config.COLLECTION: config.COLLECTION}, url=config.QDRANT_URL,
+                          timeout=max(1, int(HEALTH_TIMEOUT_SECONDS))).count(config.COLLECTION)
+    return {"ok": n > 0, "points": n, "collection": config.COLLECTION}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--http", action="store_true")
@@ -130,7 +142,7 @@ def main() -> None:
         serve_streamable_http(mcp, host=args.host, port=args.port, path=os.getenv("MCP_HTTP_PATH", "/mcp"),
                               tools_desc="tools=search_deliberations,list_meeting",
                               logger_name="polyarchy.deliberations.mcp",
-                              health_check=lambda: {"ok": svc().count > 0, "points": svc().count},
+                              health_check=_health,
                               parallel_safe=True)   # ツールを同時に動かしても結果が同じ（deliberations/eval/concurrency・同時の数は unit）
         return
     real = guard_stdout_for_stdio()
