@@ -2007,7 +2007,9 @@ def test_relay_wiring():
     """中継の口の配線（2026-10-16・B44 第 2 便 ①）。値の正は env ファイルの RELAY_SOURCE_CIDRS の 1 つ＝① terraform の -var
     （箱の網の入口の規則）と ② `deploy.sh secrets` が SSM relay_allow_cidrs（空にしたら off）→ ③ bootstrap がサービスの env に
     MCP_RELAY_PORT（公開の口＋100）と MCP_RELAY_ALLOW_CIDRS を書く（off・無い・形が違う＝書かない）。④ 中継のポートはトンネルの
-    規則に載せない ⑤ terraform は範囲が空なら規則を作らず、公開の範囲は plan で止める。"""
+    規則に載せない ⑤ terraform は範囲が空なら規則を作らず、公開の範囲は plan で止める ⑥ トンネルを張らない箱（公開ホストが 1 つも
+    無く TUNNEL_ID も空＝中継の口だけで出す構成・PROD_MIGRATION §2.6）では `secrets` がトンネルの登録を警告つきで飛ばして
+    relay_allow_cidrs の登録に進む。公開ホストがあるのに TUNNEL_ID が無いのは従来どおり止まる（2026-10-17）。"""
     import json
     import os
     import re
@@ -2067,8 +2069,8 @@ def test_relay_wiring():
     (d / "cred.json").write_text("{}")
     base = (f"ENVIRONMENT=t\nAWS_PROFILE=x\nAWS_REGION=ap-northeast-1\nTUNNEL_ID=u\nCLOUDFLARED_CRED_FILE={d}/cred.json\n")
 
-    def deploy(phase: str, extra: str, has: int = 1):
-        (d / "deploy/env/t.env").write_text(base + extra)
+    def deploy(phase: str, extra: str, has: int = 1, base_: str = base):
+        (d / "deploy/env/t.env").write_text(base_ + extra)
         (d / "has").write_text(str(has))
         for lg in ("aws.log", "tf.log"):
             (d / lg).write_text("")
@@ -2087,6 +2089,16 @@ def test_relay_wiring():
     assert "relay_source_cidrs=" + json.dumps(["10.0.1.0/24", "10.0.2.0/24"], separators=(",", ":")) in tf, tf[-600:]
     rc, _, tf, err = deploy("plan", "")
     assert "relay_source_cidrs" not in tf, tf[-600:]
+    # ⑥ トンネルを張らない箱＝TUNNEL_ID も TUNNEL_HOST_* も無い env で secrets が 0 で終わり、トンネルの登録を飛ばし（警告）、
+    #    relay_allow_cidrs は登録される。公開ホストがあるのに TUNNEL_ID が無いのは止まる（relay_allow_cidrs に進まない）。
+    notunnel = "ENVIRONMENT=t\nAWS_PROFILE=x\nAWS_REGION=ap-northeast-1\n"
+    rc, aws, _, err = deploy("secrets", "RELAY_SOURCE_CIDRS=10.0.1.0/24\n", base_=notunnel)
+    assert rc == 0, err[-400:]
+    assert "cloudflared_tunnel_id" not in aws and "cloudflared_credentials" not in aws, aws
+    assert "--name /polyarchy/t/relay_allow_cidrs --value 10.0.1.0/24" in aws, aws
+    assert "トンネル" in err and "warn" in err, err[-400:]
+    rc, aws, _, err = deploy("secrets", "TUNNEL_HOST_MCP=r.example.org\n", base_=notunnel)
+    assert rc != 0 and "TUNNEL_ID" in err and "relay_allow_cidrs" not in aws, (rc, err[-400:], aws)
 
 
 def test_user_call_limit():

@@ -28,6 +28,8 @@
 | SSM | トンネル・秘密パス・認証の値・e-Stat の appId（＋任意）＝§3.2。**API キー（Anthropic・OpenAI）は置かない** |
 | データ | 政策主張DB・統計DB・企業情報DB・審議会DB の索引と値（約 10GB）＝§0.6 で受け取り、手元から S3 へ上げる |
 
+トンネルを張らず中継の口だけで出す構成（§2.6）では、Cloudflare・IdP の行は要らない（SSM はトンネル・認証の値なし）。
+
 **同じもの（複製に含まれる）**：Terraform 定義・bootstrap・systemd 一式（`deploy/systemd/`）・アプリのコード・検索の構成・評価問とゲートの基準値。
 
 **サービスとホストの対応**（SSM・ガード・env の名前で使う識別子）：
@@ -250,6 +252,14 @@ bot だけが使う**中継の口**を開ける。ルート CLAUDE.md §3「利�
 
 **閉じ方**＝env の `RELAY_SOURCE_CIDRS` を空に → `deploy.sh prod secrets`（SSM が `off` に）→ plan → `apply-plan`（規則が消える）→ 次の配布でサービスの env から消える。
 
+**トンネルを張らず中継の口だけで出す構成**（公開ホストを持たず・認証を置かず・bot からだけ使う導入団体のため・2026-10-17）
+
+- env に**書かないもの**＝`TUNNEL_ID`・`CLOUDFLARED_CRED_FILE`・`TUNNEL_HOST_*`（4 本）・`AUTH_ISSUER`・`AUTH_AUD_*`（4 本）＝§2.1〜§2.5 は丸ごと要らない。**書くもの**＝`RELAY_SOURCE_CIDRS`。`MCP_HTTP_HOST` は既定の `127.0.0.1` のまま（公開の口は箱の中に閉じたまま・中継の口はサーバが別のソケットで開く）。
+- `deploy.sh prod secrets` は、公開ホストが無く `TUNNEL_ID` も無いとき、トンネルの登録を**警告つきで飛ばして**残りの登録へ進む＝SSM の**必須は `relay_allow_cidrs` だけ**（`<識別子>_http_path` は入れなければ既定の `/mcp`・`estat_app_id` は推奨のまま）。箱の bootstrap は cloudflared の config を書かず（⚠「未登録」の行が 1 つ出る＝正）、公開ホストが無いので認証なしで建つ（公開しないから認証が要らない＝ルート CLAUDE.md §3 の例外の中）。
+- 外からの到達の確認（edge・idp）は対象が無く、送らない＝アラーム `edge-<サービス>`・`idp` は鳴らない（INSUFFICIENT_DATA のまま）。ダッシュボード①に「外からの確認」の表は出ない（対象が無い箱では表ごと省かれる＝正）。入口の守りは箱の網の規則（送り元の範囲）とサーバの照合＝§2.4 のガードは無い。
+- bot の側の約束は上と同じ＝**毎要求に会員の印**（`X-Polyarchy-Member`）を付ける・会員ごとに固定で元に戻せない値・会員の ID・メールは送らない。利用者ごとの上限（SSM `user_calls_per_hour`・RUNBOOK §1）を入れる。
+- **確認**（§5.3 の代わり・bot の EC2 から・ポートとパスは「開け方」の 5）：`curl -sS http://<relay_private_ip>:<ポート>/healthz` が 200（印なしでよい＝届いている）→ `<パス>` への POST が印つきで 200・印なしで 400 → 許可の範囲の外（別のサブネット・手元の PC）からは届かない（網の規則で落ちる＝接続できない）。4 サービス分。
+
 **プライバシーページ**：会員の印と経路 `relay` が利用記録に残る＝自団体のページ（SSM `privacy_url`）の「収集する情報」に、中継のクライアント経由の利用では会員ごとの印（元に戻せない値）を記録することを書く。
 
 ---
@@ -277,6 +287,8 @@ cp env/prod.env.example env/prod.env
 | `INSTANCE_TYPE`・`TOP_USER_CALLS_THRESHOLD` | 空＝既定（t3.xlarge・200）。変えるときの手順は RUNBOOK §1 |
 | `RELAY_SOURCE_CIDRS` | 空＝中継の口は閉。bot が中継するときだけ（§2.6） |
 
+トンネルを張らず中継の口だけで出す構成（§2.6）では `TUNNEL_ID`・`CLOUDFLARED_CRED_FILE`・`TUNNEL_HOST_*`・`AUTH_*` を書かず、`RELAY_SOURCE_CIDRS` を書く。
+
 ### 3.2 SSM のパラメータ（`/polyarchy/prod/…`）
 
 | 名前 | 必須 | 入れ方 | 用途 |
@@ -291,6 +303,8 @@ cp env/prod.env.example env/prod.env
 | `user_calls_per_hour` | 任意 | `put-parameter --type String --value <数>`（RUNBOOK §1「利用者ごとの上限」） | 1 人が直近 1 時間に呼べるツールの数（サービスごと・無い＝上限なし） |
 | `relay_allow_cidrs` | 任意 | `deploy.sh prod secrets`（env の `RELAY_SOURCE_CIDRS` から・空にしたら `off`） | 中継の口（§2.6） |
 | `tool_offload_<識別子>` | 使わない | — | 上流の一時の事情のための切る口（RUNBOOK §1「busy」）。入れない＝既定のまま |
+
+トンネルを張らず中継の口だけで出す構成（§2.6）では、「必須」のうち `cloudflared_*`・`auth_*` は要らず、`<識別子>_http_path` も任意（無ければ `/mcp`）＝必須は `relay_allow_cidrs` だけ。
 
 API キー（Anthropic・OpenAI・EDINET）は SSM にも箱にも置かない。取り込みに使うキーは導入団体名義で手元の `.env`（git 外）に（RUNBOOK §5「手元の製作環境」）。
 
@@ -367,6 +381,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://<ホスト><パス> \
 ## 6.3 稼働後の更新（2026-10-15）
 
 - **データとコードの更新は `release.sh prod` だけ**（配布用のクローンから・全ゲート PASS のときだけ配る）。配る前の確認は単体で先に回せる（`release_preflight.sh`）。箱は 15 分以内に自動で適用し、smoke が落ちれば自動で切り戻す（RUNBOOK §5）。
+- **配布の時間帯**：自動適用は 4 サービスを数分止める（停止 → bootstrap 再走行 → 再起動 → smoke）。`release.sh` から最長 15 分後の任意の時刻に始まる（15 分の刻みの timer）＝**利用の少ない時間帯に流す**（止まる間の呼び出しは bot・コネクタ側でエラーになる）。
 - 地雷（ルート CLAUDE.md §5）：bootstrap を再走行してもコードは更新されない／自動適用のスクリプト（`/usr/local/bin/polyarchy-*`）の変更は次の次の配布から効く／依存を変えたらロックを作り直す（RUNBOOK §7）。
 - 箱の機種を上げる・戻す＝RUNBOOK §1「機種を上げる・戻す」（§1.3 の vCPU の上限）。
 

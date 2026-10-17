@@ -101,22 +101,31 @@ load_env() {
 
 # ── §2 秘密を SSM へ（両環境で cloudflared・web=true の時だけ Anthropic）──────────
 do_register_secrets() {
-  [[ -n "${TUNNEL_ID:-}" ]] || die "env に TUNNEL_ID が要る"
-  log "SSM: $SSM_PREFIX/cloudflared_tunnel_id"
-  aws ssm put-parameter --overwrite --type String \
-    --name "$SSM_PREFIX/cloudflared_tunnel_id" --value "$TUNNEL_ID" >/dev/null
-
-  # トンネルの資格情報は、登録の後に作業用 PC から消す（ルート CLAUDE.md §5）＝ファイルが無くても、SSM に登録済みなら触らずに
-  # 先へ（認証の値などを登録し直せるように・2026-10-15）。初回（未登録）はファイルが要る。
-  if [[ -f "${CLOUDFLARED_CRED_FILE:-/nonexistent}" ]]; then
-    log "SSM: $SSM_PREFIX/cloudflared_credentials（SecureString）"
-    aws ssm put-parameter --overwrite --type SecureString \
-      --name "$SSM_PREFIX/cloudflared_credentials" \
-      --value "file://$CLOUDFLARED_CRED_FILE" >/dev/null
-  elif aws ssm get-parameter --name "$SSM_PREFIX/cloudflared_credentials" --query Parameter.Name --output text >/dev/null 2>&1; then
-    log "トンネルの資格情報は手元に無い＝SSM の登録済みのものを使う（触らない）"
+  # トンネルを張らない箱（公開ホスト TUNNEL_HOST_* が 1 つも無く TUNNEL_ID も空＝中継の口だけで出す構成・PROD_MIGRATION §2.6・2026-10-17）
+  # ＝トンネルの登録（cloudflared_tunnel_id・cloudflared_credentials）を警告つきで飛ばし、残りの登録へ進む。bootstrap ⑦ は未登録を
+  # 警告して config を書かず、⑧ は公開ホストが無ければ認証なしで建てる（test_common の test_relay_wiring が固定）。
+  # 公開ホストがあるのに TUNNEL_ID が無いのは従来どおり止める（公開に出るのに入口が無い）。
+  local pub_hosts="${TUNNEL_HOST_MCP:-}${TUNNEL_HOST_STATS:-}${TUNNEL_HOST_COMPANIES:-}${TUNNEL_HOST_DELIBERATIONS:-}"
+  if [[ -z "${TUNNEL_ID:-}" && -z "$pub_hosts" ]]; then
+    warn "env に TUNNEL_ID も TUNNEL_HOST_* も無い＝トンネルを張らない箱（公開しない・中継の口だけ）としてトンネルの登録を飛ばす"
   else
-    die "CLOUDFLARED_CRED_FILE が見つからず、SSM にも登録が無い: ${CLOUDFLARED_CRED_FILE:-未設定}"
+    [[ -n "${TUNNEL_ID:-}" ]] || die "env に TUNNEL_ID が要る（公開ホスト TUNNEL_HOST_* があるのにトンネルが無い）"
+    log "SSM: $SSM_PREFIX/cloudflared_tunnel_id"
+    aws ssm put-parameter --overwrite --type String \
+      --name "$SSM_PREFIX/cloudflared_tunnel_id" --value "$TUNNEL_ID" >/dev/null
+
+    # トンネルの資格情報は、登録の後に作業用 PC から消す（ルート CLAUDE.md §5）＝ファイルが無くても、SSM に登録済みなら触らずに
+    # 先へ（認証の値などを登録し直せるように・2026-10-15）。初回（未登録）はファイルが要る。
+    if [[ -f "${CLOUDFLARED_CRED_FILE:-/nonexistent}" ]]; then
+      log "SSM: $SSM_PREFIX/cloudflared_credentials（SecureString）"
+      aws ssm put-parameter --overwrite --type SecureString \
+        --name "$SSM_PREFIX/cloudflared_credentials" \
+        --value "file://$CLOUDFLARED_CRED_FILE" >/dev/null
+    elif aws ssm get-parameter --name "$SSM_PREFIX/cloudflared_credentials" --query Parameter.Name --output text >/dev/null 2>&1; then
+      log "トンネルの資格情報は手元に無い＝SSM の登録済みのものを使う（触らない）"
+    else
+      die "CLOUDFLARED_CRED_FILE が見つからず、SSM にも登録が無い: ${CLOUDFLARED_CRED_FILE:-未設定}"
+    fi
   fi
 
   if [[ "$ENABLE_WEB_APP" == "true" ]]; then
