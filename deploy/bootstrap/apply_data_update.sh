@@ -6,7 +6,8 @@
 #   ① 退避   ＝現行のデータ（qdrant・catalog/bm25/eval・stats registry/values・companies store・deliberations の束と専用 qdrant）を $RB_DIR へ rsync
 #              （稼働中に 1 回目→停止後に差分の 2 回目＝停止時間を伸ばさず整合コピー）。現行の code tar も prev として保持。
 #   ② 反映   ＝サービス停止 → code tar 再展開（★bootstrap はコードを更新しないため apply が行う＝旧地雷の解消）
-#              → qdrant ミラー同期（--delete）→ bootstrap 再走行（データ差分 sync・pip 再解決・ユニット設置）→ 再起動
+#              → qdrant ミラー同期（--delete）→ bootstrap 再走行（データ差分 sync・pip 再解決・ユニット設置・qdrant とアプリの上げ直し）
+#              → svc_start（qdrant が応答していれば上げ直さない＝bootstrap が上げ直したものを二度上げ直さない・2026-10-18）
 #              → ★入口：bootstrap が /etc/cloudflared/config.yml を書き換えていた（ingress の追加・削除）ときだけ cloudflared も再起動
 #                （数秒の断。通常のデータ更新では config が変わらない＝入口を揺らさない。2026-09-22 staging 実測＝再起動しないと
 #                 新ホストは 25 分以上 404 のまま・切り戻し経路でも同じ判定）
@@ -142,20 +143,31 @@ reload_ingress() {
   fi
   CF_CFG_LIVE="$now"
 }
+# Qdrant が既に応答しているか（$1=unit $2=port）。svc_stop の後に応答している＝bootstrap ⑩ が同期の後のデータで上げ直した
+#   （同期は svc_stop と bootstrap ⑩ の間＝止まっている間にしか行わない）＝上げ直さない。切り戻しでは svc_stop の後で止まっている＝上げる。
+qdrant_live() { systemctl is-active --quiet "$1" && curl -fsS -m 3 "http://127.0.0.1:$2/collections" >/dev/null 2>&1; }
 svc_start() { # qdrant → 応答待ち（最長 300 秒）→ アプリ → 入口（config が変わったときだけ）。戻り値＝qdrant が応答したか
-  systemctl restart qdrant
+  # ★自動適用では bootstrap ⑩ が qdrant とアプリを新しいコードとデータで上げ直した直後に呼ばれる。ここで qdrant をもう一度上げ直すと、
+  #   起動の途中の政策主張DB が Connection refused の Traceback で落ち、どのサービスも起動が 2 回になっていた（2026-10-14〜18 の
+  #   staging＝運用側の気づき）＝qdrant が応答していれば上げ直さず、アプリは start（動いていれば何もしない・止まっていれば上げる）。
+  local verb=restart ok=0
+  if qdrant_live qdrant 6333; then
+    verb=start; log "qdrant は応答している（bootstrap が上げ直した後）＝qdrant とアプリを上げ直さない"
+  else
+    systemctl restart qdrant
+  fi
   for _ in $(seq 1 60); do
     curl -fsS -m 3 http://127.0.0.1:6333/collections >/dev/null 2>&1 && break
     sleep 5
   done
-  local ok=0
   curl -fsS -m 3 http://127.0.0.1:6333/collections >/dev/null 2>&1 && ok=1
-  systemctl restart polyarchy-mcp polyarchy-stats
-  [[ "$COMPANIES_ON" == 1 ]] && { systemctl restart polyarchy-companies || ok=0; }
+  systemctl "$verb" polyarchy-mcp polyarchy-stats
+  [[ "$COMPANIES_ON" == 1 ]] && { systemctl "$verb" polyarchy-companies || ok=0; }
   if [[ "$DELIB_ON" == 1 ]]; then
-    systemctl restart qdrant-deliberations || ok=0
+    local dverb=restart
+    if qdrant_live qdrant-deliberations 6340; then dverb=start; else systemctl restart qdrant-deliberations || ok=0; fi
     for _ in $(seq 1 24); do curl -fsS -m 3 http://127.0.0.1:6340/collections >/dev/null 2>&1 && break; sleep 5; done
-    systemctl restart polyarchy-deliberations || ok=0
+    systemctl "$dverb" polyarchy-deliberations || ok=0
   fi
   reload_ingress
   [[ "$ok" == 1 ]]

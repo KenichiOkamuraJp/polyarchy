@@ -767,7 +767,7 @@ def test_box_service_list_aligned():
     for s in sorted(svcs):
         checks = {
             "apply の停止": re.search(rf"systemctl stop [^\n]*\bpolyarchy-{s}\b", apply),
-            "apply の起動": re.search(rf"systemctl restart [^\n]*\bpolyarchy-{s}\b", apply),
+            "apply の起動": re.search(rf'systemctl (?:restart|"\$d?verb") [^\n]*\bpolyarchy-{s}\b', apply),   # svc_start は restart か start
             "apply の smoke": f"-m {s}.eval.mcp_smoke" in apply,
             "apply の退避": f'"$REPO_DIR/{s}/data/"' in apply,
             "fuelsync": f"sync_one {s} " in files["fuelsync"],
@@ -2466,6 +2466,55 @@ def test_bootstrap_waits_for_qdrant_before_mcp():
     assert re.search(r"curl -fsS -m \d+ http://127\.0\.0\.1:6333/collections", seg) and "sleep" in seg, seg   # ①
     seg2 = boot[boot.index("systemctl restart qdrant-deliberations.service"):boot.index("systemctl restart polyarchy-deliberations.service")]
     assert re.search(r"curl -fsS -m \d+ http://127\.0\.0\.1:6340/collections", seg2) and "sleep" in seg2, seg2   # ②
+
+
+def test_apply_does_not_restart_what_bootstrap_just_started():
+    """自動適用（apply_data_update.sh の apply_new）は bootstrap の再走行 → svc_start の順で、どちらも Qdrant とアプリを上げ直していた
+    ＝bootstrap ⑩ の後に起きた政策主張DB が、起動の途中で svc_start に Qdrant を止められて Connection refused の Traceback で落ち、
+    どのサービスも起動の行が 2 回出ていた（2026-10-14〜18 の staging・1e94b3b は bootstrap の側だけを直していた＝運用側の気づき）。
+    固定すること＝svc_start を偽の systemctl・curl で動かして ① Qdrant が 2 つとも応答している（bootstrap の後）＝Qdrant を
+    restart せず、アプリは start（restart しない）② 止まっている（切り戻し＝svc_stop の後）＝Qdrant を先に restart してからアプリを
+    restart ③ どちらも戻り値 0。"""
+    import re
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    src = (root / "deploy/bootstrap/apply_data_update.sh").read_text(encoding="utf-8")
+    funcs = "\n".join(m.group(0) for m in (re.search(r"^qdrant_live\(\) \{.*\}$", src, re.M),   # 1 行の関数（あれば）
+                                           re.search(r"^svc_start\(\) \{.*?^\}$", src, re.M | re.S)) if m)
+    assert "svc_start()" in funcs, "svc_start が見つからない"
+    d = Path(tempfile.mkdtemp())
+    (d / "bin").mkdir()
+    stubs = {   # up＝応答する Qdrant の unit 名（1 行 1 つ）。restart で起き、is-active と curl はそれを見る
+        "systemctl": f'echo "$*" >> "{d}/calls"; case "$1" in '
+                     f'is-active) grep -qx "${{@: -1}}" "{d}/up";; restart) for u in "${{@:2}}"; do echo "$u" >> "{d}/up"; done;; esac; exit 0',
+        "curl": f'case "$*" in *:6333/*) grep -qx qdrant "{d}/up";; *:6340/*) grep -qx qdrant-deliberations "{d}/up";; *) exit 0;; esac',
+        "sleep": "exit 0",
+    }
+    for name, body in stubs.items():
+        f = d / "bin" / name
+        f.write_text("#!/bin/bash\n" + body + "\n")
+        f.chmod(0o755)
+
+    def run(up: str):
+        (d / "up").write_text(up)
+        (d / "calls").write_text("")
+        script = (f'export PATH="{d / "bin"}:$PATH"; COMPANIES_ON=1; DELIB_ON=1\n'
+                  'log() { echo "$*"; }; reload_ingress() { :; }\n' + funcs + "\nsvc_start")
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        calls = [c for c in (d / "calls").read_text().splitlines() if not c.startswith("is-active")]
+        return r.returncode, calls, r.stdout + r.stderr
+
+    rc, calls, out = run("qdrant\nqdrant-deliberations\npolyarchy-mcp\n")     # ① bootstrap ⑩ の後
+    assert rc == 0, (rc, calls, out)                                                                    # ③
+    assert not any(c.startswith("restart") for c in calls), calls                                       # ①
+    assert "start polyarchy-mcp polyarchy-stats" in calls and "start polyarchy-deliberations" in calls, calls
+    rc, calls, out = run("")                                                    # ② 切り戻し（svc_stop の後）
+    assert rc == 0, (rc, calls, out)                                                                    # ③
+    assert calls.index("restart qdrant") < calls.index("restart polyarchy-mcp polyarchy-stats"), calls  # ②
+    assert calls.index("restart qdrant-deliberations") < calls.index("restart polyarchy-deliberations"), calls
+    assert "restart polyarchy-companies" in calls, calls
 
 
 def test_release_counts_series_like_dashboard():
