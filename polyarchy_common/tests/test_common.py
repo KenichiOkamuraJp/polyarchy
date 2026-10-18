@@ -2452,6 +2452,53 @@ def test_health_checks_hit_qdrant_live():
         assert "svc().count" not in src, f"{rel}: 起動時の点数で判定している"
 
 
+def test_bootstrap_waits_for_qdrant_before_mcp():
+    """bootstrap ⑩ は Qdrant を上げ直した直後に政策主張DB を上げ直していた（unit の After= は起動の順を決めるだけで、応答できる
+    状態を待たない）＝配布のたびに 1 回目の起動が Connection refused の Traceback を出し、Restart=always で上げ直っていた
+    （2026-10-14・10-16・10-18 の staging の配布で同じ行＝運用側の気づき）。害は無いが障害のときに読み違える行＝審議会DB の側と
+    同じく、6333 の応答を待ってから上げ直す。固定すること＝① qdrant.service の restart と polyarchy-mcp.service の restart の間に、
+    6333 の /collections を待つ繰り返しがある ② 審議会DB の側（6340）は従来どおり。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    seg = boot[boot.index("systemctl restart qdrant.service"):boot.index("systemctl restart polyarchy-mcp.service")]
+    assert re.search(r"curl -fsS -m \d+ http://127\.0\.0\.1:6333/collections", seg) and "sleep" in seg, seg   # ①
+    seg2 = boot[boot.index("systemctl restart qdrant-deliberations.service"):boot.index("systemctl restart polyarchy-deliberations.service")]
+    assert re.search(r"curl -fsS -m \d+ http://127\.0\.0\.1:6340/collections", seg2) and "sleep" in seg2, seg2   # ②
+
+
+def test_release_counts_series_like_dashboard():
+    """release.sh がマニフェスト（release/data.json）に書く統計の系列数は、ダッシュボード（ops_dashboard.data_scale）と同じ規則で
+    数える＝空行と先頭の「# 生成物」の行は系列ではない（2026-10-18 の staging の配布で data.json 11008・ダッシュボードと healthz 11007
+    ＝release.sh が wc -l で行数をそのまま数えていた・運用側の気づき）。固定すること＝release.sh の SERIES_N の式を、コメント行と
+    空行を含む偽の series.jsonl に当てた数が、ダッシュボードの規則で数えた数と同じ。"""
+    import re
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    from polyarchy_common import ops_dashboard
+    root = Path(__file__).resolve().parents[2]
+    rel = (root / "deploy/scripts/release.sh").read_text(encoding="utf-8")
+    m = re.search(r'^SERIES_N=.*$', rel, re.M)
+    assert m, "release.sh に SERIES_N の行が無い"
+    d = Path(tempfile.mkdtemp())
+    p = d / "stats/data/registry/series.jsonl"
+    p.parent.mkdir(parents=True)
+    p.write_text("# 生成物: python -m stats.ingest.seed_registry\n"
+                 '{"series_id": "a"}\n\n   \n{"series_id": "b"}\n  # 途中のコメント\n{"series_id": "c"}\n', encoding="utf-8")
+    r = subprocess.run(["bash", "-c", "set -euo pipefail\n" + m.group(0) + '\nprintf %s "$SERIES_N"'], cwd=d,
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    saved = ops_dashboard.SERIES_PATH
+    try:
+        ops_dashboard.SERIES_PATH = p
+        want = ops_dashboard.data_scale()["stats_series"]
+    finally:
+        ops_dashboard.SERIES_PATH = saved
+    assert want == 3 and r.stdout.strip() == "3", (want, r.stdout, r.stderr)
+
+
 if __name__ == "__main__":
     import sys
 

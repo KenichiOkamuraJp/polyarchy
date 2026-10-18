@@ -129,7 +129,7 @@ docker start qdrant-dev >/dev/null
 
 say "④ リリースマニフェスト（これが箱の自動適用トリガ）"
 GITV="$(git -C "$REPO_DIR" describe --tags --always 2>/dev/null || echo unknown)"   # tar＝HEAD（コードの未コミットは配る前の確認で止まる）＝VERSION と同じ刻み
-SERIES_N="$(wc -l < stats/data/registry/series.jsonl | tr -d ' ')"
+SERIES_N="$(awk 'NF && $1 !~ /^#/ {n++} END {print n+0}' stats/data/registry/series.jsonl)"   # 空行と「# 生成物」の行は系列ではない＝ダッシュボード（ops_dashboard.data_scale）と同じ規則（2026-10-18・test_common が突き合わせる）
 DOCS_N="$(($(wc -l < recommendations/data/catalog.csv | tr -d ' ') - 1))"
 MANIFEST="$(mktemp -t polyarchy-release.XXXXXX.json)"
 RETRIEVAL_CFG="$RETRIEVAL_CFG" python3 - "$MANIFEST" <<PYEOF

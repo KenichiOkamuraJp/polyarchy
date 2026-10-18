@@ -449,6 +449,11 @@ systemctl daemon-reload
 if [[ "$VECTOR_BACKEND" == "qdrant" ]]; then
   systemctl enable qdrant.service
   systemctl restart qdrant.service
+  # 応答できる状態を待ってから政策主張DB を上げ直す（最長 120 秒・審議会DB の側と同じ形）。unit の After=qdrant.service は起動の順を
+  # 決めるだけで応答は待たない＝配布のたびに 1 回目の起動が Connection refused の Traceback を出し Restart=always で上げ直っていた
+  # （2026-10-14・10-16・10-18 の staging＝害は無いが障害のときに読み違える行・2026-10-18）。待っても応答しなければ従来どおり進む
+  # （自動適用は svc_start で改めて最長 300 秒待つ・単独の再走行では起動の失敗が journal に残る）。
+  for _ in $(seq 1 24); do curl -fsS -m 3 http://127.0.0.1:6333/collections >/dev/null 2>&1 && break; sleep 5; done
 fi
 systemctl enable polyarchy-mcp.service
 systemctl restart polyarchy-mcp.service
