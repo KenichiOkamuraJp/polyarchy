@@ -42,7 +42,7 @@
     └ systemd polyarchy-dataapply.timer   → S3 release/data.json を検知→自動適用・失敗時は自動切り戻し（15 分毎・RUNBOOK §5）
   IAM instance role: S3 は最小権限（data/・code/・release/ は読取のみ／書込は ops/ と query_log/ だけ・Delete 無し＝2026-09-04 B17 (2)）・SSM 読取・CloudWatch。秘密は SSM Parameter Store（.env は運ばない）
   S3: code/polyarchy.tar.gz ＋ data/{qdrant(v7 本線),chroma(v5 データ保管のみ・経路は全廃),bm25,pdfs,eval,catalog,query_log,stats/,companies/}
-      ＋ release/data.json（リリースマニフェスト）＋ ops/{dashboard,report}/（運用の可視化）。監査用証跡は別バケット（trail.tf） ＋ data/stats/{registry,values,eval,query_log}（versioning ON）
+      ＋ release/data.json（リリースマニフェスト）＋ ops/{dashboard,report}/（運用の可視化）。監査用証跡は別バケット（trail.tf）・2 バケットとも TLS 強制のバケットポリシー（2026-10-18） ＋ data/stats/{registry,values,eval,query_log}（versioning ON）
 ```
 
 ファイル：
@@ -309,6 +309,8 @@ aws ssm put-parameter --overwrite --type SecureString --name /polyarchy/staging/
 ```
 → 箱で `bootstrap.sh` を再走行（または `/etc/polyarchy/mcp.env` を更新して `systemctl restart polyarchy-mcp`）
 → `bash scripts/cloudflare-guard.sh apply connector` で WAF ルールも更新 → 新URLを利用者へ再配布。
+
+- ★**アクセスログにはパスがそのまま残る**（箱の journal・`/var/log/polyarchy/*.log`・CloudWatch Logs＝保持 30 日）＝秘密パスの構成では、ログを読める人（CloudWatch Logs を見られる IAM の人・SSM で箱に入れる人）はパスを知る。PRM にも載る値なので「秘密」ではないが、**ログの閲覧権限を決めるときに数に入れる**（2026-10-18・残タスク B46 (f)）。
 
 ### 秘密パスなしで公開する構成（接続 URL を公開するとき・2026-10-10 に staging で採用）
 既定は秘密パスあり（上の表・導入団体向けの手順 [`PROD_MIGRATION.md`](PROD_MIGRATION.md) もこちら）。**接続 URL そのものを公開する**前提に変えるとき

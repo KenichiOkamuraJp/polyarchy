@@ -250,7 +250,26 @@ sudo systemctl start qdrant polyarchy-mcp
 - stats データも同型：`s3://<bucket>/data/stats/` → `stats/data/`（`--delete` は registry/values のみに限定して使う。query_log を消さない）。
 - companies データも同型：`s3://<bucket>/data/companies/` → `companies/data/`（store/ と eval/。query_log を消さない）。手元での復元も同じ sync。
 - companies の原本（`companies/data/cache/`＝有報の zip・書類一覧・`csv/`・`codelist/`・`taxonomy/`・約 27GB）は `s3://<bucket>/archive/companies/edinet/`（STANDARD_IA）に退避してある＝`data/` の外なので箱の同期は取りに行かない・ライフサイクルの自動削除の対象外。手元へ戻すときは `aws s3 sync s3://<bucket>/archive/companies/edinet/ companies/data/cache/`。★**EDINET API は提出日で約 10 年前までしか取れない（古い側から毎日消える）**＝範囲の外に出た書類は再取得できず、値の置き場を作り直せる根拠はこの退避だけ。再取得で足りるのは API の範囲内の書類だけ（全量なら約 41,500 書類・1 リクエスト／秒で約 1 日）。★退避先は環境のバケットの中にある＝**その環境を撤去する前に、`archive/` を残す環境の置き場へ移す**（取込を足したら退避も足す＝`aws s3 sync` の差分送信）。
-- 完全な作り直し＝`deploy.sh <env> apply` で EC2 を建て直し（S3/SSM/Cloudflare は残るので upload 不要・約 10 分）。
+- 完全な作り直し＝下の「箱ごと建て直す」。
+
+### 箱ごと建て直す（EC2 を失った・壊れたまま動いている・2026-10-18）
+
+**前提＝箱は使い捨て。** 原本は全部箱の外にある＝S3（データ・コード tar・`release/data.json`・捕捉ログの保護コピー・週次レポートの写し）・SSM（秘密パス・認証・中継の口・上限）・Cloudflare（トンネル・DNS・エッジの規則）・IdP。設計は単一箱・単一 AZ・EBS の定期スナップショット無し（[性能と同時実行の開発計画](../docs/性能と同時実行_開発計画.md) §8）＝複数台や自動の切り替えは持たない。変更の前の保険は `rollback.sh snapshot <env>`（手で）。
+
+| 段 | やること | 目安 |
+|---|---|---|
+| 0 | **建て直しが要るか**＝`bash deploy/scripts/rollback.sh status <env>`（インスタンスの状態・公開 URL の `/healthz`）。EC2 が止まっているだけ・OS が固まっただけなら `aws ec2 reboot-instances`／`start-instances`（§1「health」の「箱ごと無応答」）＝建て直し不要。ディスクが壊れた・bootstrap が何度やっても通らない・何が変わったか分からない、なら建て直す | 10 分 |
+| 1 | **作り直す**＝壊れた箱を terminate（`aws ec2 terminate-instances --instance-ids <id>`。壊れたまま動いていても同じ）→ `bash deploy/scripts/deploy.sh <env> plan` が **1 to add**（EC2 だけ。S3・IAM・VPC・アラームは残る）であることを読む → `apply-plan`。user_data が S3 からコード tar（最後の配布）を取り、bootstrap が依存・重み・データ（約 10 GB）を S3 から入れる。**upload は要らない**（S3 の中身は最後の `release.sh` のまま） | apply 2 分＋bootstrap 15〜25 分 |
+| 2 | **見届ける**＝SSM で入り `sudo tail -f /var/log/polyarchy-bootstrap.log` が「完了」・`systemctl is-active qdrant polyarchy-mcp polyarchy-stats polyarchy-companies qdrant-deliberations polyarchy-deliberations`・`systemctl list-timers 'polyarchy-*'`（PROD_MIGRATION §5.1） | 5 分 |
+| 3 | **箱の上の smoke と healthz**＝PROD_MIGRATION §5.2 の 4 本と `curl -s localhost:876{5,6,7,8}/healthz` | 5 分 |
+| 4 | **入口を開く**＝`sudo systemctl enable --now cloudflared`（bootstrap は start しない＝手で）。★前の箱がまだ動いていたら先に止める（同じトンネルを 2 か所で run すると配信が分流する）。外からの確認＝PROD_MIGRATION §5.3（4 ホストの `/healthz` 200・守るパスは 401・PRM 200）。edge のアラームが OK に戻る | 5 分 |
+| 5 | **後始末**＝(a) 最初の自動適用（15 分以内）は、マークが無いので最後のマニフェストをもう一度適用する（数分の停止・想定内・APPLIED で終わる） (b) 週次レポートの蓄積を戻す＝`sudo -u polyarchy aws s3 cp s3://<bucket>/ops/report/weekly.jsonl /opt/polyarchy/polyarchy/ops/usage/weekly.jsonl`（箱で恒久蓄積していたものは EBS と一緒に消える＝S3 に毎週の写しがある） (c) 鳴ったアラーム（health・edge・restarts）が全部 OK に戻ったことを見る (d) 古い EBS・スナップショット・terminate した箱の整理は本人 | 10 分 |
+
+- **RTO の目安＝およそ 1 時間**（判断 10 分＋作り直し 20〜30 分＋確認と入口 15 分＋後始末）。bootstrap の所要は staging の初回構築で十数分（2026-08-28）＝機種・S3 の転送で前後する。
+- **失うもの（RPO）**＝捕捉ログの最長 1 時間分（fuelsync は毎時・新しい箱は `restore_fuel` が S3 の保護コピーから 1 回だけ戻す）。切り戻し先（`/opt/polyarchy/rollback`・`releases/prev.tar.gz`）と `applied_data_release.json`（マーク）は箱の中だけのもの＝新しい箱では最初の自動適用が作り直す。それ以外（索引・値・重み・設定）は S3 と SSM が原本＝0。
+- **戻ってくるもの**＝`/etc/polyarchy/*.env`（SSM から bootstrap が書く）・秘密パス・認証・中継の口・利用者ごとの上限・e-Stat の appId・運営者のハッシュ。**手で入れ直すものは無い**。
+- **変わるもの**＝インスタンス ID（SSM の接続先・アラーム `ec2-status` の dimension は terraform が新しい ID に付け替える）・プライベート IP（中継の口を開けている箱では、bot の側の接続先 `relay_private_ip` が変わる＝`terraform output` で取り直して bot に渡す。許可の範囲 `RELAY_SOURCE_CIDRS` は bot の側の値なので変わらない）。
+- **やらないこと**＝EBS のスナップショットから起動する復元（bootstrap のほうが確実で、古い状態を引きずらない）・箱の中の手直し（bootstrap が通らない原因は複製元のコードか S3 の中身にある＝そちらを直して配る）。
 
 ## 4. 秘密の再発行
 

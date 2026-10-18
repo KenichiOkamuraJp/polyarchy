@@ -28,7 +28,13 @@ resource "aws_s3_bucket_policy" "trail" {
         Principal = { Service = "cloudtrail.amazonaws.com" },
         Action = "s3:PutObject",
         Resource = "${aws_s3_bucket.trail.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*",
-        Condition = { StringEquals = { "s3:x-amz-acl" = "bucket-owner-full-control" } } }
+        Condition = { StringEquals = { "s3:x-amz-acl" = "bucket-owner-full-control" } } },
+      # TLS を強制（2026-10-18・B46 (d)・データバケットの storage.tf と同じ文）。CloudTrail の書き込みは https＝影響なし。
+      { Sid = "DenyInsecureTransport", Effect = "Deny",
+        Principal = "*",
+        Action    = "s3:*",
+        Resource  = [aws_s3_bucket.trail.arn, "${aws_s3_bucket.trail.arn}/*"],
+        Condition = { Bool = { "aws:SecureTransport" = "false" } } }
     ]
   })
 }

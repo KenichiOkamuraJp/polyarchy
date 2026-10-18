@@ -2499,6 +2499,24 @@ def test_release_counts_series_like_dashboard():
     assert want == 3 and r.stdout.strip() == "3", (want, r.stdout, r.stderr)
 
 
+def test_s3_buckets_deny_insecure_transport():
+    """S3 の 2 つのバケット（データ・監査証跡）は、暗号化されていない接続（aws:SecureTransport=false）を Deny するバケットポリシーを
+    持つ（2026-10-18・残タスク B46 (d)＝導入直前チェックの残り）。箱・fuelsync・release.sh・CloudTrail はすべて TLS で話す＝動きは
+    変わらない。固定すること＝① storage.tf の data と trail.tf の trail の両方に aws_s3_bucket_policy がある ② その中に
+    Effect=Deny・Condition Bool aws:SecureTransport=false の文がある ③ 対象はバケットとその中身の両方。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    for f, bucket in (("deploy/terraform/storage.tf", "data"), ("deploy/terraform/trail.tf", "trail")):
+        tf = (root / f).read_text(encoding="utf-8")
+        m = re.search(r'resource "aws_s3_bucket_policy" "%s" \{.*?\n\}' % bucket, tf, re.S)
+        assert m, f"{f} に aws_s3_bucket_policy.{bucket} が無い"                                  # ①
+        body = m.group(0)
+        deny = re.search(r'Effect\s*=\s*"Deny".*?"aws:SecureTransport"\s*=\s*"false"', body, re.S)
+        assert deny, f"{f}: TLS を強制する Deny の文が無い"                                        # ②
+        assert body.count(f"aws_s3_bucket.{bucket}.arn") >= 2, f"{f}: バケットと中身の両方を対象に"   # ③
+
+
 if __name__ == "__main__":
     import sys
 

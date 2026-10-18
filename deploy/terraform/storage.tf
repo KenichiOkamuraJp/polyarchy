@@ -46,6 +46,24 @@ resource "aws_s3_bucket_public_access_block" "data" {
   restrict_public_buckets = true
 }
 
+# TLS を強制する（2026-10-18・残タスク B46 (d)＝導入直前チェックの残り）。暗号化されていない接続（http）での全操作を Deny。
+# 箱（aws cli）・fuelsync・release.sh・user_data はすべて https で話す＝動きは変わらない。public access の全ブロックは Deny の
+# ポリシーを拒まない（公開を広げる Allow だけを止める）。監査証跡のバケットは trail.tf に同じ文（CloudTrail の書き込みの許可と並べる）。
+resource "aws_s3_bucket_policy" "data" {
+  bucket = aws_s3_bucket.data.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      { Sid = "DenyInsecureTransport", Effect = "Deny",
+        Principal = "*",
+        Action    = "s3:*",
+        Resource  = [aws_s3_bucket.data.arn, "${aws_s3_bucket.data.arn}/*"],
+        Condition = { Bool = { "aws:SecureTransport" = "false" } } }
+    ]
+  })
+  depends_on = [aws_s3_bucket_public_access_block.data]
+}
+
 # 旧バージョンの整理（燃料の直近は残しつつ、古い版のコストを抑える）。運用に合わせて調整。
 resource "aws_s3_bucket_lifecycle_configuration" "data" {
   bucket = aws_s3_bucket.data.id
