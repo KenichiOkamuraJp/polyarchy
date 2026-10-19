@@ -2557,6 +2557,51 @@ def test_apply_does_not_restart_what_bootstrap_just_started():
     assert "restart polyarchy-companies" in calls, calls
 
 
+def test_rollback_restores_units():
+    """切り戻しで unit も旧版に戻す（2026-10-19・B46 (a) の前に）。unit を置くのは bootstrap で、切り戻しは bootstrap を走らせない
+    ＝新しい版の unit で起動できなかったとき、旧版のコードに戻しても unit が新しいままで起動しない。固定すること＝① 切り戻しの
+    段で、旧版の tar の展開の後・起動の前に units_restore を呼ぶ ② units_restore は、置いてある unit のうち戻したコードと中身が違う
+    ものだけを置き直して daemon-reload する ③ 置いていない unit（無効のサービス）は置かない ④ 違いが無ければ daemon-reload もしない。"""
+    import re
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    src = (root / "deploy/bootstrap/apply_data_update.sh").read_text(encoding="utf-8")
+    rb = src[src.index("# ── ④ 自動切り戻し"):]
+    i_ex, i_start = rb.find('extract_code "$REL_DIR/prev.tar.gz"'), rb.find("if svc_start")
+    assert 0 <= i_ex < rb.find("units_restore", i_ex) < i_start, "切り戻しで旧版の展開の後・起動の前に units_restore を呼ぶ"  # ①
+    m = re.search(r"^units_restore\(\) \{.*?^\}$", src, re.M | re.S)
+    assert m, "units_restore が見つからない"
+    d = Path(tempfile.mkdtemp())
+    etc, repo = d / "etc", d / "repo"
+    (repo / "deploy/systemd").mkdir(parents=True)
+    etc.mkdir()
+    (d / "bin").mkdir()
+    (d / "bin/systemctl").write_text(f'#!/bin/bash\necho "$*" >> "{d}/calls"\n')
+    (d / "bin/systemctl").chmod(0o755)
+    for n, old, new in (("polyarchy-mcp.service", "old-mcp", "new-mcp"),        # 新しい版で変わった＝戻す
+                        ("qdrant.service", "same", "same"),                    # 変わっていない＝触らない
+                        ("polyarchy-stats.service", "old-stats", None),        # 置いていない（無効）＝置かない
+                        ("polyarchy-health.timer", "old-timer", "new-timer")):
+        (repo / "deploy/systemd" / n).write_text(old)
+        if new is not None:
+            (etc / n).write_text(new)
+    fn = m.group(0).replace("/etc/systemd/system", str(etc))
+
+    def run():
+        (d / "calls").write_text("")
+        r = subprocess.run(["bash", "-c", f'set -euo pipefail; export PATH="{d / "bin"}:$PATH"; REPO_DIR="{repo}"\n'
+                            'log() { echo "$*"; }\n' + fn + "\nunits_restore"], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return (d / "calls").read_text().split()
+
+    assert run() == ["daemon-reload"]                                                                         # ②
+    assert (etc / "polyarchy-mcp.service").read_text() == "old-mcp" and (etc / "polyarchy-health.timer").read_text() == "old-timer"
+    assert (etc / "qdrant.service").read_text() == "same" and not (etc / "polyarchy-stats.service").exists()  # ③
+    assert run() == []                                                                                        # ④
+
+
 def test_release_counts_series_like_dashboard():
     """release.sh がマニフェスト（release/data.json）に書く統計の系列数は、ダッシュボード（ops_dashboard.data_scale）と同じ規則で
     数える＝空行と先頭の「# 生成物」の行は系列ではない（2026-10-18 の staging の配布で data.json 11008・ダッシュボードと healthz 11007

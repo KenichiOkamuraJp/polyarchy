@@ -14,7 +14,7 @@
 #   ③ 検証   ＝qdrant 応答待ち → 箱上 smoke（recommendations＋stats＋companies〔有効時〕＋deliberations〔有効時〕）
 #              → 稼働中の各サービスの /healthz が 200（配った形＝unit・env・HTTP の待受・認証の装着を通るのはこちらだけ）
 #   ④ 判定   ＝PASS：マーク更新（status=APPLIED）・メトリクス dataapply=1
-#              FAIL：**自動切り戻し**＝停止 → ①の退避を書き戻し（qdrant はミラー）→ prev tar 再展開＋pip → 再起動 → smoke 再実行
+#              FAIL：**自動切り戻し**＝停止 → ①の退避を書き戻し（qdrant はミラー）→ prev tar 再展開＋pip＋unit（旧版と違うものだけ置き直す）→ 再起動 → smoke 再実行
 #                    → マーク status=ROLLED_BACK（このマニフェストは再試行しない＝15 分毎の再適用ループを防ぐ）
 #                    → メトリクス dataapply=0（→ アラーム dataapply-rollback → SNS メール）→ exit 1
 # 訓練＝/etc/polyarchy/apply_drill_fail が存在すると smoke を FAIL 扱いにする（切り戻し経路の演習用・演習後に消す）。
@@ -117,6 +117,25 @@ pip_resolve() { # 切り戻し時の依存再解決（bootstrap ③ と同じ＝
     sudo -u polyarchy env HF_HOME="$HF_HOME" "$PIP" install --no-input -q -e "$REPO_DIR[$PIP_EXTRAS]" \
       || warn "pip 再解決に失敗（コードは旧版に戻っている・依存差分があれば bootstrap 再走行）"
   fi
+}
+# 切り戻しで unit も旧版に戻す（2026-10-19・B46 (a) の前に）。unit は bootstrap が置く＝切り戻しは bootstrap を走らせない
+#   ＝新しい版の unit（封じ込めの指定など）で起動できなかったとき、旧版のコードに戻しても unit が新しいままで同じく起動しない。
+#   既に置いてある unit（/etc/systemd/system）のうち、戻したコードの deploy/systemd と中身が違うものだけを置き直す（新しい版で
+#   増えた unit は消さない＝旧版のコードは呼ばない）。
+units_restore() {
+  local f n changed=()
+  for f in "$REPO_DIR"/deploy/systemd/*.service "$REPO_DIR"/deploy/systemd/*.timer; do
+    [[ -f "$f" ]] || continue
+    n="$(basename "$f")"
+    [[ -f "/etc/systemd/system/$n" ]] || continue
+    cmp -s "$f" "/etc/systemd/system/$n" && continue
+    install -m 644 "$f" "/etc/systemd/system/$n" && changed+=("$n")
+  done
+  if (( ${#changed[@]} )); then
+    systemctl daemon-reload
+    log "unit を旧版に戻した: ${changed[*]}"
+  fi
+  return 0
 }
 svc_stop()  {
   systemctl stop polyarchy-mcp polyarchy-stats qdrant
@@ -271,7 +290,7 @@ set +e
 svc_stop
 restore_data
 if [[ -f "$REL_DIR/prev.tar.gz" ]]; then
-  extract_code "$REL_DIR/prev.tar.gz"; pip_resolve
+  extract_code "$REL_DIR/prev.tar.gz"; pip_resolve; units_restore
   cp -f "$REL_DIR/prev.tar.gz" "$REL_DIR/current.tar.gz"
 else
   warn "prev tar なし＝コードは戻せない（初回適用）。データのみ戻す"
