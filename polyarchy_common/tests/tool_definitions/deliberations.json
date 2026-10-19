@@ -1,0 +1,133 @@
+{
+ "instructions": "Polyarchy 審議会議事録DB(deliberations)。政府の会議体の過程文書＝回ごとの配布資料・議事録・議事要旨を横断検索する読み取り専用サービス(公開データのみ)。収録＝デジタル行財政改革会議(本会議)・人工知能戦略本部・人工知能戦略専門調査会・AI戦略会議・規制改革推進会議 デジタル・AIワーキング・グループ(企業・団体・府省のヒアリング)・先進的AI利活用アドバイザリーボード(デジタル庁)・日本成長戦略会議・日本成長戦略本部。会議の決定文書(取りまとめ・基本計画など)は政策主張DB(search_policy_docs)にあり、ここには入れない＝決まった内容は政策主張DB、決まるまでの議論・資料はこちら。返す断片には毎回、会議体・回次・開催日・資料番号・提出者または発言者とその区分(政務/事務局/府省・会議体/構成員(政府外)/外部(ヒアリング)/不明)・出典URLが付く。構成員(政府外)・外部・不明の断片は提出者・発言者の見解であって会議・政府の決定ではない(返り値の notes に明記)。発言者・提出者は記録と資料に書かれたとおりで、書かれていなければ不明と返す(推定しない)。匿名の要約(発言者の名前が無い議事要旨)の発言は誰の発言か特定できない。文章の生成や要約はしない(利用側で行う)。該当が無ければ results は空。",
+ "name": "polyarchy-deliberations",
+ "tools": [
+  {
+   "annotations": {
+    "destructiveHint": false,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "審議会議事録DB：回の資料と記録の一覧"
+   },
+   "description": "1 つの回(会議体のコードと回次)の資料と記録の一覧を返す(検索ではなく決定論の参照)。各資料の資料番号・名前・提出者と区分・出典URL、記録(議事録・議事要旨)の型、非公開で名前だけ載っている資料を含む。回が無ければ found=false。",
+   "inputSchema": {
+    "properties": {
+     "org": {
+      "title": "Org",
+      "type": "string"
+     },
+     "session_no": {
+      "title": "Session No",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "org",
+     "session_no"
+    ],
+    "title": "list_meetingArguments",
+    "type": "object"
+   },
+   "name": "list_meeting",
+   "title": "審議会議事録DB：回の資料と記録の一覧"
+  },
+  {
+   "annotations": {
+    "destructiveHint": false,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "審議会議事録DB：資料・議事録の検索"
+   },
+   "description": "審議会・会議体の配布資料と議事録・議事要旨を検索する(関連度順の抜粋＋帰属)。例：「第14回デジタル行財政改革会議で担当大臣の資料は会議の改組について何と書いているか」「AI戦略会議で構成員からどんな懸念が出たか」。絞り込み＝orgs(会議体: dgk=デジタル行財政改革会議・ai_hq=人工知能戦略本部・ai_senmon=人工知能戦略専門調査会・ai_senryaku=AI戦略会議・kisei_ai_wg=規制改革推進会議 デジタル・AIワーキング・グループ・da_ai_board=先進的AI利活用アドバイザリーボード・seicho=日本成長戦略会議・seicho_honbu=日本成長戦略本部)・since/until(YYYYMMDD)・doc_kinds(資料/参考資料/議事録/議事要旨)・roles(政務/事務局/府省・会議体/構成員(政府外)/外部(ヒアリング)/不明)。top_k は既定 5・上限 20。ある論点が最初に出た回や前後の回を見るときは、ヒットの会議体と回次で list_meeting を呼ぶ。",
+   "inputSchema": {
+    "properties": {
+     "doc_kinds": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Doc Kinds"
+     },
+     "orgs": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Orgs"
+     },
+     "query": {
+      "title": "Query",
+      "type": "string"
+     },
+     "roles": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Roles"
+     },
+     "since": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Since"
+     },
+     "top_k": {
+      "default": 5,
+      "title": "Top K",
+      "type": "integer"
+     },
+     "until": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Until"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "title": "search_deliberationsArguments",
+    "type": "object"
+   },
+   "name": "search_deliberations",
+   "title": "審議会議事録DB：資料・議事録の検索"
+  }
+ ]
+}

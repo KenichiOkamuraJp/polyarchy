@@ -86,7 +86,7 @@ def _compact_tool_result(payload: dict) -> str:
 
 
 def _extract_payload(result) -> dict:
-    sc = getattr(result, "structuredContent", None)
+    sc = getattr(result, "structured_content", None)
     if isinstance(sc, dict):
         return sc
     for b in getattr(result, "content", []) or []:
@@ -228,7 +228,7 @@ async def main() -> int:
             await session.initialize()
             mtools = (await session.list_tools()).tools
             tools = [{"name": t.name, "description": t.description or "",
-                      "input_schema": t.inputSchema} for t in mtools]
+                      "input_schema": t.input_schema} for t in mtools]
             for q in questions:
                 judges.append(await run_one(client, session, tools, a.model, q))
             if a.interactive:

@@ -1290,12 +1290,12 @@ def test_tools_run_off_event_loop_and_say_busy():
     import asyncio
     import threading
     import time
-    from mcp.server.fastmcp import FastMCP
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
     from polyarchy_common import httplog, mcp_http
 
     def build():
-        mcp = FastMCP("t")
+        mcp = MCPServer("t")
         state = {"now": 0, "max": 0, "threads": set(), "client": None}
 
         @mcp.tool(title="遅い検索")
@@ -1363,7 +1363,7 @@ def test_tools_run_off_event_loop_and_say_busy():
     asyncio.run(run())
     # 待受の関数が env を読んで装着する（切る口＝MCP_TOOL_OFFLOAD=0）。既定は装着・上限は env で変えられる
     import inspect
-    src = inspect.getsource(mcp_http.serve_streamable_http)
+    src = inspect.getsource(mcp_http.serve_streamable_http) + inspect.getsource(mcp_http.build_streamable_http_app)
     assert "offload_tools(" in src and all(k in src for k in ("MCP_TOOL_OFFLOAD", "MCP_TOOL_QUEUE_MAX", "MCP_TOOL_WAIT_SECONDS")), "serve"
 
 
@@ -1377,7 +1377,7 @@ def test_tool_load_lines_and_busy_filter():
     import re
     import time
     from pathlib import Path
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
     from polyarchy_common import mcp_http
     root = Path(__file__).resolve().parents[2]
     records: list[tuple[str, str]] = []
@@ -1386,7 +1386,7 @@ def test_tool_load_lines_and_busy_filter():
         def emit(self, r):
             records.append((r.levelname, r.getMessage()))
 
-    mcp = FastMCP("t")
+    mcp = MCPServer("t")
 
     @mcp.tool()
     def slow(seconds: float = 0.2, fail: bool = False) -> dict:
@@ -1480,12 +1480,12 @@ def test_tools_run_concurrently_up_to_the_limit():
     import threading
     import time
     from pathlib import Path
-    from mcp.server.fastmcp import FastMCP
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
     from polyarchy_common import httplog, mcp_http
     root = Path(__file__).resolve().parents[2]
 
-    mcp = FastMCP("t")
+    mcp = MCPServer("t")
     state = {"now": 0, "max": 0, "seen": [], "lock": threading.Lock()}
 
     @mcp.tool()
@@ -1543,7 +1543,7 @@ def test_tools_run_concurrently_up_to_the_limit():
         else:
             os.environ["MCP_TOOL_CONCURRENCY"] = saved
     import inspect
-    src = inspect.getsource(mcp_http.serve_streamable_http)
+    src = inspect.getsource(mcp_http.serve_streamable_http) + inspect.getsource(mcp_http.build_streamable_http_app)
     assert "parallel_safe" in inspect.signature(mcp_http.serve_streamable_http).parameters
     assert "tool_concurrency(" in src and "concurrency=" in src, "serve が数を読んで渡す"
     assert inspect.signature(mcp_http.serve_streamable_http).parameters["parallel_safe"].default is False   # 既定は宣言なし
@@ -1999,7 +1999,7 @@ def test_relay_entrance():
     src = inspect.getsource(relay)
     assert "relay_reject=source" in src and "relay_reject=member" in src
     # ⑥ 待受＝env を読んで、開くときは 2 つのソケットを 1 つのサーバで
-    serve = inspect.getsource(mcp_http.serve_streamable_http)
+    serve = inspect.getsource(mcp_http.serve_streamable_http) + inspect.getsource(mcp_http.build_streamable_http_app)
     assert "relay_config(" in serve and "build_asgi_app(" in serve and "sockets=" in serve, "serve"
 
 
@@ -2115,8 +2115,8 @@ def test_user_call_limit():
     import subprocess
     import tempfile
     from pathlib import Path
-    from mcp.server.fastmcp import FastMCP
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
     from polyarchy_common import access, mcp_http
     root = Path(__file__).resolve().parents[2]
     now = {"t": 1000.0}
@@ -2128,7 +2128,7 @@ def test_user_call_limit():
             records.append((r.levelname, r.getMessage()))
 
     def build():
-        mcp = FastMCP("t")
+        mcp = MCPServer("t")
 
         @mcp.tool(title="検索")
         def q(query: str = "") -> dict:
@@ -2218,7 +2218,7 @@ def test_user_call_limit():
     assert f and f.group(1) in warn[0], "tool_limited のフィルタ"
     # ⑨ 待受と bootstrap
     import inspect
-    serve = inspect.getsource(mcp_http.serve_streamable_http)
+    serve = inspect.getsource(mcp_http.serve_streamable_http) + inspect.getsource(mcp_http.build_streamable_http_app)
     assert "limit_tools(" in serve and "MCP_USER_CALLS_PER_HOUR" in serve, "serve"
     boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
     fn = re.search(r"^write_service_env\(\) \{.*?^\}\n", boot, re.M | re.S).group(0)
@@ -2822,9 +2822,213 @@ def test_s3_buckets_deny_insecure_transport():
         assert body.count(f"aws_s3_bucket.{bucket}.arn") >= 2, f"{f}: バケットと中身の両方を対象に"   # ③
 
 
+LEGACY_VERSION, MODERN_VERSION = "2025-11-25", "2026-07-28"   # 接続の挨拶（initialize）で話す最新の版／要求ごとに名乗る新しい版
+TOOL_DEFS_DIR = Path(__file__).resolve().parent / "tool_definitions"
+SERVICES = ("recommendations", "stats", "companies", "deliberations")
+
+
+def _serve_in_thread(app):
+    """ASGI アプリを手元の空いたポートで待ち受ける（lifespan 込み＝SDK の stateless の受け口が動く・本番と同じ uvicorn）。
+    (URL の頭, 止める関数) を返す。"""
+    import socket
+    import threading
+    import time
+    import uvicorn
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    t = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    t.start()
+    end = time.monotonic() + 30
+    while not server.started:
+        assert t.is_alive() and time.monotonic() < end, "待受が始まらない"
+        time.sleep(0.02)
+
+    def stop():
+        server.should_exit = True
+        t.join(15)
+    return f"http://127.0.0.1:{sock.getsockname()[1]}", stop
+
+
+def _rpc(base: str, method: str, params: dict = None, *, era: str, name: str = None):
+    """JSON-RPC の要求を 1 本送って (HTTP の状態, 応答の JSON or None) を返す。era＝legacy（接続の挨拶の版を名乗る）／modern
+    （要求ごとに新しい版と利用側の情報を _meta とヘッダに載せる＝2026-07-28 の形）。応答が SSE なら data の行を読む。"""
+    import json
+    import httpx
+    params = dict(params or {})
+    headers = {"content-type": "application/json", "accept": "application/json, text/event-stream"}
+    if era == "modern":
+        params["_meta"] = {"io.modelcontextprotocol/protocolVersion": MODERN_VERSION,
+                           "io.modelcontextprotocol/clientInfo": {"name": "test_common", "version": "0"},
+                           "io.modelcontextprotocol/clientCapabilities": {}}
+        headers.update({"mcp-protocol-version": MODERN_VERSION, "mcp-method": method})
+        if name:
+            headers["mcp-name"] = name
+    elif method != "initialize":
+        headers["mcp-protocol-version"] = LEGACY_VERSION
+    r = httpx.post(base + "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+                   headers=headers, timeout=60)
+    text = r.text.strip()
+    if r.headers.get("content-type", "").startswith("text/event-stream"):
+        datas = [ln[5:].strip() for ln in text.splitlines() if ln.startswith("data:") and ln[5:].strip()]
+        text = datas[-1] if datas else ""
+    try:
+        return r.status_code, json.loads(text) if text else None
+    except ValueError:
+        return r.status_code, None
+
+
+def _legacy_session(base: str):
+    """接続の挨拶（initialize）→ ツールの一覧。いまの Claude・ChatGPT の手順。(挨拶の結果, ツールの一覧) を返す。"""
+    st, init = _rpc(base, "initialize", {"protocolVersion": LEGACY_VERSION, "capabilities": {},
+                                         "clientInfo": {"name": "test_common", "version": "0"}}, era="legacy")
+    assert st == 200 and init and "result" in init, (st, init)
+    st, tl = _rpc(base, "tools/list", era="legacy")
+    assert st == 200 and tl and "result" in tl, (st, tl)
+    return init["result"], tl["result"]["tools"]
+
+
+def _service_mcp(svc: str):
+    """各サービスの MCP サーバを、データを読まずに組み立てる（ツールの定義は登録のときに決まる＝データは呼び出しのときにだけ要る）。"""
+    import os
+    import sys
+    os.environ.pop("MCP_PRIVACY_URL", None)          # 説明文の既定のページで比べる
+    if svc == "recommendations":
+        import logging
+        import types
+        from recommendations.serving.mcp_server import build_server
+        return build_server(types.SimpleNamespace(log=logging.getLogger("t.defs"), collection_name="t"))[0]
+    if svc == "stats":
+        from stats.core.registry import Registry
+        from stats.core.values import ValueStore
+        from stats.serving.mcp_server import build_server
+        return build_server(Registry(), ValueStore())[0]
+    if svc == "companies":                            # import のときに stdout を差し替えない（--http の形で読む）
+        saved = sys.argv
+        sys.argv = [saved[0], "--http"]
+        try:
+            from companies.serving import mcp_server
+        finally:
+            sys.argv = saved
+        return mcp_server.mcp
+    if svc == "deliberations":
+        from deliberations.serving import mcp_server
+        return mcp_server.mcp
+    raise ValueError(svc)
+
+
+def _tool_definitions(svc: str, era: str = "legacy") -> dict:
+    """サービスを本番と同じ組み立て（mcp_http.build_streamable_http_app）で待ち受け、利用側に見える形で読む＝サーバの名前・説明・
+    ツールの一覧（並びは名前順）。"""
+    import os
+    from polyarchy_common import mcp_http
+    for k in [k for k in os.environ if k.startswith(("MCP_AUTH_", "MCP_ACCESS_", "MCP_RELAY_", "MCP_USER_CALLS"))]:
+        os.environ.pop(k)
+    app, _ = mcp_http.build_streamable_http_app(_service_mcp(svc), logger_name=f"t.defs.{svc}")
+    base, stop = _serve_in_thread(app)
+    try:
+        if era == "legacy":
+            init, tools = _legacy_session(base)
+            head = {"name": init["serverInfo"]["name"], "instructions": init.get("instructions")}
+        else:
+            st, disc = _rpc(base, "server/discover", era="modern")
+            assert st == 200 and disc and "result" in disc, (st, disc)
+            st, tl = _rpc(base, "tools/list", era="modern")
+            assert st == 200 and tl and "result" in tl, (st, tl)
+            r = disc["result"]                       # 新しい版はサーバの名前を _meta で名乗る
+            head = {"name": r["_meta"]["io.modelcontextprotocol/serverInfo"]["name"], "instructions": r.get("instructions")}
+            tools = tl["result"]["tools"]
+    finally:
+        stop()
+    return {**head, "tools": sorted(tools, key=lambda t: t["name"])}
+
+
+def test_tool_definitions_unchanged():
+    """ツールの定義は、利用側から見て記録した形のまま（B36・2026-10-20＝MCP SDK を 2.x へ移す前に固定）。ChatGPT のコネクタは
+    公開の後にツールの定義を更新できない（変えたら作り直し）・企業情報DB は掲載の審査中で定義を動かさない＝SDK の版を変えても、
+    利用側に見える形は 1 文字も変えない。固定すること＝4 サービスとも、本番と同じ組み立てで待ち受け、接続の挨拶（いまの Claude・
+    ChatGPT の手順）で読んだ サーバの名前・説明・ツールの一覧（名前・title・説明・引数の型・返り値の型・注釈）が、
+    tool_definitions/<サービス>.json と同じ。記録は 1.x（mcp 1.29.1・箱のロック）のときに取った。ツールの定義を意図して
+    変えるとき（コネクタの作り直しを伴う）だけ `python -m polyarchy_common.tests.test_common --write-tool-definitions` で取り直す。"""
+    import json
+    for svc in SERVICES:
+        want = json.loads((TOOL_DEFS_DIR / f"{svc}.json").read_text(encoding="utf-8"))
+        got = _tool_definitions(svc)
+        assert got == want, f"{svc}: ツールの定義が記録と違う（{_first_diff(want, got)}）"
+
+
+def _first_diff(a, b, at="") -> str:
+    if type(a) is not type(b):
+        return f"{at or '/'}: {type(a).__name__} → {type(b).__name__}"
+    if isinstance(a, dict):
+        for k in sorted(set(a) | set(b)):
+            if k not in a or k not in b:
+                return f"{at}/{k}: {'無くなった' if k not in b else '増えた'}"
+            if a[k] != b[k]:
+                return _first_diff(a[k], b[k], f"{at}/{k}")
+    if isinstance(a, list):
+        if len(a) != len(b):
+            return f"{at}: 数 {len(a)} → {len(b)}"
+        for i, (x, y) in enumerate(zip(a, b)):
+            if x != y:
+                return _first_diff(x, y, f"{at}[{i}]")
+    return f"{at}: {str(a)[:80]!r} → {str(b)[:80]!r}"
+
+
+def test_mcp_both_protocol_eras():
+    """接続の手順は、いまの挨拶（initialize・2025-11-25 まで）と、新しい版（2026-07-28＝最初に server/discover を送り、要求ごとに
+    版と利用側の情報を名乗る）の両方に応じる（B36・2026-10-20）。1.x は新しい版を「未対応の版」として 400 で断り、利用側が挨拶に
+    落ちて続けていた＝落ちなくなればつながらない。固定すること＝① 挨拶の手順でツールの一覧と呼び出しが通る（いまの利用側）
+    ② server/discover が 200 で新しい版を名乗る ③ 新しい版のツールの一覧は、挨拶の手順と同じツールの定義（4 サービスとも＝
+    記録と同じ）④ 新しい版のツールの呼び出しも、本番と同じ包み（別のスレッドで 1 本ずつ）を通って結果が返る。"""
+    import json
+    import threading
+    from mcp.types import ToolAnnotations
+    from polyarchy_common import mcp_http
+    from mcp.server.mcpserver import MCPServer
+
+    ran_in = []
+    mcp = MCPServer("t-eras")
+
+    @mcp.tool(title="こだま", annotations=ToolAnnotations(title="こだま", readOnlyHint=True))
+    def echo(text: str) -> dict:
+        """受け取った文字列をそのまま返す。"""
+        ran_in.append(threading.current_thread() is threading.main_thread())
+        return {"echo": text}
+
+    app, _ = mcp_http.build_streamable_http_app(mcp, logger_name="t.eras")
+    base, stop = _serve_in_thread(app)
+    try:
+        init, tools = _legacy_session(base)                                                       # ①
+        assert init["protocolVersion"] == LEGACY_VERSION and [t["name"] for t in tools] == ["echo"], init
+        st, r = _rpc(base, "tools/call", {"name": "echo", "arguments": {"text": "あ"}}, era="legacy")
+        assert st == 200 and "あ" in json.dumps(r["result"], ensure_ascii=False), (st, r)
+        st, disc = _rpc(base, "server/discover", era="modern")                                   # ②
+        assert st == 200 and disc and MODERN_VERSION in disc["result"]["supportedVersions"], (st, disc)
+        st, tl = _rpc(base, "tools/list", era="modern")                                          # ③
+        assert st == 200 and tl["result"]["tools"] == tools, (st, tl)
+        st, r = _rpc(base, "tools/call", {"name": "echo", "arguments": {"text": "い"}}, era="modern", name="echo")   # ④
+        assert st == 200 and "い" in json.dumps(r["result"], ensure_ascii=False), (st, r)
+        assert ran_in and not any(ran_in), "ツールは別のスレッドで動く（本番と同じ包み）"
+    finally:
+        stop()
+    for svc in SERVICES:                                                                          # ③ 4 サービス
+        want = json.loads((TOOL_DEFS_DIR / f"{svc}.json").read_text(encoding="utf-8"))
+        got = _tool_definitions(svc, era="modern")
+        assert got == want, f"{svc}: 新しい版のツールの定義が記録と違う（{_first_diff(want, got)}）"
+
+
 if __name__ == "__main__":
+    import json
     import sys
 
+    if "--write-tool-definitions" in sys.argv:          # ツールの定義を意図して変えたときだけ（コネクタの作り直しを伴う）
+        TOOL_DEFS_DIR.mkdir(exist_ok=True)
+        for svc in SERVICES:
+            (TOOL_DEFS_DIR / f"{svc}.json").write_text(
+                json.dumps(_tool_definitions(svc), ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+            print(f"wrote {svc}", file=sys.stderr)
+        raise SystemExit(0)
     fails = 0
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -16,7 +16,7 @@ from polyarchy_common.logsetup import configure_quiet_logging, get_logger, guard
 _REAL_STDOUT = guard_stdout_for_stdio() if "--http" not in sys.argv else None  # stdio では stdout がプロトコル線
 
 import anyio  # noqa: E402
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.server.mcpserver import MCPServer  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 
 from companies.core import lookup, regions, screen, segments, store, trend  # noqa: E402
@@ -48,11 +48,11 @@ SERVER_INSTRUCTIONS = (
     "1 社の年ごとの並びは lookup_segments/lookup_regions に period_from/period_to(区分の組み替えは regrouped で事実として示し、旧区分と新区分を対応づけない)。"
     "値そのものは各提出会社の開示に帰属し、本サービスは値を保証しない(原典で確認すること)。"
 )
-mcp = FastMCP("polyarchy-companies", instructions=SERVER_INSTRUCTIONS)
+mcp = MCPServer("polyarchy-companies", instructions=SERVER_INSTRUCTIONS)
 
 
 def _compact_json(r: dict) -> str:
-    """字下げなしの JSON 文字列で返す＝FastMCP は辞書を字下げ 2 の JSON にする（返り値は利用側のモデルの文脈に入る＝
+    """字下げなしの JSON 文字列で返す＝SDK は辞書を字下げ 2 の JSON にする（返り値は利用側のモデルの文脈に入る＝
     時系列の横断で同じ中身が 25KB→40KB に膨らんだ・2026-10-01）。中身は辞書を返すときと同じ。"""
     return json.dumps(r, ensure_ascii=False, separators=(",", ":"))
 
@@ -280,7 +280,8 @@ async def _run_stdio() -> None:
     from mcp.server.stdio import stdio_server
     out = anyio.wrap_file(TextIOWrapper(_REAL_STDOUT.buffer, encoding="utf-8"))
     async with stdio_server(stdout=out) as (r, w):
-        await mcp._mcp_server.run(r, w, mcp._mcp_server.create_initialization_options())
+        from polyarchy_common.mcp_http import run_session
+        await run_session(mcp, r, w)
 
 
 if __name__ == "__main__":

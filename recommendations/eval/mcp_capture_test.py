@@ -39,7 +39,7 @@ def _count() -> int:
 
 def _payload(result) -> dict:
     """CallToolResult から dict ペイロードを取り出す（structuredContent 優先→content 本文）。"""
-    sc = getattr(result, "structuredContent", None)
+    sc = getattr(result, "structured_content", None)
     if isinstance(sc, dict):
         return sc
     for block in getattr(result, "content", []) or []:

@@ -56,7 +56,7 @@ bash deploy/scripts/release.sh <env>                # 配る前の確認→全�
 - ★ **文書検索の 2 サービス（政策主張DB・審議会DB）はツールを同時に動かす**（unit の `MCP_TOOL_CONCURRENCY`・2026-10-14）：検索の部品に、呼び出しをまたいで書き換える状態（共有の検索器の条件の差し替え・スレッドで共有する解析器）を足さない＝条件は呼び出しごとに渡す。取り違えは黙って別の結果になる＝各 `eval/concurrency`（ゲート）が同時に流して 1 本ずつと突き合わせる。ほかのサービスで同時に動かすなら、同じゲートを作ってから `parallel_safe=True`。
 - ★ **公開面のサービスと Qdrant の unit は封じ込めてある**（`ProtectSystem=strict` ほか・2026-10-19）＝書けるのは unit の `ReadWritePaths` だけ。サービスが実行中に書く先を足したら、`ReadWritePaths` と bootstrap の `mkdir` の両方に足す（足さないと Read-only file system＝捕捉ログのように fail-open の書き込みは黙って止まる・`test_common` が突き合わせる）。
 - ★ **terraform の state は S3**（2026-10-19）＝`deploy.sh` を通す（backend の値は `lib.sh` の `tf_init` が渡す）。直に `terraform init` しない・`-reconfigure` しない。local の state を持つフォルダは 1 回だけ `deploy.sh <env> state-migrate`（PROD_MIGRATION §4）。
-- ★ **依存を変えたらロックを再生成**（`deploy/scripts/lock_deps.sh`→PR→ゲート＝RUNBOOK §7）。`mcp` は `<2` に固定（2.x は FastMCP が無い）。箱の Qdrant は musl ビルド必須。
+- ★ **依存を変えたらロックを再生成**（`deploy/scripts/lock_deps.sh`→PR→ゲート＝RUNBOOK §7）。`mcp` は `>=2.3,<3`（2.x＝`MCPServer`・2026-10-20〜＝B36）。SDK の内側の名前に頼るのは `polyarchy_common/mcp_http.py` だけ。★ツールの定義（名前・説明・引数・注釈）とサーバの説明は `polyarchy_common/tests/tool_definitions/` の記録と 1 文字も違わないこと（`test_common`）＝変わると ChatGPT のコネクタは作り直し。SDK を上げて落ちたら記録を取り直さず SDK 側の差を吸収する（取り直すのは定義を意図して変えるときだけ）。箱の Qdrant は musl ビルド必須。
 - ★ **ChatGPT（Business）のコネクタ**：利用者ごとの認可は「個人の設定→アプリ→接続」で行う（作成画面では出ない）。公開後にツール定義を更新できない＝変えたら作り直し。
 - ★ **OECD SDMX は 1 時間 60 ダウンロードの制限**（解除手段なし）。取得の UA は curl 相当が既定（IMF／OECD の WAF）。例外は UA 文字列で弾く中小企業白書 PDF だけ＝方針は [stats/README.md](stats/README.md)「取得の作法」（JS チャレンジ・ログイン・レート制限は突破しない）。
 - 秘密は SSM Parameter Store。`.env` を箱に運ばない。runbook・シェル履歴・コミットに値を残さない。Qdrant のデータ同期は Qdrant 停止中にのみ行う。

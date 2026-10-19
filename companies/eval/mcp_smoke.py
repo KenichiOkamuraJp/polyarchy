@@ -31,10 +31,10 @@ async def run() -> list[str]:
                           "list_metrics", "screen_companies", "screen_trend"}:
             errs.append(f"[1] ツール集合が違う: {sorted(tools)}")
         for t in tools.values():
-            if "layer" in (t.inputSchema.get("properties") or {}):
+            if "layer" in (t.input_schema.get("properties") or {}):
                 errs.append(f"[2] {t.name} に layer 引数がある（層は公開固定）")
-            if not (t.annotations and t.annotations.readOnlyHint and t.annotations.title
-                    and t.annotations.destructiveHint is False and t.annotations.openWorldHint is False) or not t.title:
+            if not (t.annotations and t.annotations.read_only_hint and t.annotations.title
+                    and t.annotations.destructive_hint is False and t.annotations.open_world_hint is False) or not t.title:
                 errs.append(f"[3] {t.name} に title／注釈の title（annotations.title）／注釈の 3 つの明示（readOnlyHint=True・destructiveHint=False・openWorldHint=False）が無い")
         # 「合計して」と頼まれると区分から足し直した値を先に出した（2026-09-23 staging・ChatGPT）＝会社の計を答えにするよう説明で案内する
         if "合計を問われたら、会社が表に書いた計・合計を答えにする" not in (getattr(tools.get("lookup_segments"), "description", "") or ""):
@@ -110,10 +110,10 @@ async def run() -> list[str]:
         if set(AGGREGATES) - set((m.get("aggregates") or {})):
             errs.append("[25] list_metrics が集約の語彙を返さない")
         for name in ("lookup_segments", "lookup_regions"):
-            props = (tools[name].inputSchema.get("properties") or {}) if name in tools else {}
+            props = (tools[name].input_schema.get("properties") or {}) if name in tools else {}
             if not {"period_from", "period_to"} <= set(props):
                 errs.append(f"[26] {name} に期間（period_from／period_to）の引数が無い")
-        if "elements" not in ((tools["lookup_segments"].inputSchema.get("properties") or {}) if "lookup_segments" in tools else {}):
+        if "elements" not in ((tools["lookup_segments"].input_schema.get("properties") or {}) if "lookup_segments" in tools else {}):
             errs.append("[27] lookup_segments に要素で絞る引数（elements）が無い（11 年で約 99KB）")
         t1 = await call("screen_trend", conditions=[{"metric": "top_line", "aggregate": "median"}])
         if t1.get("found") or t1.get("reason") != "unknown_aggregate":
@@ -124,7 +124,7 @@ async def run() -> list[str]:
         res = await s.call_tool("screen_trend", {"conditions": [{"metric": "top_line", "aggregate": "cagr"}], "limit": 20})
         if len(res.content[0].text.encode()) > 50_000:  # 伝送路の上の文字列で測る（字下げも数える）
             errs.append(f"[34] screen_trend の返り値が大きい（上位 20 社で {len(res.content[0].text.encode()) // 1000}KB・上限 50KB）")
-        if not {"companies", "detail"} <= set((tools["screen_trend"].inputSchema.get("properties") or {}) if "screen_trend" in tools else {}):
+        if not {"companies", "detail"} <= set((tools["screen_trend"].input_schema.get("properties") or {}) if "screen_trend" in tools else {}):
             errs.append("[35] screen_trend に companies／detail の引数が無い（細い返り値の詳細を引き直す入口）")
         t3 = await call("screen_trend", conditions=[{"metric": "gross_profit", "aggregate": "cagr"}])
         if t3.get("found") or t3.get("reason") != "input_not_ingested":

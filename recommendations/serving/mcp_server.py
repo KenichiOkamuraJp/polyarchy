@@ -42,7 +42,7 @@ from polyarchy_common.logsetup import (
     get_logger,
     guard_stdout_for_stdio,
 )
-from polyarchy_common.mcp_http import serve_streamable_http
+from polyarchy_common.mcp_http import run_session, serve_streamable_http
 # Phase 12：実クエリの永続捕捉（config/log_setup のみ依存＝軽量・重い import を引かない）。
 from recommendations.core.coverage import (
     COVERAGE_NOTE,
@@ -113,8 +113,8 @@ SERVER_INSTRUCTIONS = (
 
 
 def build_server(service):
-    """FastMCP サーバを組み立てる（ツールは渡された service を包むだけ）。"""
-    from mcp.server.fastmcp import FastMCP
+    """MCP サーバを組み立てる（ツールは渡された service を包むだけ）。"""
+    from mcp.server.mcpserver import MCPServer
     from mcp.types import ToolAnnotations
 
     # 公式コネクタ要件：全ツールに title＋readOnlyHint（読み取り専用・破壊なし・閉世界＝自前 DB のみ）。
@@ -122,11 +122,11 @@ def build_server(service):
         return ToolAnnotations(title=title, readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 
     log = get_logger("polyarchy.mcp")
-    # log_level="WARNING": FastMCP は __init__ の configure_logging で root を INFO＋RichHandler に
+    # log_level="WARNING": MCPServer は __init__ の configure_logging で root を INFO＋RichHandler に
     # 設定し、低レベルサーバが英語で "Processing request of type ..." を INFO 出力する。WARNING に
     # 上げて黙らせる（自前ロガーは propagate=False なので影響なし）。
-    mcp = FastMCP(SERVER_NAME, instructions=SERVER_INSTRUCTIONS, log_level="WARNING")
-    # FastMCP の configure_logging が levels をいじった後にも確実に効かせる（冪等）。
+    mcp = MCPServer(SERVER_NAME, instructions=SERVER_INSTRUCTIONS, log_level="WARNING")
+    # MCPServer の configure_logging が levels をいじった後にも確実に効かせる（冪等）。
     configure_quiet_logging()
 
     # 収録範囲の明示（recommendations/docs/コーパス収録範囲の明示.md）：団体別鮮度は catalog から
@@ -472,17 +472,14 @@ def main() -> None:
     # ② 本番検索スタックを 1 度だけ構築（層は公開固定）。
     service = PolicySearchService()
 
-    # ③ FastMCP を組み、実 stdout でトランスポートを起動（JSON-RPC は実 stdout、ノイズは stderr）。
+    # ③ MCP サーバを組み、実 stdout でトランスポートを起動（JSON-RPC は実 stdout、ノイズは stderr）。
     mcp, log = build_server(service)
     log.info("MCPサーバ待受開始: 公開ツール=[search_policy_docs, sweep_policy_docs, list_orgs] "
              "層=公開固定（機密は物理遮断）")
 
     async def _serve() -> None:
         async with stdio_server(stdout=anyio.wrap_file(real_stdout)) as (read_stream, write_stream):
-            await mcp._mcp_server.run(
-                read_stream, write_stream,
-                mcp._mcp_server.create_initialization_options(),
-            )
+            await run_session(mcp, read_stream, write_stream)
 
     anyio.run(_serve)
 

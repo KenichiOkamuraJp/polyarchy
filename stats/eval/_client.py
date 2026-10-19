@@ -25,7 +25,7 @@ def server_params(query_log_name: str) -> tuple[StdioServerParameters, Path]:
 
 def payload(result) -> dict:
     """call_tool の結果から dict を取り出す（structuredContent 優先・無ければ text block の JSON）。"""
-    sc = getattr(result, "structuredContent", None)
+    sc = getattr(result, "structured_content", None)
     if isinstance(sc, dict):
         return sc
     for block in getattr(result, "content", []) or []:

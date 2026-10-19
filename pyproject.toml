@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 # ingest（取込・回答まで含む評価だけ＝作業用 PC だけ・箱に入れない）／companies（取込だけ＝作業用 PC だけ）。
 # ローカル（1 env に全部）＝ `pip install -e ".[all]"`。stats だけの箱＝ `pip install -e ".[stats]"`（torch を引かない）。
 dependencies = [
-    "mcp>=1.2.0,<2",                # MCP サーバ（recommendations/stats とも）。★2.x は FastMCP 削除（MCPServer へ改名）＝2026-08-28 箱の新規構築で実測。移行するまで <2 に固定
+    "mcp>=2.3,<3",                  # MCP サーバ（全サービス）。2.x＝FastMCP は MCPServer へ改名・2026-07-28 版（server/discover）と従来の挨拶の両方に応じる（B36・2026-10-20）。
     "PyJWT[crypto]>=2.8",           # polyarchy_common.access: Cloudflare Access JWT 検証（RS256）
     "uvicorn>=0.30",                # polyarchy_common.mcp_http: Access 有効時の ASGI 起動
     "anyio>=4.0",                   # MCP の stdio サーバ（mcp の推移依存だが直接 import している）

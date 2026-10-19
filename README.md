@@ -79,7 +79,7 @@ polyarchy/
 自動適用と切り戻しの同じ仕組みに乗る。要望の吸収先を「コード」でなく「データと評価問」に置く（複雑性を複利にしない）ことが、
 サービス数が増えても保守が破綻しない理由（[docs/運用モデルと事業継続性.md](docs/運用モデルと事業継続性.md)）。
 
-- 実装：Python 3.12／MCP 公式 SDK (FastMCP)・LlamaIndex・Qdrant・Sentence-Transformers・fugashi
+- 実装：Python 3.12／MCP 公式 SDK 2.x (MCPServer)・LlamaIndex・Qdrant・Sentence-Transformers・fugashi
 - 稼働：AWS EC2（東京リージョン）＋ Cloudflare Tunnel。実行はリポジトリ root を Python の root として `python -m recommendations.…`
 
 ## ドキュメント（地図）

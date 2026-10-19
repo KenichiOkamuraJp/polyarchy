@@ -25,7 +25,7 @@ from typing import Optional
 
 from polyarchy_common.capture import append_record
 from polyarchy_common.logsetup import configure_quiet_logging, get_logger, guard_stdout_for_stdio
-from polyarchy_common.mcp_http import serve_streamable_http
+from polyarchy_common.mcp_http import run_session, serve_streamable_http
 
 from stats.core.paths import QUERY_LOG_PATH
 from stats.core.period_basis import label_of as _period_basis
@@ -66,11 +66,11 @@ SERVER_INSTRUCTIONS = (
 
 
 def build_server(registry: Registry, store: Optional[ValueStore] = None):
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
     from mcp.types import ToolAnnotations
 
     log = get_logger("polyarchy.stats")
-    mcp = FastMCP(SERVER_NAME, instructions=SERVER_INSTRUCTIONS, log_level="WARNING")
+    mcp = MCPServer(SERVER_NAME, instructions=SERVER_INSTRUCTIONS, log_level="WARNING")
     # 公式コネクタの審査要件：全ツールに title と readOnlyHint（読み取り専用）。
     def ro(title: str) -> ToolAnnotations:  # 注釈にも title を入れる（ディレクトリのポータルが見るのは annotations.title＝最上位の title だけでは「title が無い」と指摘される・2026-10-10）
         return ToolAnnotations(title=title, readOnlyHint=True, destructiveHint=False, openWorldHint=False)
@@ -698,8 +698,7 @@ def main() -> None:
 
     async def _serve() -> None:
         async with stdio_server(stdout=anyio.wrap_file(real_stdout)) as (read_stream, write_stream):
-            await mcp._mcp_server.run(read_stream, write_stream,
-                                      mcp._mcp_server.create_initialization_options())
+            await run_session(mcp, read_stream, write_stream)
 
     anyio.run(_serve)
 

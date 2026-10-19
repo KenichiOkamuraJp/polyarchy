@@ -12,7 +12,7 @@ import argparse
 import os
 import sys
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from polyarchy_common.logsetup import configure_quiet_logging, get_logger, guard_stdout_for_stdio
@@ -48,7 +48,7 @@ LIST_DESC = (
 )
 
 log = get_logger("polyarchy.deliberations.mcp")
-mcp = FastMCP("polyarchy-deliberations", instructions=INSTRUCTIONS)
+mcp = MCPServer("polyarchy-deliberations", instructions=INSTRUCTIONS)
 _svc = None
 
 
@@ -153,7 +153,8 @@ def main() -> None:
 
     async def run():
         async with stdio_server(stdout=anyio.wrap_file(TextIOWrapper(real.buffer, encoding="utf-8"))) as (r, w):
-            await mcp._mcp_server.run(r, w, mcp._mcp_server.create_initialization_options())
+            from polyarchy_common.mcp_http import run_session
+            await run_session(mcp, r, w)
     anyio.run(run)
 
 

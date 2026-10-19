@@ -1,0 +1,321 @@
+{
+ "instructions": "Polyarchy 統計参照DB（stats）。日本の公的統計・国際機関統計の「値の厳密参照」サービス（読み取り専用・公開データのみ）。2層構造：発見層（list_datasets＝目録／find_statistics＝系列検索）と参照層（lookup_statistic＝値の完全一致参照）。値は公表どおりの文字列で返し（換算・丸め・季調・接続なし）、該当が無ければ found=false と理由を返す（近似値・補間値は返さない）。系列は scope＝jp（日本の統計）と intl（国際比較＝国別 ISO3・IMF/OECD/世銀）に分かれ、発見層は scope で絞れる（指定なしは jp が先）＝国際比較を明示的に求められていないときは jp を使う（国際系列は定義が各機関のもので日本の国内統計と混ぜない）。各値には出典（統計名・調査主体・表・アクセサ・URL・取得日・引用1行）と license（再配布・商用利用条件：◎＝出典明示で商用可／○＝可だが条件あり／△＝商用は要相談）が付く。status=guide の系列は値を持たず、原典の読み方だけを返す。収録は GDP・四半期速報（QE）・需給ギャップ・潜在成長率・物価・賃金・労働・財政・資金循環・人口・法人企業統計（業種×規模）・国際機関統計（IMF/OECD/世銀）まで広い＝経済統計の値や有無を扱うときは Web 検索より先にまず find_statistics／list_datasets で収録を確認する（未収録なら found=false が理由付きで返る＝それが確認の根拠になる）。このサービスは、政府統計総合窓口(e-Stat)のAPI機能を使用していますが、サービスの内容は国によって保証されたものではありません。 統計値そのものは各公表機関に帰属し、本サービスは値を保証しない（原典で確認すること）。",
+ "name": "polyarchy-stats",
+ "tools": [
+  {
+   "annotations": {
+    "destructiveHint": false,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "統計系列を探す（発見層）"
+   },
+   "description": "統計系列を**探す**（発見層）。値は返さない＝値は lookup_statistic で厳密参照する。\n\n        引数：query=語（統計名・系列ID・表題の部分一致）／tags=分野タグ（21分類・政策主張DBと同じ語彙）／\n        org=調査主体コード（mof soumu cao boj mhlw imf …）／sector=部門（完全一致。有効値＝マクロ／企業／家計・労働／物価・金融／財政／人口／対外・国際。\n        「家計・労働」「物価・金融」「対外・国際」は中黒込みで 1 部門＝「労働」「物価」単独は語彙外）／\n        kind=observation|projection（推計値を区別）／freq=a|fy|q|fq|h|m|d（期間粒度コード）／dataset=目録（list_datasets）の dataset 名で絞る／\n        industry・size＝dims `<業種>-<規模>` の各トークンで絞る（法人企業統計 hojin：業種 62 スラグ＝allexfin・mfg・nonmfg・mfg_food・wholesale・construction …、\n        規模＝allsize・cap1b・cap100m-1b・cap10m-100m。系列 ID の dims 部分と同じ語）／\n        **scope＝jp|intl**（jp＝日本の統計〔全国・都道府県〕／intl＝国際比較〔国別・IMF/OECD/世銀〕。指定が無ければ両方返すが **jp が先**＝\n        国際比較は明示的に求められたときだけ scope=intl を付ける）／limit（≤50）。\n        **並びは決定的**：全体（全産業・全規模）の系列が先・業種/規模の細分は後 → 表題一致 → 系列 ID。\n        **細分は畳む**：families（kind=series_family）に 1 枚で返す。畳み軸は dataset ごとに 3 種：\n        (1) dims 軸＝業種・規模の細分（hojin 等。全体系列は series 行に残す。id_pattern に dims の slug を埋めて lookup。\n        例 mof.hojin.sales.mfg_food-allsize.fy）／(2) variant 軸＝QE（qe2020）の需要項目×種別の直積（axis=variant・items に項目 slug。\n        GDP は series 行に残す）／(3) freq 軸＝同一指標の周期違い（cao_gap。axis=freq・freqs に各周期の series_id。最も細かい周期を行に残す）。\n        industry または size（dims 軸）・freq（freq 軸）を指定すると畳まずに行で返す。total＝全該当数・truncated＝limit で切れたとき true。\n        **「どんなデータがあるか」の全体像は先に list_datasets**（目録）を呼び、そこから dataset を指定してここで掘る。\n        返り値：系列一覧（series_id・title・unit・freq・granularity・first_period/last_period・basis・status・accessor.type・タグ）。\n        status=planned の系列は**未収録**（取得元は特定済みだが値を持たず、取込時期も未定＝「取込予定」ではない。lookup は found=false）。\n        status=guide の系列は**値を持たない**（取得元の再配布条件により発見層のみ）＝lookup は found=false・reason=guide_only と\n        原典の読み方（URL・表・行・列）を返すので、値は利用側で原典から読む。\n        層は公開固定。該当が無ければ count=0（推測で近い系列を返さない）。\n        ",
+   "inputSchema": {
+    "properties": {
+     "dataset": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Dataset"
+     },
+     "freq": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Freq"
+     },
+     "industry": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Industry"
+     },
+     "kind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Kind"
+     },
+     "limit": {
+      "default": 20,
+      "title": "Limit",
+      "type": "integer"
+     },
+     "org": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Org"
+     },
+     "query": {
+      "default": "",
+      "title": "Query",
+      "type": "string"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Scope"
+     },
+     "sector": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sector"
+     },
+     "size": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Size"
+     },
+     "tags": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Tags"
+     }
+    },
+    "title": "find_statisticsArguments",
+    "type": "object"
+   },
+   "name": "find_statistics",
+   "title": "統計系列を探す（発見層）"
+  },
+  {
+   "annotations": {
+    "destructiveHint": false,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "統計の目録（発見層の入口）"
+   },
+   "description": "利用できる統計の**目録**（発見層の入口）。「どんなデータがあるか」と聞かれたら**まずこれ**を呼ぶ。\n\n        系列を dataset（統計表の単位：法人企業統計・CPI・SNA 年次推計・IMF WEO・地方財政計画 …）ごとに集約して返す：\n        統計名・調査主体・部門（sector）・系列数（値あり／派生／planned）・粒度・提供期間（値ストアの実範囲 min〜max）・地域粒度・単位・基準・\n        分野タグ・代表 series_id・measure 一覧・**license**（再配布・商用利用条件：◎＝出典明示で商用可／○＝可だが要再確認／△＝商用は要相談・要確認）。\n        引数 sector／org／**scope（jp＝日本の統計／intl＝国際比較・国別）**で絞れる。各行に scope が付く。全体で 30〜40 行＝1 回で全体像が収まる。\n        **国際比較を求められていないときは scope=jp で引く**（国際系列＝IMF/OECD/世銀は国別 ISO3 で region が要る・定義も各機関のもの＝日本の国内分析と混ぜない）。\n        次の一手：気になる dataset を find_statistics(dataset=…) で掘り、series_id を確定して lookup_statistic で値を引く。\n        値は返さない。planned は未収録（取得元は特定済み・値なし・取込時期未定）＝lookup は found=false。層は公開固定。\n        ",
+   "inputSchema": {
+    "properties": {
+     "org": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Org"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Scope"
+     },
+     "sector": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sector"
+     }
+    },
+    "title": "list_datasetsArguments",
+    "type": "object"
+   },
+   "name": "list_datasets",
+   "title": "統計の目録（発見層の入口）"
+  },
+  {
+   "annotations": {
+    "destructiveHint": false,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "調査主体コードの一覧"
+   },
+   "description": "登録済みの調査主体コード（org）ごとの系列数・値ありの系列数を返す。",
+   "inputSchema": {
+    "properties": {},
+    "title": "list_sourcesArguments",
+    "type": "object"
+   },
+   "name": "list_sources",
+   "title": "調査主体コードの一覧"
+  },
+  {
+   "annotations": {
+    "destructiveHint": false,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "複数系列×期間を一括参照する（参照層・パネル）"
+   },
+   "description": "複数の系列を**1 回で**参照する（参照層のパネル版）。lookup_statistic を系列ごとに繰り返すのと同じ値・同じ fail-closed。\n\n        引数：period＝lookup_statistic と同じ（単一 \"FY2024\" か範囲 \"FY2009..FY2024\"）／\n        series_ids＝系列 ID の一覧、**または** id_pattern＋dims＝find_statistics の families が返す id_pattern\n        （例 \"mof.hojin.sales.{industry}-{size}.fy\"）に dims（例 {\"industry\": [\"mfg\",\"wholesale\"], \"size\": [\"allsize\"]}）を埋めて展開\n        （dims に無い位置は収録済みの全 slug）。両方を指定すれば和集合／region＝全系列に共通。\n        上限＝系列 200・値 2,500（超えると found=false reason=range_too_wide と該当数を返す＝黙って切らない。分割して呼ぶ）。\n        返り値：found＝1 系列でも値があれば true／values＝{series_id: {period: value}}（収録がある期のみ＝欠測は補間しない。\n        pandas なら DataFrame.from_dict(values) で 期×系列 の表）／cell_flags＝status や kind=projection が付くセルだけ／\n        series＝系列ごとの {title, unit, source{ref（＋表と異なるときだけ vintage/retrieved_at/citation）}, quality＝quality_groups のキー, sample（標本の薄さ・系列固有）}／\n        sources＝出典の共通部分（表ごとに 1 回・series[].source.ref で参照。citation_template の {item}{period}{retrieved_at} に系列の title・period・retrieved_at を埋めると系列の引用 1 行）／\n        quality_groups＝同じ品質メタ（usable_from・breaks・caution）を持つ系列をまとめた定義（series[].quality で参照）／breaks_catalog＝断層の定義（\"期|kind\" → 定義）／\n        verbose=false＝series を省き units（単位→系列 ID）と quality_of（品質グループ→系列 ID）だけ返す（値・出典・品質サマリは同じ。大きなパネル向け）／\n        errors＝値を返せなかった系列の {series_id, reason, hint}（unknown_series・out_of_range 等＝他の系列は返す）／\n        **quality_summary**＝パネル全体の判定：caution（会計断層の適用点を範囲内に含む系列）・notice（早期適用等の影響幅のみ重なる系列）・\n        usable_from_max（全系列が分類改定を跨がずに使える最も遅い開始期）・breaks_by_period（期→系列数）・sample_caution（標本の薄い系列）＝分析コードは最初にこれだけ見れば弾ける。\n        値は公表どおりの文字列（換算・丸め・季調・接続なし）。stats は値を保証しない（原典で確認すること）。層は公開固定。\n        ",
+   "inputSchema": {
+    "properties": {
+     "dims": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Dims"
+     },
+     "id_pattern": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Id Pattern"
+     },
+     "period": {
+      "title": "Period",
+      "type": "string"
+     },
+     "region": {
+      "default": "JP",
+      "title": "Region",
+      "type": "string"
+     },
+     "series_ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Series Ids"
+     },
+     "verbose": {
+      "default": true,
+      "title": "Verbose",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "period"
+    ],
+    "title": "lookup_panelArguments",
+    "type": "object"
+   },
+   "name": "lookup_panel",
+   "title": "複数系列×期間を一括参照する（参照層・パネル）"
+  },
+  {
+   "annotations": {
+    "destructiveHint": false,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "統計値を厳密参照する（参照層）"
+   },
+   "description": "統計の値を**厳密に参照**する（参照層）。\n\n        引数：series_id（find_statistics が返す ID）／period（系列の粒度に厳密一致：暦年 \"2024\"・年度 \"FY2024\"・\n        四半期 \"2024Q1\"・年度四半期 \"FY2024Q1\"・半期 \"FY2024H1\"・月 \"2024-03\"・日 \"2024-03-31\"。\n        **範囲指定も可＝\"開始..終了\"**（例 \"FY2000..FY2024\"・両端含む・同一粒度・1 応答 100 値まで）＝時系列を 1 回で引ける）／\n        region（既定 \"JP\"、都道府県は JIS 2桁、国は ISO3）。\n        返り値：found=true なら value（公表どおりの文字列・換算なし）・unit・period・region・kind（observation|projection）・\n        vintage・source（統計名・表・アクセサ＝原典の同じセルに戻れる・URL・取得日・引用1行）・\n        **quality**（系列に断層があるとき：usable_from＝分類改定由来の連続利用開始期／breaks＝断層の一覧。各断層の kind＝\n        classification（分類改定・別系列）|population（母集団推計・水準補正可）|accounting（会計基準・企業形態＝**比率は断層を跨いで比較不可**）|\n        coverage（表章範囲の注記）／sample＝標本の薄さ（データから計算：volatile＝散らばりが上位集計の 2 倍以上・small_cell＝母集団法人数<100 社＝単年より数年平均で）。\n        範囲指定では breaks_in_range（適用点が範囲内）と breaks_affecting_range（早期適用等の影響幅が重なる）・\n        caution（会計断層の適用点を含む＝比率は跨がない）／notice（影響幅のみ重なる＝脚注）も返す）。\n        範囲指定では values=[{period,value,…}…]（収録がある期のみ＝欠測期は補間せず単に含まれない）・count・\n        source（**系列単位**＝セル位置アクセサは単一 period の lookup で取得可）。\n        **該当が無ければ found=false と reason**（unknown_series／period_format／out_of_range／region_not_available／\n        not_published／no_values／derived_see_components／guide_only／range_too_wide＝該当が 100 値超）と\n        hint（正しい表記・提供範囲・構成系列。値は含めない）。\n        reason=guide_only は値を保持しない系列（再配布条件により発見層のみ）＝guide（原典 URL・文書名・表・行・列・単位・注意）を返す。\n        **値は利用側が原典を読んで取得する。stats はその値を保証しない**（原典で確認すること）。\n        近い年・隣の指標・補間値・派生計算値は返さない（捏造防止）。層は公開固定。\n        ",
+   "inputSchema": {
+    "properties": {
+     "period": {
+      "title": "Period",
+      "type": "string"
+     },
+     "region": {
+      "default": "JP",
+      "title": "Region",
+      "type": "string"
+     },
+     "series_id": {
+      "title": "Series Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "series_id",
+     "period"
+    ],
+    "title": "lookup_statisticArguments",
+    "type": "object"
+   },
+   "name": "lookup_statistic",
+   "title": "統計値を厳密参照する（参照層）"
+  }
+ ]
+}

@@ -142,13 +142,13 @@ async def part_c_mcp(col_present: bool) -> bool:
             tools = await session.list_tools()
             for tool_name in ("search_policy_docs", "sweep_policy_docs"):
                 t = next(t for t in tools.tools if t.name == tool_name)
-                props = list((t.inputSchema or {}).get("properties", {}))
+                props = list((t.input_schema or {}).get("properties", {}))
                 has_layer = any("layer" in p.lower() for p in props)
                 print(f"[C] {tool_name} schema 引数={props}  layer 引数={'あり ❌' if has_layer else 'なし ✅'}")
                 ok = ok and not has_layer
 
             r = await session.call_tool("search_policy_docs", {"query": QUERY, "top_k": 5})
-            sc = getattr(r, "structuredContent", None) or {}
+            sc = getattr(r, "structured_content", None) or {}
             if not sc:
                 for b in getattr(r, "content", []) or []:
                     if getattr(b, "text", None):

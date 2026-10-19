@@ -4,7 +4,7 @@ MCP Streamable HTTP 待受の定型（リモート公開用・全サービス共
 Cloudflare Tunnel 経由で `<service>.<ドメイン>` に出し、ログイン（`access.install_auth`＝現行は外部 IdP の
 Bearer 検証）＋秘密パス＋エッジのレート制限で守る構成の"原点"（IP 許可リストは使えない＝ルート CLAUDE.md §5）。
 既定は **127.0.0.1 バインド**＝ローカル/トンネル経由のみ到達可（直接インターネット
-には晒さない）。各サービスは FastMCP を組み立ててから本関数に渡すだけでよい。
+には晒さない）。各サービスは MCPServer（mcp 2.x）を組み立ててから本関数に渡すだけでよい。
 
 環境変数（サービス横断で同名）：
 - `MCP_ALLOWED_HOSTS`      … 設定時は DNS リバインディング保護 ON＋許可ホスト限定
@@ -23,6 +23,8 @@ Bearer 検証）＋秘密パス＋エッジのレート制限で守る構成の"
                               正しいときだけ、同じアプリを 2 つ目のポートでも待ち受ける。
 """
 import os
+
+from mcp.server.mcpserver.exceptions import ToolError
 
 from polyarchy_common.logsetup import get_logger
 
@@ -44,7 +46,8 @@ from polyarchy_common.logsetup import get_logger
 # - 混み具合を読めるように、実行した呼び出しは 1 回ごとに 1 行を出す：`TOOL <名前> wait_ms <待った時間> run_ms <実行の時間> queue <着いたとき
 #   に並んでいた数>`。アクセスログの所要時間では待ちと実行が分かれず、ツールの名前も無い。利用者・引数は出さない（検索語は捕捉ログの
 #   領分）。行の形を変えるときは RUNBOOK §1 の集計の式も同じ変更で（`test_common` が突き合わせる）。
-# FastMCP の内側の名前（_tool_manager・Tool.fn・Tool.is_async）に頼る＝`mcp<2` の固定の内側。`test_common` が形と動きを固定する。
+# SDK の内側の名前（MCPServer._tool_manager・Tool.fn・Tool.is_async・stdio の run_session の _lowlevel_server）に頼るのはこのモジュール
+# だけ＝`mcp>=2.3,<3` の固定の内側（B36・2026-10-20 に 1.x の FastMCP から移した）。`test_common` が形と動きを固定する。
 BUSY_MARK = "[busy]"
 BUSY_MESSAGE = (BUSY_MARK + " いま混み合っていて、この呼び出しは実行していません（該当なしという意味ではありません）。"
                 "30 秒ほどおいて同じ呼び出しをやり直すか、混雑していることを利用者に伝えてください。"
@@ -52,19 +55,29 @@ BUSY_MESSAGE = (BUSY_MARK + " いま混み合っていて、この呼び出し�
 TOOL_QUEUE_MAX_DEFAULT, TOOL_WAIT_SECONDS_DEFAULT = 20, 45.0
 
 
-class ToolBusy(Exception):
-    """混んでいて実行しなかった呼び出し（SDK がエラーの結果〔isError〕にして返す）。"""
+class ToolBusy(ToolError):
+    """混んでいて実行しなかった呼び出し（SDK がエラーの結果〔isError〕にして返す）。SDK の ToolError の子＝文面がそのまま利用側に
+    届く（2.x は ToolError 以外の例外の文面を伏せて「Error executing tool <名前>」だけにする）。"""
 
 
 def offload_tools(mcp, *, enabled: bool = True, concurrency: int = 1, queue_max: int = TOOL_QUEUE_MAX_DEFAULT,
                   wait_seconds: float = TOOL_WAIT_SECONDS_DEFAULT, logger_name: str = "polyarchy.mcp") -> list[str]:
     """登録済みの同期のツールを、別のスレッドで concurrency 本まで同時に動かす形に包む。包んだツールの名前を返す
-    （enabled=False なら何もしない）。並べる上限（queue_max）は、実行中の呼び出しのほかに待っている数で数える。"""
-    if not enabled:
-        return []
+    （enabled=False なら別のスレッドへは出さない＝[]）。並べる上限（queue_max）は、実行中の呼び出しのほかに待っている数で数える。"""
     import functools
     import time
 
+    if not enabled:
+        # 切る＝イベントループの上で直に（元の動き＝1 本ずつ）。SDK 2.x は同期のツールを既定で別のスレッドに出し、同時の数を
+        # 抑えない＝包まずに置くと、1 本ずつの前提のサービスが並んで動く。async の関数に包んで、SDK のスレッドへも出さない。
+        for tool in mcp._tool_manager.list_tools():
+            if not tool.is_async:
+                fn = tool.fn
+
+                async def on_loop(_fn=fn, **kwargs):
+                    return _fn(**kwargs)
+                tool.fn, tool.is_async = functools.wraps(fn)(on_loop), True
+        return []
     import anyio
     log = get_logger(logger_name)
     state = {"gate": None, "waiting": 0}
@@ -127,8 +140,8 @@ LIMIT_MARK = "[limit]"
 LIMIT_WINDOW_SECONDS = 3600
 
 
-class ToolLimited(Exception):
-    """利用者ごとの上限を超えて実行しなかった呼び出し（SDK がエラーの結果〔isError〕にして返す）。"""
+class ToolLimited(ToolError):
+    """利用者ごとの上限を超えて実行しなかった呼び出し（SDK がエラーの結果〔isError〕にして返す）。ToolBusy と同じく文面が届く。"""
 
 
 def limit_message(per_hour: int, minutes: int) -> str:
@@ -236,17 +249,33 @@ def _env_number(name: str, default, cast, log):
 def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, path: str = "/mcp",
                           tools_desc: str = "", logger_name: str = "polyarchy.mcp",
                           health_check=None, parallel_safe: bool = False) -> None:
-    """FastMCP を Streamable HTTP（stateless）で待ち受ける。戻らない（サーバ終了まで）。
+    """MCP サーバを Streamable HTTP（stateless）で待ち受ける。戻らない（サーバ終了まで）。
 
     health_check（任意）＝サービス固有の軽い検査を返す callable。渡すと GET /healthz が生える
     （認証不要・最外＝運用の生き死に判定。docs/運用設計.md §1.1）。アクセスログは常に装着。
     parallel_safe＝ツールを同時に動かしても結果が変わらないと確かめたサービスだけ True（同時の数は env
     MCP_TOOL_CONCURRENCY・確かめ方は各サービスの eval/concurrency）。"""
+    import uvicorn
     log = get_logger(logger_name)
-    mcp.settings.host = host
-    mcp.settings.port = port
-    mcp.settings.streamable_http_path = path
-    mcp.settings.stateless_http = True  # トンネル/プロキシ越しに堅牢（セッション親和性不要）
+    app, relay = build_streamable_http_app(mcp, host=host, port=port, path=path, tools_desc=tools_desc,
+                                           logger_name=logger_name, health_check=health_check,
+                                           parallel_safe=parallel_safe)
+    if relay is None:
+        uvicorn.run(app, host=host, port=port, log_level="warning")
+        return
+    # 中継の口＝同じアプリ・同じサーバを 2 つ目のソケットでも（lifespan は 1 つ・同時に動かす数と「混んでいる」は公開の口と共有）。
+    log.info("中継の口=有効（http://%s:%d%s・ログインなし・会員の印が必須・許可の範囲 %s）", relay["host"], relay["port"], path,
+             ",".join(str(n) for n in relay["allow"]))
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    server.run(sockets=[_bind(host, port), _bind(relay["host"], relay["port"])])
+
+
+def build_streamable_http_app(mcp, *, host: str = "127.0.0.1", port: int = 8765, path: str = "/mcp",
+                              tools_desc: str = "", logger_name: str = "polyarchy.mcp",
+                              health_check=None, parallel_safe: bool = False):
+    """serve_streamable_http が待ち受けるアプリを組み立てて (ASGI アプリ, 中継の口の設定 or None) を返す（待ち受けはしない）。
+    test_common がこの組み立てをそのまま通す＝本番と同じ形でプロトコルとツールの定義を確かめる。"""
+    log = get_logger(logger_name)
 
     # DNS リバインディング保護（Host ヘッダ検証）。トンネル経由だと Host=公開ホスト名で来るため、
     # 既定の localhost 限定だと 421 Misdirected Request になる。トンネル前提＋公開データのみ
@@ -255,11 +284,10 @@ def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, pat
     _allowed = os.environ.get("MCP_ALLOWED_HOSTS")
     if _allowed:
         _hosts = [h.strip() for h in _allowed.split(",") if h.strip()]
-        mcp.settings.transport_security = TransportSecuritySettings(
+        transport_security = TransportSecuritySettings(
             enable_dns_rebinding_protection=True, allowed_hosts=_hosts, allowed_origins=_hosts)
     else:
-        mcp.settings.transport_security = TransportSecuritySettings(
-            enable_dns_rebinding_protection=False)
+        transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
     log.info("MCPサーバHTTP待受: http://%s:%d%s %sDNS保護=%s", host, port, path,
              (tools_desc + " ") if tools_desc else "",
@@ -284,19 +312,21 @@ def serve_streamable_http(mcp, *, host: str = "127.0.0.1", port: int = 8765, pat
         log.info("利用者ごとの上限=1 時間に %d 回（このサービスの中で数える）", per_hour)
 
     # ASGI は常に自前で組む（mcp.run(streamable-http) と同じ uvicorn 経路）。
-    import uvicorn
     from polyarchy_common.relay import relay_config
     relay = relay_config(os.environ, public_port=port, log=log)
-    app = build_asgi_app(mcp.streamable_http_app(), host=host, port=port, path=path, logger_name=logger_name,
+    # stateless＝要求ごとに完結（トンネル/プロキシ越しに堅牢・セッション親和性不要）。2026-07-28 版の要求（要求ごとに版を名乗る）も
+    # 同じ受け口で受ける（SDK 2.x・B36）。
+    mcp_app = mcp.streamable_http_app(streamable_http_path=path, stateless_http=True,
+                                      transport_security=transport_security, host=host)
+    app = build_asgi_app(mcp_app, host=host, port=port, path=path, logger_name=logger_name,
                          health_check=health_check, relay=relay)
-    if relay is None:
-        uvicorn.run(app, host=host, port=port, log_level="warning")
-        return
-    # 中継の口＝同じアプリ・同じサーバを 2 つ目のソケットでも（lifespan は 1 つ・同時に動かす数と「混んでいる」は公開の口と共有）。
-    log.info("中継の口=有効（http://%s:%d%s・ログインなし・会員の印が必須・許可の範囲 %s）", relay["host"], relay["port"], path,
-             ",".join(str(n) for n in relay["allow"]))
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
-    server.run(sockets=[_bind(host, port), _bind(relay["host"], relay["port"])])
+    return app, relay
+
+
+async def run_session(mcp, read_stream, write_stream) -> None:
+    """1 本の伝送路（stdio）で MCP サーバを動かす。各サービスの stdio の起動はここを呼ぶ。"""
+    server = mcp._lowlevel_server
+    await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 def _bind(host: str, port: int):

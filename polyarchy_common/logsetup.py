@@ -42,7 +42,7 @@ _NOISY_LOGGERS = (
     "filelock",
     "asyncio",
     # MCP フレームワーク自身の英語ログ（"Processing request of type ..." 等）。
-    # FastMCP は __init__ で root を INFO＋RichHandler に設定するため個別に黙らせる。
+    # MCPServer は __init__ で root を INFO＋RichHandler に設定するため個別に黙らせる。
     "mcp",
     "mcp.server",
     "mcp.server.lowlevel",
@@ -55,7 +55,7 @@ _configured = False
 def configure_quiet_logging() -> None:
     """英語ノイズ（HF/transformers/llama_index/httpx/mcp 等）を抑制する。
 
-    ロガーのレベル引き下げは**毎回再適用**する（FastMCP の configure_logging など
+    ロガーのレベル引き下げは**毎回再適用**する（MCPServer の configure_logging など
     サードパーティが後から root/ハンドラを張り替えても確実に黙らせるため）。env と
     transformers の初期化だけは 1 度きり（冪等ガード）。
     """

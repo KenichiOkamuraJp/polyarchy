@@ -26,7 +26,7 @@ HERE = Path(__file__).resolve().parents[2]  # リポジトリ root（python -m r
 
 def _result_payload(result) -> dict:
     """CallToolResult から dict ペイロードを取り出す（structuredContent 優先）。"""
-    sc = getattr(result, "structuredContent", None)
+    sc = getattr(result, "structured_content", None)
     if isinstance(sc, dict):
         return sc
     for block in getattr(result, "content", []) or []:
@@ -64,7 +64,7 @@ async def main() -> int:
             print(f"[1] 公開ツール: {names}")
             assert "search_policy_docs" in names, "search_policy_docs が公開されていない"
             spd = next(t for t in tools.tools if t.name == "search_policy_docs")
-            props = (spd.inputSchema or {}).get("properties", {})
+            props = (spd.input_schema or {}).get("properties", {})
             print(f"    search_policy_docs 引数: {list(props)}")
             has_layer = any("layer" in p.lower() or "機密" in p for p in props)
             print(f"    layer 引数の有無: {'あり(!!)' if has_layer else 'なし（機密は要求不可）'}")
@@ -75,10 +75,10 @@ async def main() -> int:
             if set(names) != {"search_policy_docs", "sweep_policy_docs", "list_orgs"}:
                 contract.append(f"ツール集合が違う: {sorted(names)}")
             for t in tools.tools:
-                if any("layer" in p.lower() or "機密" in p for p in (t.inputSchema or {}).get("properties", {})):
+                if any("layer" in p.lower() or "機密" in p for p in (t.input_schema or {}).get("properties", {})):
                     contract.append(f"{t.name} に layer 引数がある（層は公開固定）")
-                if not (t.annotations and t.annotations.readOnlyHint and t.annotations.title
-                        and t.annotations.destructiveHint is False and t.annotations.openWorldHint is False) or not t.title:
+                if not (t.annotations and t.annotations.read_only_hint and t.annotations.title
+                        and t.annotations.destructive_hint is False and t.annotations.open_world_hint is False) or not t.title:
                     contract.append(f"{t.name} に title／注釈の title（annotations.title）／注釈の 3 つの明示（readOnlyHint=True・destructiveHint=False・openWorldHint=False）が無い")
             print(f"[1b] 入口の契約: {'OK' if not contract else contract}")
             ok = ok and not contract
@@ -154,7 +154,7 @@ async def main() -> int:
             # 8) sweep_policy_docs（バッチ2 段2・多段のツール昇格）：schema に layer なし -----
             assert "sweep_policy_docs" in names, "sweep_policy_docs が公開されていない"
             swp = next(t for t in tools.tools if t.name == "sweep_policy_docs")
-            sprops = (swp.inputSchema or {}).get("properties", {})
+            sprops = (swp.input_schema or {}).get("properties", {})
             has_layer_s = any("layer" in p.lower() or "機密" in p for p in sprops)
             print(f"[8] sweep_policy_docs 引数: {list(sprops)} "
                   f"layer 引数={'あり(!!)' if has_layer_s else 'なし（機密は要求不可）'}")

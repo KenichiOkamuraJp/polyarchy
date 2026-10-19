@@ -98,7 +98,7 @@ Claude の公式コネクタ（リモート MCP・ディレクトリ掲載）要
 
 | 項目 | 状態 |
 |---|---|
-| ツール注釈 | `search_policy_docs`・`list_orgs` に `title`＋`ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)`、`FastMCP(instructions=SERVER_INSTRUCTIONS)`（何を返し・何を返さないか）。説明文は「何をするか・いつ使うか」に整理（振る舞い指示調を除去）＝**済** |
+| ツール注釈 | `search_policy_docs`・`list_orgs` に `title`＋`ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)`、`MCPServer(instructions=SERVER_INSTRUCTIONS)`（何を返し・何を返さないか）。説明文は「何をするか・いつ使うか」に整理（振る舞い指示調を除去）＝**済** |
 | ゲート不変 | 注釈追加後に 4 種 PASS（数値の正典＝ルート README「品質の担保」・本書には写さない）＋ `mcp_layer_gate_test` PASS＝**済** |
 | 公開ドキュメント | `https://docs.polyarchy.net/recommendations`（原稿 `../deploy/pages/recommendations.html`・Cloudflare Pages 配置済・旧ドメインのエイリアスは 2026-09-02 撤去）。接続 URL は書かない（PoC は秘密パス付き authless＝個別案内） |
 | 利用者 ID→捕捉ログ | コード変更なし（`polyarchy_common.capture` が認証済みなら `user_hash` を自動付与）。案 B（2026-09-02〜）で 3 経路とも付く |
