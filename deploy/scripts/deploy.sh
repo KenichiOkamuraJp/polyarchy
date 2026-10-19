@@ -3,13 +3,15 @@
 # 一連の operator 手順を1コマンドで（env ファイル駆動＝staging も prod も同じスクリプト）。
 #
 #   bash deploy.sh <staging|prod> [phase]
-#     phase = secrets | upload | apply | plan | apply-plan | all（既定 all）
+#     phase = secrets | upload | apply | plan | apply-plan | state-migrate | all（既定 all）
 #       secrets    … §2 SSM 秘密登録
 #       upload     … §3 バケット先行作成 → コード/データを S3 へ（約 7GB・時間の山）
 #       apply      … §4 本適用（EC2/VPC/IAM…・プラン確認あり＝対話で yes を待つ）
 #       plan       … §4 の差分を見るだけ（読み取り）＋ 差分があれば plan を保存（差分なしなら残さない）
 #       apply-plan … plan で保存した plan をそのまま適用（対話なし）→ 直後の plan が No changes であることまで。
 #                    既存の箱への小さな変更（アラーム・IAM・S3 のライフサイクル）を、端末の対話なしで流すときの形
+#       state-migrate … local の terraform の state を S3 へ移す（1 回だけ・B46 (c)・2026-10-19）。S3 に既にあれば止める。
+#                    移した後の plan が No changes であることまで（PROD_MIGRATION §4）
 #       all        … secrets → upload →（確認）→ apply
 #
 # prod 昇格は「env/prod.env を用意して bash deploy.sh prod all」だけ（仕様§3.1 の転写）。
@@ -25,7 +27,7 @@ fi
 
 ENV_NAME="${1:-}"
 PHASE="${2:-all}"
-[[ -n "$ENV_NAME" ]] || die "使い方: bash deploy.sh <staging|prod> [secrets|upload|apply|plan|apply-plan|all]"
+[[ -n "$ENV_NAME" ]] || die "使い方: bash deploy.sh <staging|prod> [secrets|upload|apply|plan|apply-plan|state-migrate|all]"
 
 load_env "$ENV_NAME"
 
@@ -35,6 +37,7 @@ case "$PHASE" in
   apply)   do_apply; print_next_steps ;;
   plan)    do_plan ;;
   apply-plan) do_apply_plan ;;
+  state-migrate) do_state_migrate ;;
   all)
     do_register_secrets
     do_provision_bucket
@@ -43,7 +46,7 @@ case "$PHASE" in
     do_apply
     print_next_steps
     ;;
-  *) die "未知の phase: ${PHASE}（secrets|upload|apply|plan|apply-plan|all）" ;;
+  *) die "未知の phase: ${PHASE}（secrets|upload|apply|plan|apply-plan|state-migrate|all）" ;;
 esac
 
 log "phase=${PHASE} 完了（env=${ENV_NAME}）"

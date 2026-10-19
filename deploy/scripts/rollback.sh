@@ -87,7 +87,7 @@ cmd_destroy() {
   log "破棄前に EBS スナップショットを取ります（保険）。"
   cmd_snapshot "$name" || warn "スナップショット失敗（インスタンス未作成かも）。続行判断は慎重に。"
   echo ""
-  ( cd "$TF_DIR" && terraform init -input=false >/dev/null && terraform plan -destroy "${TF_ARGS[@]}" | tail -40 )
+  ( cd "$TF_DIR" && tf_init && terraform plan -destroy "${TF_ARGS[@]}" | tail -40 )
   echo ""
   warn "上記が削除内容です。取り消せません。"
   local typed

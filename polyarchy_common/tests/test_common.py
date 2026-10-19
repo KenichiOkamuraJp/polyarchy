@@ -2602,6 +2602,83 @@ def test_rollback_restores_units():
     assert run() == []                                                                                        # ④
 
 
+def test_terraform_state_on_s3():
+    """terraform の state を S3 に置く（B46 (c)・2026-10-19）。local の state は deploy.sh を流したフォルダにだけあり、失うと apply と
+    destroy ができなかった。固定すること＝① versions.tf の backend は s3（値は持たない）で、deploy の各スクリプトの terraform init は
+    tf_init（値を渡す）と state-migrate だけ ② バケットとキーは環境ごと ③ state のバケットを作るときは版・公開の遮断・暗号化・
+    TLS 以外の拒否 ④ state-migrate は S3 に同じ環境の state が既にあれば止める（上書きしない）・local の state が無ければ止める
+    ⑤ 移すときは手元の state を残してから -migrate-state で移し、移した後の plan まで流す。"""
+    import re
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    ver = (root / "deploy/terraform/versions.tf").read_text(encoding="utf-8")
+    assert re.search(r'^\s*backend "s3" \{\}', ver, re.M), "versions.tf の backend が s3 でない"                    # ①
+    lib = (root / "deploy/scripts/lib.sh").read_text(encoding="utf-8")
+    funcs = {n: re.search(rf"^{n}\(\) \{{.*?^\}}$", lib, re.M | re.S) for n in ("ensure_state_bucket", "tf_init", "do_state_migrate")}
+    assert all(funcs.values()), [n for n, m in funcs.items() if not m]
+    allowed = funcs["tf_init"].group(0) + funcs["do_state_migrate"].group(0)
+    for f in sorted((root / "deploy/scripts").glob("*.sh")):
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if re.search(r"\bterraform init\b", line) and not line.lstrip().startswith("#"):
+                assert line in allowed, (f.name, line)                                                         # ①
+    assert re.search(r'^\s*TF_STATE_BUCKET="\$\{PROJECT\}-tfstate-\$\{ENVIRONMENT\}-\$\{ACCOUNT_ID\}"', lib, re.M)     # ②
+    assert re.search(r'^\s*TF_STATE_KEY="\$\{PROJECT\}/\$\{ENVIRONMENT\}/terraform.tfstate"', lib, re.M)
+    init_args = re.search(r"^\s*TF_INIT_ARGS=\((.*?)^\s*\)", lib, re.M | re.S).group(1)
+    for k in ("bucket=$TF_STATE_BUCKET", "key=$TF_STATE_KEY", "encrypt=true", "use_lockfile=true"):
+        assert k in init_args, k
+
+    d = Path(tempfile.mkdtemp())
+    (d / "bin").mkdir()
+    tf = d / "tf"
+    tf.mkdir()
+    stubs = {   # remote＝S3 に state があるか・bucket＝state のバケットがあるか（ファイルの有無で切り替える）
+        "aws": f'echo "aws $*" >> "{d}/calls"; case "$*" in *head-bucket*) [[ -e "{d}/bucket" ]];; '
+               f'*head-object*) [[ -e "{d}/remote" ]];; *create-bucket*) touch "{d}/bucket";; esac',
+        "terraform": f'echo "terraform $*" >> "{d}/calls"; exit 0',
+    }
+    for name, body in stubs.items():
+        (d / "bin" / name).write_text("#!/bin/bash\n" + body + "\n")
+        (d / "bin" / name).chmod(0o755)
+    m_args = re.search(r"^\s*TF_INIT_ARGS=\(.*?^\s*\)", lib, re.M | re.S).group(0)
+
+    def run(local: bool, remote: bool, bucket: bool):
+        for n, on in (("remote", remote), ("bucket", bucket)):
+            (d / n).unlink(missing_ok=True)
+            if on:
+                (d / n).touch()
+        for p in tf.glob("terraform.tfstate*"):
+            p.unlink()
+        if local:
+            (tf / "terraform.tfstate").write_text('{"version": 4}')
+        (d / "calls").write_text("")
+        script = (f'set -euo pipefail; export PATH="{d / "bin"}:$PATH"\n'
+                  f'PROJECT=polyarchy ENVIRONMENT=staging ACCOUNT_ID=111122223333 AWS_REGION=ap-northeast-1 TF_DIR="{tf}"\n'
+                  'TF_STATE_BUCKET="${PROJECT}-tfstate-${ENVIRONMENT}-${ACCOUNT_ID}"\n'
+                  'TF_STATE_KEY="${PROJECT}/${ENVIRONMENT}/terraform.tfstate"\n' + m_args + "\nTF_ARGS=(-var x=1)\n"
+                  'log() { echo "$*"; }; die() { echo "DIE $*" >&2; exit 1; }\n'
+                  + "\n".join(m.group(0) for m in funcs.values()) + "\ndo_state_migrate")
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        return r.returncode, (d / "calls").read_text().splitlines(), r.stderr
+
+    rc, calls, err = run(local=True, remote=True, bucket=True)                                                  # ④
+    assert rc != 0 and "既に state がある" in err and not any(c.startswith("terraform") for c in calls), (rc, calls, err)
+    assert not list(tf.glob("terraform.tfstate.pre-s3-*"))
+    rc, calls, err = run(local=False, remote=False, bucket=True)
+    assert rc != 0 and "移す local の state が無い" in err and not calls, (rc, calls, err)
+    rc, calls, err = run(local=True, remote=False, bucket=False)                                                # ③⑤
+    assert rc == 0, (rc, calls, err)
+    aws = " ".join(c for c in calls if c.startswith("aws"))
+    for k in ("create-bucket --bucket polyarchy-tfstate-staging-111122223333", "LocationConstraint=ap-northeast-1",
+              "Status=Enabled", "BlockPublicPolicy=true", "AES256", '"aws:SecureTransport":"false"'):
+        assert k in aws, k
+    tcalls = [c for c in calls if c.startswith("terraform")]
+    assert "-migrate-state" in tcalls[0] and "key=polyarchy/staging/terraform.tfstate" in tcalls[0], tcalls
+    assert tcalls[1].startswith("terraform plan"), tcalls
+    assert len(list(tf.glob("terraform.tfstate.pre-s3-*"))) == 1                                                 # ⑤
+
+
 def test_release_counts_series_like_dashboard():
     """release.sh がマニフェスト（release/data.json）に書く統計の系列数は、ダッシュボード（ops_dashboard.data_scale）と同じ規則で
     数える＝空行と先頭の「# 生成物」の行は系列ではない（2026-10-18 の staging の配布で data.json 11008・ダッシュボードと healthz 11007

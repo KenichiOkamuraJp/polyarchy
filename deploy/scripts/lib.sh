@@ -57,6 +57,19 @@ load_env() {
     || die "AWS 認証に失敗（AWS_PROFILE=${AWS_PROFILE}）。aws configure --profile ${AWS_PROFILE} を確認。"
   BUCKET="${PROJECT}-${ENVIRONMENT}-${ACCOUNT_ID}"
   SSM_PREFIX="/${PROJECT}/${ENVIRONMENT}"
+  # terraform の state の置き場（B46 (c)・2026-10-19）＝S3（versions.tf の backend "s3" は値を持たない＝ここで渡す）。
+  # 環境ごとに別のバケット・別のキー＝staging と prod の state が混ざらない。バケットは terraform の外で作る（state を
+  # 置く前に要る＝ensure_state_bucket）。use_lockfile＝S3 の native のロック（同じ state への同時の apply を止める）。
+  TF_STATE_BUCKET="${PROJECT}-tfstate-${ENVIRONMENT}-${ACCOUNT_ID}"
+  TF_STATE_KEY="${PROJECT}/${ENVIRONMENT}/terraform.tfstate"
+  TF_INIT_ARGS=(
+    -input=false
+    -backend-config "bucket=$TF_STATE_BUCKET"
+    -backend-config "key=$TF_STATE_KEY"
+    -backend-config "region=$AWS_REGION"
+    -backend-config "encrypt=true"
+    -backend-config "use_lockfile=true"
+  )
 
   # Terraform へは -var で明示注入（stray な terraform.tfvars に上書きされないよう最優先の -var を使う）。
   TF_ARGS=(
@@ -213,10 +226,66 @@ do_register_secrets() {
   aws ssm get-parameters-by-path --path "$SSM_PREFIX" --query 'Parameters[].Name' --output table
 }
 
+# ── terraform の state（S3）─────────────────────────────────────────────────
+# state を置くバケットを作る（無ければ）＝版を残す・公開を塞ぐ・暗号化・TLS 以外を拒否（データのバケットと同じ守り）。
+# terraform の外で作る＝state より先に要る（terraform で作ると、その state をどこに置くかが決まらない）。
+ensure_state_bucket() {
+  if aws s3api head-bucket --bucket "$TF_STATE_BUCKET" >/dev/null 2>&1; then return 0; fi
+  log "terraform の state のバケットを作る（${TF_STATE_BUCKET}）"
+  if [[ "$AWS_REGION" == "us-east-1" ]]; then
+    aws s3api create-bucket --bucket "$TF_STATE_BUCKET" >/dev/null
+  else
+    aws s3api create-bucket --bucket "$TF_STATE_BUCKET" \
+      --create-bucket-configuration "LocationConstraint=$AWS_REGION" >/dev/null
+  fi
+  aws s3api put-bucket-versioning --bucket "$TF_STATE_BUCKET" --versioning-configuration Status=Enabled
+  aws s3api put-public-access-block --bucket "$TF_STATE_BUCKET" --public-access-block-configuration \
+    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  aws s3api put-bucket-encryption --bucket "$TF_STATE_BUCKET" --server-side-encryption-configuration \
+    '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+  aws s3api put-bucket-policy --bucket "$TF_STATE_BUCKET" --policy "$(printf '%s' \
+    '{"Version":"2012-10-17","Statement":[{"Sid":"DenyInsecureTransport","Effect":"Deny","Principal":"*","Action":"s3:*",' \
+    '"Resource":["arn:aws:s3:::'"$TF_STATE_BUCKET"'","arn:aws:s3:::'"$TF_STATE_BUCKET"'/*"],' \
+    '"Condition":{"Bool":{"aws:SecureTransport":"false"}}}]}')"
+}
+
+# terraform init は全部ここを通す（state は S3）。手元に local の state が残ったフォルダ（移す前）では terraform が
+# 「backend が変わった」で止める＝state-migrate を案内する（-reconfigure で進めると local の state を捨てて空の state から
+# 作り直す計画になる＝やらない）。
+tf_init() {
+  ensure_state_bucket
+  terraform init "${TF_INIT_ARGS[@]}" >/dev/null && return 0
+  if [[ -s "$TF_DIR/terraform.tfstate" ]]; then
+    die "このフォルダに local の terraform の state がある＝先に S3 へ移す: bash deploy.sh ${ENVIRONMENT} state-migrate（PROD_MIGRATION §4）"
+  fi
+  die "terraform init が失敗（上のエラーを読む）"
+}
+
+# local の state を S3 へ移す（1 回だけ・運営者・PROD_MIGRATION §4）。S3 に同じ環境の state が既にあれば止める（上書きしない）。
+# 移した後の plan が No changes であることまで確かめる＝同じ state であることの確認。手元の state は日付つきで残す（git 外）。
+do_state_migrate() {
+  local local_state="$TF_DIR/terraform.tfstate" rc=0
+  [[ -s "$local_state" ]] || die "移す local の state が無い（${local_state}）＝S3 の state をそのまま使う（state-migrate は要らない）"
+  ensure_state_bucket
+  if aws s3api head-object --bucket "$TF_STATE_BUCKET" --key "$TF_STATE_KEY" >/dev/null 2>&1; then
+    die "S3 に既に state がある（s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}）＝上書きしない。どちらが正しいか確かめてから手で（RUNBOOK §3）"
+  fi
+  cp -p "$local_state" "$local_state.pre-s3-$(date +%Y%m%d%H%M%S)"
+  log "local の state を S3 へ移す（s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}）"
+  ( cd "$TF_DIR" && terraform init "${TF_INIT_ARGS[@]}" -migrate-state -force-copy >/dev/null ) \
+    || die "state の移行が失敗（local の state はそのまま＝やり直せる）"
+  ( cd "$TF_DIR" && terraform plan -input=false -detailed-exitcode "${TF_ARGS[@]}" >/dev/null ) || rc=$?
+  case "$rc" in
+    0) log "移した後の plan: No changes ✓（state は S3。手元の terraform.tfstate.pre-s3-* は確かめた後に退避してよい）" ;;
+    2) die "移した後の plan に差分がある＝移す前の plan と見比べる（bash deploy.sh ${ENVIRONMENT} plan）" ;;
+    *) die "移した後の plan が失敗（rc=${rc}）" ;;
+  esac
+}
+
 # ── §3a S3 バケットを先に作る（upload の受け皿）──────────────────────────────
 do_provision_bucket() {
   log "Terraform init ＋ S3 バケット先行作成（${BUCKET}）"
-  ( cd "$TF_DIR" && terraform init -input=false >/dev/null \
+  ( cd "$TF_DIR" && tf_init \
       && terraform apply -input=false -auto-approve \
            "${TF_ARGS[@]}" -target=aws_s3_bucket_versioning.data )
 }
@@ -231,7 +300,7 @@ do_upload() {
 # ── §4 本適用（EC2/VPC/IAM…）＝プランを見せて対話で承認 ─────────────────────
 do_apply() {
   log "Terraform 本適用（プラン確認 → yes で実行）"
-  ( cd "$TF_DIR" && terraform init -input=false >/dev/null \
+  ( cd "$TF_DIR" && tf_init \
       && terraform apply "${TF_ARGS[@]}" )
 }
 
@@ -244,7 +313,7 @@ do_plan() {
   local pf rc=0; pf="$(tf_plan_file)"
   log "Terraform plan（読み取りだけ・保存先 ${pf}）"
   mkdir -p "$(dirname "$pf")"
-  ( cd "$TF_DIR" && terraform init -input=false >/dev/null \
+  ( cd "$TF_DIR" && tf_init \
       && terraform plan -input=false -detailed-exitcode "${TF_ARGS[@]}" "-out=$pf" ) || rc=$?
   # 保存した plan を残すのは差分があるときだけ＝差分なしの plan が残ると、後日 plan を取り直さずに流した apply-plan に
   # 古い plan が当たる（2026-10-13 staging）。前に残っていた plan も、ここで上書きされるか消える。
@@ -259,7 +328,7 @@ do_apply_plan() {
   local pf rc=0; pf="$(tf_plan_file)"
   [[ -f "$pf" ]] || die "保存した plan が無い（先に bash deploy.sh ${ENVIRONMENT} plan で差分を読む）"
   log "Terraform 適用（保存した plan・対話なし）"
-  ( cd "$TF_DIR" && terraform init -input=false >/dev/null && terraform apply -input=false "$pf" ) || rc=$?
+  ( cd "$TF_DIR" && tf_init && terraform apply -input=false "$pf" ) || rc=$?
   rm -f "$pf"                                   # 成否にかかわらず残さない（同じ plan は 2 回適用できない）
   [[ "$rc" == 0 ]] || die "terraform apply が失敗（plan は消した＝直してから plan からやり直す）"
   rc=0

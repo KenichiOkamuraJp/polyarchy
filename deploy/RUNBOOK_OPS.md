@@ -515,7 +515,7 @@ tar を `current` に置く（2026-10-09〜・それまでの箱は最初の適�
 **S3 `data/`・`release/`・`code/` への Put/Delete＋`ops/` の読み取り＋ListBucket だけ**（定義＝[deploy/iam-data-operator-policy.json](iam-data-operator-policy.json)・
 箱・EC2・SSM に触れない・捕捉ログは読めない。upload は CloudTrail データイベントに実行者 ID 付きで記録）。SSM send-command 等の管理系権限は障害対応時のみ。
 release.sh の前提（手元）＝conda env `polyarchy`・Docker の `qdrant-dev`（審議会DB 有効時は `qdrant-delib` も）・aws/terraform/git・`deploy/env/<env>.env`・`recommendations/.env`（Anthropic＝分野タグ判定／OpenAI）・
-`stats/.env`（e-Stat appId）・`deploy/terraform/terraform.tfstate`（バケット名の取得元＝無ければ環境変数 `BUCKET` を指定）。
+`stats/.env`（e-Stat appId）・terraform の state（S3・2026-10-19〜＝`deploy.sh` を流したことのあるフォルダでは `terraform output` がバケット名を読む・無ければ環境変数 `BUCKET` を指定）。
 
 - ★コード変更を伴うリリースも release.sh で足りる（upload が tar を同梱・**箱の apply が tar を再展開**＝2026-09-03〜。
   「bootstrap はコードを更新しない」地雷は apply 側で解消。手動の tar 再展開は非常時のみ＝deploy/README）。

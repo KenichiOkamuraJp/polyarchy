@@ -318,7 +318,8 @@ bash scripts/deploy.sh prod all
 ```
 `all` ＝ **秘密の登録（§3.2 の `deploy.sh prod secrets` の行）→ S3 バケットの作成 → コードとデータの上り（約 10GB）→（確認）→ terraform apply**。
 - 上りは §0.7 の準備が前提（ロックの環境・HF のキャッシュの固定の版・審議会DB の束・`qdrant-dev` を止めておく）。終わったら `docker start qdrant-dev`。
-- terraform の state は `deploy.sh` を流したフォルダの `deploy/terraform/terraform.tfstate`（git 外）＝**失うと後の apply と destroy ができない**。退避するか、`versions.tf` のコメントの S3 backend に移す。配布用のクローンには state が無い＝§3.1 の `BUCKET` で足りる。
+- terraform の state は **S3**（2026-10-19〜・`versions.tf` の backend）＝バケット `polyarchy-tfstate-prod-<アカウントID>`（版を残す・公開の遮断・暗号化・TLS 以外を拒否）・キー `polyarchy/prod/terraform.tfstate`・ロックは S3 の native（同じ state への同時の apply を止める）。バケットは最初の `deploy.sh` が作る（`lib.sh` の `ensure_state_bucket`＝terraform の外）。どのフォルダから `deploy.sh` を流しても同じ state を見る＝作業用 PC を失っても apply と destroy ができる。★terraform を直に `init` しない（backend の値は `deploy.sh` が渡す）。terraform は 1.10 以上。
+  - **local の state で建てた環境を移す（1 回だけ・運営者）**：state を持つフォルダで `bash scripts/deploy.sh <env> state-migrate`＝S3 に同じ環境の state が既にあれば止める（上書きしない）→ 手元の state を `terraform.tfstate.pre-s3-<日時>` に残す → `terraform init -migrate-state` → **移した後の plan が No changes** まで確かめる。移す前のフォルダで `plan`・`apply` を流すと「local の state がある＝先に state-migrate」で止まる（`-reconfigure` で進めると local の state を捨てた空の state から作り直す計画になる＝やらない）。移した後の `pre-s3-*` は、plan が No changes を確かめてから退避してよい（git 外）。
 - **IAM 反映待ち**で instance profile 作成が 403 になったら、少し待って**同じ apply を再実行**すれば通る。
 - 4 サービスを最初から有効にして建てる箱は、配布を分ける必要は無い（RUNBOOK §5「サービスを足す」の 2 回に分ける手順は、稼働中の箱に足すときのもの）。
 - **構築の途中でアラームが鳴る**（想定内）：health は値が来ないと鳴る＝bootstrap が終わるまで（十数分）。edge は §5.3 で入口を開くまで。§5.3 の後に OK へ戻ることを確かめる。
