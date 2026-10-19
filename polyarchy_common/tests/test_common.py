@@ -2641,6 +2641,61 @@ def test_rollback_restores_units():
     assert run() == []                                                                                        # ④
 
 
+def test_box_lock_has_no_genai_clients():
+    """箱のロックに生成 AI の API のクライアントを入れない（B46 (b)・2026-10-19）。配信のサーバは生成 AI を呼ばない（ルート CLAUDE.md
+    §3）のに、取込・評価の依存が同じ extras にあって箱に入っていた。固定すること＝① 箱のロック（lock-recommendations-stats.txt・
+    lock-stats.txt）に anthropic・openai・llama-index の LLM／OpenAI 系・streamlit が無い ② 作業用 PC のロック（lock-all.txt）は
+    箱のロックの全部を同じ版で含む（ゲートが測る依存＝箱で動く依存・check_lock.py は箱のロックで照合する）③ pyproject の箱の
+    extras（recommendations・stats）にも書かない。"""
+    import re
+    import tomllib
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    req = root / "deploy/requirements"
+
+    def pins(name: str) -> dict:
+        out = {}
+        for line in (req / name).read_text(encoding="utf-8").splitlines():
+            m = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)", line)
+            if m:
+                out[re.sub(r"[-_.]+", "-", m.group(1)).lower()] = m.group(2)
+        return out
+
+    banned = re.compile(r"^(anthropic|openai|streamlit|llama-index-llms-.*|llama-index-embeddings-openai|llama-index-agent-openai"
+                        r"|llama-index-multi-modal-llms-openai|llama-index-program-openai|llama-index-question-gen-openai)$")
+    box = pins("lock-recommendations-stats.txt")
+    for name in ("lock-recommendations-stats.txt", "lock-stats.txt"):                                          # ①
+        bad = sorted(n for n in pins(name) if banned.match(n))
+        assert not bad, (name, bad)
+    work = pins("lock-all.txt")                                                                                # ②
+    diff = sorted(f"{n} 箱={v} 作業用={work.get(n)}" for n, v in box.items() if work.get(n) != v)
+    assert not diff, diff
+    assert "anthropic" in work, "作業用 PC のロックに取込の依存（ingest）が無い"
+    extras = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["optional-dependencies"]  # ③
+    for ex in ("recommendations", "stats"):
+        names = [re.split(r"[<>=\[ ;]", d, maxsplit=1)[0].lower() for d in extras[ex]]
+        assert not [n for n in names if banned.match(n) or n == "llama-index"], (ex, names)
+    # ④ 稼働中の箱からも外す＝pip install -r はロックから外れたものを消さない。bootstrap ③ が、ロックから入れた後に env にあって
+    #   ロックに無いもの（pip と本体は残す）を pip uninstall する。
+    import importlib.util
+    import tempfile
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    i_req = boot.index('install --no-input --require-hashes -r "$LOCK_FILE"')
+    i_nil = boot.find('check_lock.py" --not-in-lock "$LOCK_FILE"', i_req)
+    assert i_req < i_nil < boot.find('uninstall --no-input -y "${NOT_IN_LOCK[@]}"', i_nil), "bootstrap ③ がロックに無いものを外さない"
+    spec = importlib.util.spec_from_file_location("check_lock", root / "deploy/scripts/check_lock.py")
+    cl = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cl)
+    from importlib import metadata
+    have = sorted({cl._norm(d.metadata["Name"]) for d in metadata.distributions() if d.metadata["Name"]})
+    keep = [n for n in have if n not in cl.KEEP][:3]
+    lock = Path(tempfile.mkdtemp()) / "lock.txt"
+    lock.write_text("".join(f"{n}==0 \\\n    --hash=sha256:00\n" for n in keep), encoding="utf-8")
+    extra = cl.not_in_lock(lock)
+    assert not set(extra) & set(keep) and not set(extra) & cl.KEEP, extra
+    assert set(extra) == set(have) - set(keep) - cl.KEEP
+
+
 def test_terraform_state_on_s3():
     """terraform の state を S3 に置く（B46 (c)・2026-10-19）。local の state は deploy.sh を流したフォルダにだけあり、失うと apply と
     destroy ができなかった。固定すること＝① versions.tf の backend は s3（値は持たない）で、deploy の各スクリプトの terraform init は

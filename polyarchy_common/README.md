@@ -37,7 +37,7 @@
 
 追加依存は `pyproject.toml`（リポ root）の `[project.optional-dependencies]` へ**サービス別に**書く
 （共通＝mcp/PyJWT/uvicorn・`recommendations`＝検索スタック〔torch/ruri を引く重い側〕・`stats`＝軽量）。
-stats 単独の箱は `pip install -e ".[stats]"` で torch を引かない。ローカルは `.[recommendations,stats]`。
+stats 単独の箱は `pip install -e ".[stats]"` で torch を引かない。ローカルは `.[all]`（取込の extras も）。
 
 **文書検索の部品は本パッケージに入れない**（2026-10-03）＝分かち書き・BM25・RRF・埋め込み/リランカーの登録・
 Qdrant のストアは共有ライブラリ `polyarchy_retrieval`（[docstring](../polyarchy_retrieval/__init__.py) が仕様）。

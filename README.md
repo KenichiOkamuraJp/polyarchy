@@ -58,7 +58,7 @@ polyarchy/
 ├── deploy/               AWS 構成（Terraform / bootstrap / systemd / Cloudflare / 運用手順）— 全サービス共通
 ├── ops/usage/            週次利用レポートの集計の出力先（weekly.jsonl＝数字のみ。実利用の数字なので git 外。生成は `python -m polyarchy_common.usage_report`）
 ├── docs/                 全体文書（残タスク・運用設計・評価設計・導入団体向け文書・長期計画＝下記「ドキュメント」）
-└── pyproject.toml        依存定義（共通＋extras recommendations/stats。ローカルは `pip install -e ".[recommendations,stats]"`・stats 単独箱は `.[stats]`）
+└── pyproject.toml        依存定義（共通＋extras recommendations/stats〔箱〕・ingest/companies〔取込だけ＝作業用 PC〕。ローカルは `pip install -e ".[all]"`・stats 単独箱は `.[stats]`）
 ```
 
 ## 拡張の形（コーパス連邦＝サービスを足しても既存を壊さない）

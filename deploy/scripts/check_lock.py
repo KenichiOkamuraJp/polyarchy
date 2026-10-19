@@ -4,6 +4,7 @@ release.sh の「配る前の確認」が呼ぶ（ゲートが測った依存＝
 手で回してもよい（deliberations/CLAUDE.md の「開発用の env もロックの版に合わせてから基準値を測る」の担保）。
 
   python deploy/scripts/check_lock.py [ロックファイル]     # 既定＝deploy/requirements/lock-recommendations-stats.txt
+  python deploy/scripts/check_lock.py --not-in-lock <ロック> # env にあってロックに無いパッケージの名前（1 行 1 つ）＝箱の bootstrap ③ が外す
 
 照合の向きはロック → 走っている env だけ（env にだけある開発用の道具は問わない）。torch の +cpu のような
 ローカル版の表記は落として比べる（Mac の torch には付かない＝同じ版）。合えば 0、違えば差を並べて 1。
@@ -47,7 +48,22 @@ def mismatches(lock: Path) -> list[str]:
     return bad
 
 
+# env にあってもロックに無くてよいもの＝pip 自身と本体（-e . で入る）。
+KEEP = {"pip", "polyarchy"}
+
+
+def not_in_lock(lock: Path) -> list[str]:
+    """env にあってロックに無いパッケージ（B46 (b)・2026-10-19）。pip install -r はロックから外れたものを消さない＝箱の env に
+    前の版のロックの依存（生成 AI の API のクライアントなど）が残る。bootstrap ③ がこれを pip uninstall する＝箱の env＝ロック。"""
+    want = pins(lock)
+    names = {_norm(d.metadata["Name"]) for d in metadata.distributions() if d.metadata["Name"]}
+    return sorted(n for n in names if n not in want and n not in KEEP)
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "--not-in-lock":
+        print("\n".join(not_in_lock(Path(sys.argv[2]))))
+        return 0
     lock = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_LOCK
     n = len(pins(lock))
     bad = mismatches(lock)

@@ -33,7 +33,7 @@
 ## 4. 実行の要点（リポジトリ root を cwd に）
 
 ```bash
-pip install -e ".[recommendations,stats]"          # ローカル（1 env に全部）。箱はロックファイルから（RUNBOOK §7）
+pip install -e ".[all]"                            # ローカル（1 env に全部＝取込の extras も）。箱・配布の env はロックファイルから（RUNBOOK §7）
 python -m recommendations.eval.eval --retrieval-only --eval-set both   # ゲート（基準は README）
 python -m stats.eval.exact_match
 python -m polyarchy_common.tests.test_common

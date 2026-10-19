@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
 # 依存ロックの（再）生成（B17 (1)・運用設計 §2.6・RUNBOOK §7）。
-#   出力＝deploy/requirements/lock-recommendations-stats.txt（箱の既定 extras）・lock-stats.txt（stats だけの箱）
+#   出力＝deploy/requirements/lock-recommendations-stats.txt（箱の既定 extras）・lock-stats.txt（stats だけの箱）・
+#        lock-all.txt（作業用 PC＝取込・評価の extras も・共通の版は箱のロックと同じ）
 #   箱（Ubuntu 22.04・x86_64・py3.12）と同じ条件で解決するため docker（linux/amd64・python:3.12-slim をダイジェスト固定）で
 #   pip-compile --generate-hashes を回す。Mac 上で直接回すと Mac 向けの解決になる（torch +cpu が無い等）ので使わない。
 #
@@ -30,9 +31,16 @@ docker run --rm --platform linux/amd64 -v "$REPO_DIR:/repo" -w /tmp/proj "$IMAGE
     -o /repo/'"$OUT_DIR"'/lock-recommendations-stats.txt pyproject.toml /repo/'"$OUT_DIR"'/build.in
   pip-compile "${common[@]}" --extra stats \
     -o /repo/'"$OUT_DIR"'/lock-stats.txt pyproject.toml /repo/'"$OUT_DIR"'/build.in
+  # 作業用 PC のロック（取込・回答まで含む評価の extras も入れる＝箱には入れない・B46 (b)）。箱のロックの版を制約に渡す
+  # ＝共通の依存は箱と同じ版（ゲートが測る依存＝箱で動く依存。check_lock.py は箱のロックで照合する）。extras は名前で並べる
+  # （all は自分自身を参照する＝pip-compile に PyPI の同名パッケージを探させない）。
+  grep -E "^[A-Za-z0-9][A-Za-z0-9._-]*==" /repo/'"$OUT_DIR"'/lock-recommendations-stats.txt | sed "s/ *\\\\$//" > /tmp/proj/box-pins.txt
+  pip-compile "${common[@]}" --extra recommendations --extra stats --extra ingest --extra companies \
+    --extra-index-url '"$TORCH_INDEX"' -c /tmp/proj/box-pins.txt \
+    -o /repo/'"$OUT_DIR"'/lock-all.txt pyproject.toml /repo/'"$OUT_DIR"'/build.in
 ' _ "$@"
 # 出力のパス表記を安定させる（コンテナ内の /repo/… → リポジトリ相対。差分を読みやすくする）
 sed -i '' 's#/repo/##g' "$REPO_DIR/$OUT_DIR"/lock-*.txt
-echo "[lock] 生成: $OUT_DIR/lock-recommendations-stats.txt・lock-stats.txt"
+echo "[lock] 生成: $OUT_DIR/lock-recommendations-stats.txt・lock-stats.txt・lock-all.txt"
 grep -cE '^[a-zA-Z0-9_.-]+==' "$REPO_DIR/$OUT_DIR"/lock-*.txt
 echo "[lock] 次＝RUNBOOK §7（ローカル env をロックから作り直し → ゲート全本 → release.sh）"

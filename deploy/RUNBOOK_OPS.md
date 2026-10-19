@@ -439,7 +439,7 @@ env ファイルを読ませるのは `release.sh` と同じ変数で走らせ�
 
 | 要素 | 内容 |
 |---|---|
-| Python | 配布用の env は**ロックファイルから**作る（§7 ②＝Mac は `lock_mac_variant.py` の変種を `--require-hashes` で入れ、本体は `-e . --no-deps`）＝箱と同じ版でゲートを回す。開発だけなら `pip install -e ".[recommendations,stats]"`（ルート CLAUDE.md §4）でよい。update.sh/release.sh/triage.sh はその env を PATH の先頭に通した shell で実行 |
+| Python | 配布用の env は**ロックファイルから**作る（§7 ②＝作業用 PC は `lock-all.txt`・Mac は `lock_mac_variant.py` の変種を `--require-hashes` で入れ、本体は `-e . --no-deps`）＝箱と同じ版でゲートを回す。開発だけなら `pip install -e ".[all]"`（ルート CLAUDE.md §4）でよい。update.sh/release.sh/triage.sh はその env を PATH の先頭に通した shell で実行 |
 | 検索 DB | Docker の `qdrant-dev`（ローカル :6333・`recommendations/data/qdrant` を S3 `data/qdrant/` から同期して起動）。release.sh は起動を確認し、upload 中だけ止める。審議会DB を有効にした環境は `qdrant-delib`（:6340・`deliberations/data/qdrant`）も。★どちらも再起動ポリシーなし＝Docker（の VM）を上げ直した後は止まっている＝2 つとも手で `docker start`（配る前の確認が応答を見る） |
 | モデル | ruri／リランカーは初回実行時に HF から取得（数 GB）。オフラインでは不可 |
 | CLI | `aws`（プロファイル＝`deploy/env/<env>.env` の `AWS_PROFILE`）・`terraform`（バケット名の取得元＝環境変数 `BUCKET` があれば優先＝`deploy/env/<env>.env` に書いておける。無ければ `deploy/terraform/` の state）・`git`（タグ込み clone＝`git describe` が版を刻む） |
@@ -561,10 +561,11 @@ bash deploy/scripts/triage.sh staging        # S3 の燃料＋ローカル捕捉
 ```bash
 # ① 再生成（既存の版は保つ。全更新は --upgrade・1 つだけは --upgrade-package <name>）。docker が要る
 bash deploy/scripts/lock_deps.sh [--upgrade]
-# ② ローカルで同じロックから env を作り直す。★Mac（arm64）には torch +cpu が無い＝torch だけ PyPI の同版（ハッシュ付き）に
-#    置き換えた変種を派生して入れる（他のピンとハッシュは箱のロックと同一）
+# ② ローカルで同じロックから env を作り直す。作業用 PC は lock-all.txt（箱のロック＋取込・回答まで含む評価の extras〔ingest・
+#    companies〕・共通の版は箱のロックと同じ＝B46 (b)・2026-10-19）。★Mac（arm64）には torch +cpu が無い＝torch だけ PyPI の同版
+#    （ハッシュ付き）に置き換えた変種を派生して入れる（他のピンとハッシュはロックと同一）
 conda create -y -n polyarchy-lock -c conda-forge --override-channels python=3.12
-python deploy/scripts/lock_mac_variant.py                     # → /tmp/lock-mac.txt
+python deploy/scripts/lock_mac_variant.py deploy/requirements/lock-all.txt    # → /tmp/lock-mac.txt
 P=$HOME/miniconda3/envs/polyarchy-lock/bin            # 自分の conda の envs パスに読み替え
 $P/pip install --require-hashes -r /tmp/lock-mac.txt
 $P/pip install --no-deps --no-build-isolation -e .       # ★パッケージが増えた git pull の後も入れ直す（§5・配る前の確認が照合する）
@@ -572,7 +573,9 @@ $P/pip install --no-deps --no-build-isolation -e .       # ★パッケージが
 #    依存を上げて数値が動いたら**上げずに現行版で固定**（目的は固定であって更新ではない）
 PATH=$P:$PATH bash deploy/scripts/release.sh staging
 ```
-- 変更は PR（ロック 2 本＋pyproject）でレビュー＝ゲート全 PASS が採否（CI 化 §2.5 で自動化）。箱は release.sh → 自動適用でロックどおりに入れ替わる。
+- 箱に入るのは箱のロック（lock-recommendations-stats.txt）だけ＝生成 AI の API のクライアント（anthropic・llama-index の LLM／OpenAI 系）は入らない。
+  作業用 PC の env に ingest の extras が要るのは取込（分野タグ判定・チャンク境界検出）と回答まで含む評価（`eval/full.py`）だけ。
+- 変更は PR（ロック 3 本＋pyproject）でレビュー＝ゲート全 PASS が採否（CI 化 §2.5 で自動化）。箱は release.sh → 自動適用でロックどおりに入れ替わる。
 - 切り戻し（apply の自動 fail-back）も前回 tar のロックで再解決する。ロック導入前（2026-09-04 以前）の tar へ戻る場合だけ下限指定の解決になる。
 - 出所の固定は Qdrant バイナリ（bootstrap ⑥b の sha256）と同じ思想。モデルの重み（HF）は commit を固定済み（`polyarchy_retrieval/models.py` の `PINNED_REVISIONS`・
   読み込みと事前 DL の両方・2026-10-09）。重みは配布物に含める（2026-10-10・B17 (3)）＝release.sh の上りが手元の HF キャッシュ（ゲートが測った重み）を

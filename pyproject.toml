@@ -3,8 +3,9 @@ name = "polyarchy"
 version = "0.2.0"
 description = "Polyarchy — 政策言説の横断検索インフラ（recommendations / stats / … の兄弟サービス＋共通契約 polyarchy_common）"
 requires-python = ">=3.10"
-# 依存は 3 層：共通（polyarchy_common＋MCP 配信）／recommendations（検索スタック＝重い）／stats（取込のみ軽量）。
-# ローカル（1 env に全部）＝ `pip install -e ".[recommendations,stats]"`。stats だけの箱＝ `pip install -e ".[stats]"`（torch を引かない）。
+# 依存は層で分ける：共通（polyarchy_common＋MCP 配信）／recommendations（検索スタック＝重い・箱に入る）／stats（箱に入る）／
+# ingest（取込・回答まで含む評価だけ＝作業用 PC だけ・箱に入れない）／companies（取込だけ＝作業用 PC だけ）。
+# ローカル（1 env に全部）＝ `pip install -e ".[all]"`。stats だけの箱＝ `pip install -e ".[stats]"`（torch を引かない）。
 dependencies = [
     "mcp>=1.2.0,<2",                # MCP サーバ（recommendations/stats とも）。★2.x は FastMCP 削除（MCPServer へ改名）＝2026-08-28 箱の新規構築で実測。移行するまで <2 に固定
     "PyJWT[crypto]>=2.8",           # polyarchy_common.access: Cloudflare Access JWT 検証（RS256）
@@ -13,38 +14,40 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# ★配信されるサーバ（recommendations/serving/mcp_server.py・stats/serving/mcp_server.py）は生成 AI の API を呼ばない。
-#   下の anthropic／llms-anthropic／embeddings-openai／streamlit は、取込時の補助（チャンク境界検出・分野タグ判定）、
-#   回答まで含む評価（eval/full.py）だけが使う（参照用 Web UI は 2026-10-09 にコード削除＝streamlit は次のロック再生成で外す）。
-#   1 つの環境に全部入れる構成のため extra は分けていない（分けるとロックの再生成が要る＝deploy/RUNBOOK_OPS.md §7）。
+# ★配信されるサーバは生成 AI の API を呼ばない＝箱の extras（recommendations・stats）には生成 AI の API のクライアントを入れない
+#   （B46 (b)・2026-10-19）。取込時の補助（チャンク境界検出の参照埋め込み・分野タグ判定）と回答まで含む評価（eval/full.py）が
+#   使うものは ingest に分ける＝箱のロック（lock-recommendations-stats.txt）には入らない。作業用 PC の env は ingest を含むロック
+#   （lock-all.txt＝extras の all・共通の版は箱のロックと同じ・test_common が照合）から作る（deploy/RUNBOOK_OPS.md §7）。
 recommendations = [
-    "llama-index>=0.11.0",
-    "llama-index-readers-file>=0.2.0",
-    "llama-index-embeddings-openai>=0.2.0",       # 取込時のみ（ingest/chunking.py のチャンク境界検出）。検索の埋め込みはローカルモデル
+    "llama-index-core>=0.11.0",                   # 検索の部品（Settings・QueryBundle・BaseRetriever・リランカーの型）
     "llama-index-embeddings-huggingface>=0.3.0",  # 本番の埋め込み（ruri）の読み込み（polyarchy_retrieval.models.hf_embedding）
-    "llama-index-llms-anthropic>=0.3.0",          # 回答まで含む評価（eval/full.py）と旧 CLI のみ。サーバは使わない
-    "pymupdf>=1.24.0",
     "python-dotenv>=1.0.0",
     "sentence-transformers>=3.0.0",  # Phase 5: リランカー（ローカル日本語クロスエンコーダ）
     "rank-bm25>=0.2.2",              # Phase 5: ハイブリッド検索の BM25 語彙スコア
     "fugashi>=1.3.0",               # Phase 5: 日本語形態素（BM25/リランカーの MeCab トークナイズ）
     "unidic-lite>=1.0.8",           # Phase 5: fugashi 用の軽量辞書
-    "streamlit>=1.40",              # Phase 8: 参照用 Web UI（2026-09-02 廃止・2026-10-09 コード削除）＝次のロック再生成（lock_deps.sh）で外す
     "qdrant-client>=1.12.0",        # Phase B: ベクトルDB（VECTOR_BACKEND=qdrant・既定）
-    "anthropic>=0.40",              # 取込時の分野タグ判定（ingest/policy_tagger.py）。サーバは使わない
-    "requests>=2.31",               # recommendations/ingest/collect.py（収集）
-    "beautifulsoup4>=4.12",         # recommendations/ingest/collect.py（HTML 本文抽出）
 ]
 stats = [
     "openpyxl>=3.1",                # ESRI 国民経済計算など xlsx 原典の取込（取込時のみ）
     "xlrd>=2.0",                    # 旧基準（68SNA/93SNA）年次推計の .xls 原典の取込（取込時のみ）
     "pymupdf>=1.24.0",              # PDF 原典の取込（stats/ingest の cao_mitoshi・pdf_hakusho・pdf_shunto 等＝取込時のみ）
 ]
+# 取込と回答まで含む評価だけ（作業用 PC）。箱のロックには入れない。
+ingest = [
+    "llama-index-readers-file>=0.2.0",            # recommendations/ingest/ingest.py（PyMuPDFReader）
+    "llama-index-embeddings-openai>=0.2.0",       # recommendations/ingest/chunking.py のチャンク境界検出（参照埋め込み）
+    "llama-index-llms-anthropic>=0.3.0",          # 回答まで含む評価（eval/full.py）
+    "anthropic>=0.40",              # 取込時の分野タグ判定（ingest/policy_tagger.py）・eval/multistage_agent_demo.py
+    "pymupdf>=1.24.0",              # recommendations/ingest・deliberations/ingest の PDF 抽出
+    "requests>=2.31",               # recommendations/ingest/collect.py（収集）
+    "beautifulsoup4>=4.12",         # recommendations/ingest/collect.py（HTML 本文抽出）
+]
 # companies＝取込（作業用 PC）だけが lxml を使う。配信（companies/serving・core）は共通の依存だけで動く＝箱のロックには入れない。
 companies = [
     "lxml>=5.0",                    # companies/ingest（XBRL インスタンスの読み取り）
 ]
-all = ["polyarchy[recommendations,stats]"]
+all = ["polyarchy[recommendations,stats,ingest,companies]"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

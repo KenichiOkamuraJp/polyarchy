@@ -17,7 +17,7 @@ conda activate polyarchy
 
 cd /path/to/polyarchy        # リポジトリ root（pyproject.toml がある場所）
 pip install --upgrade pip
-pip install -e ".[recommendations,stats]"   # recommendations だけなら ".[recommendations]"（pyproject の extras）
+pip install -e ".[all]"   # 検索だけ（配信）なら ".[recommendations]"・取込と回答まで含む評価は ingest の extras も要る（pyproject の extras）
 ```
 
 `.env.example` をコピーして `.env` を作り、APIキーを設定する：
