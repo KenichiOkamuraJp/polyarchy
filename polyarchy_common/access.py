@@ -105,7 +105,8 @@ class JwksKeyring:
         self._attempted_at = -1e18   # 最後に取りに行った時刻（失敗も含む）
 
     def _refresh(self, now: float, reason: str) -> None:
-        """取り直す。覚えている鍵があれば失敗しても捨てない（警告だけ）。無ければ例外＝検証は失敗。"""
+        """取り直す。覚えている鍵があれば失敗しても捨てない（警告だけ）。無ければ例外＝検証は失敗。
+        成功も 1 行残す（1 日 1 回と鍵の入れ替えのときだけ＝取り直しが走ったこと・IdP が戻った後の回復をログで読む）。"""
         import jwt
 
         self._attempted_at = now
@@ -116,6 +117,8 @@ class JwksKeyring:
             if self._keys is None:
                 raise
             self._log.warning("IdP の公開鍵の取り直しに失敗（%s）＝覚えている鍵で検証を続ける: %s", reason, e)
+            return
+        self._log.info("IdP の公開鍵を取り直した（%s）＝kid %s", reason, [k.key_id for k in self._keys.keys])
 
     def _match(self, kid):
         if self._keys is None:

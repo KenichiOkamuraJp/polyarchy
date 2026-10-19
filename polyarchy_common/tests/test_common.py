@@ -2339,6 +2339,46 @@ def test_jwks_keyring_keeps_old_keys():
     assert v3(sign(priv_a, "a", iss="https://team.example", aud="audA"))["sub"] == "u1"
 
 
+def test_jwks_keyring_logs_refresh():
+    """鍵の取り直しの成功もログに 1 行残す（2026-10-19 staging・運用側の 24 時間後の確認から）。失敗の warning だけだと、
+    取り直しが走ったことは「失敗 0 件＋200」からの推測になり、IdP が戻った後に回復したかも読めない。固定すること＝
+    初回・鍵が古い・合わない kid のどの取り直しも、成功すると理由と覚えた kid を info で 1 行出す（覚えている鍵で通るときは出さない）。"""
+    import logging
+
+    from polyarchy_common import access
+
+    _, pub_a = _rsa_jwk("a")
+    _, pub_b = _rsa_jwk("b")
+    jwks = {"keys": [pub_a]}
+    clock = {"t": 1000.0}
+    records: list = []
+
+    class _Grab(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    log = logging.getLogger("polyarchy.test_jwks_refresh")
+    grab = _Grab()
+    log.addHandler(grab)
+    try:
+        ring = access.JwksKeyring(lambda: json.loads(json.dumps(jwks)), clock=lambda: clock["t"],
+                                  logger_name="polyarchy.test_jwks_refresh")
+        infos = lambda: [r.getMessage() for r in records if r.levelno == logging.INFO]
+        ring.signing_key("a")
+        assert len(infos()) == 1 and "初回" in infos()[0] and "'a'" in infos()[0], infos()
+        ring.signing_key("a")
+        assert len(infos()) == 1, infos()                                      # 覚えている鍵で通る＝出さない
+        clock["t"] += access.JWKS_LIFESPAN_SECONDS + 1
+        ring.signing_key("a")
+        assert len(infos()) == 2 and "鍵が古い" in infos()[1], infos()
+        jwks["keys"] = [pub_a, pub_b]
+        clock["t"] += access.JWKS_REFRESH_MIN_INTERVAL_SECONDS + 1
+        ring.signing_key("b")
+        assert len(infos()) == 3 and "kid='b'" in infos()[2] and "'b'" in infos()[2].split("＝")[-1], infos()
+    finally:
+        log.removeHandler(grab)
+
+
 def test_auth_and_health_run_off_event_loop():
     """認証の検証と healthz の検査をイベントループの外へ出す（2026-10-17・導入直前の点検 ②）。verify() は鍵の取得・初回の
     ディスカバリで HTTP を待つ＝ループの上で呼ぶと、その間ほかの利用者の接続も /healthz も止まる。health_check() も同じ

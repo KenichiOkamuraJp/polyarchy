@@ -6,7 +6,8 @@
 #   release.sh が source して `preflight` を呼ぶ（COLLECTION_NAME の export を release.sh のシェルに効かせるため
 #   別プロセスにしない）。単体で先に回す（読み取りだけ・何も配らない＝RUNBOOK §5）＝リポジトリ root で
 #   `bash -c 'source deploy/env/<env>.env; REPO_DIR=$PWD; source deploy/scripts/release_preflight.sh; preflight'`
-#   ＝env ファイルを読ませて release.sh と同じ変数で走らせる。前提の変数（REPO_DIR・AWS_PROFILE・ENABLE_DELIBERATIONS_APP・
+#   ＝env ファイルを読ませて release.sh と同じ変数で走らせる（`set -a` は要らない＝release.sh も export せず、子プロセス
+#   〔aws・check_lock.py・python〕には値を引数で渡す。付けると release.sh と違う環境で回すことになる）。前提の変数（REPO_DIR・AWS_PROFILE・ENABLE_DELIBERATIONS_APP・
 #   RECOMMENDATIONS_COLLECTION_NAME・DELIB_QDRANT_URL〔任意〕）を手で渡すと、ENABLE_DELIBERATIONS_APP の書き忘れで
 #   qdrant-delib の確認が黙って抜ける。
 #
