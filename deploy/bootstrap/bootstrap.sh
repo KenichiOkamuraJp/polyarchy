@@ -384,7 +384,12 @@ install -m 644 "$UNIT_SRC/polyarchy-unit-failed@.service" "/etc/systemd/system/p
 install -m 755 "$REPO_DIR/deploy/bootstrap/unit_failed.sh" /usr/local/bin/polyarchy-unit-failed
 install -m 644 "$UNIT_SRC/polyarchy-logprune.timer" /etc/systemd/system/polyarchy-logprune.timer
 install -m 644 "$UNIT_SRC/cloudflared.service" /etc/systemd/system/cloudflared.service
+# 政策主張DB と Qdrant の書ける先（unit の ReadWritePaths＝B46 (a)）を先に作る。ProtectSystem=strict の下では親が読むだけ＝
+# サービスが自分で作れない・無いと unit が起動しない（stats・companies・deliberations の分は各 ENABLE_* の節で作る）。
+mkdir -p "$APP_DIR/data/query_log"; chown "$SVC_USER:$SVC_USER" "$APP_DIR/data/query_log"
 if [[ "$VECTOR_BACKEND" == "qdrant" ]]; then
+  mkdir -p "$APP_DIR/data/qdrant" "$APP_DIR/data/qdrant_snapshots"
+  chown "$SVC_USER:$SVC_USER" "$APP_DIR/data/qdrant" "$APP_DIR/data/qdrant_snapshots"
   install -m 644 "$UNIT_SRC/qdrant.service" /etc/systemd/system/qdrant.service
 else
   rm -f /etc/systemd/system/qdrant.service  # chroma の箱には置かない

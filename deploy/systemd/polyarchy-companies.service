@@ -22,6 +22,15 @@ Environment=PYTHONPATH=/opt/polyarchy/polyarchy
 # SSM tool_offload_companies＝0（bootstrap が companies.env に MCP_TOOL_OFFLOAD=0 を書く・2026-10-15）＝unit には書かない（複製に運ばない）。
 Environment=COMPANIES_QUERY_LOG=/opt/polyarchy/polyarchy/companies/data/query_log/queries.jsonl
 # 待受アドレスは MCP_HTTP_HOST（deploy.env・無ければ 127.0.0.1＝直露出しない）。ポートは cloudflared ingress・health と対なのでここで固定。
+# 封じ込め（B46 (a)・2026-10-19）＝権限の昇格を封じ、コード・Python 環境・設定・モデルは読むだけにする。書ける先は
+# 捕捉ログのフォルダだけ（実行中に書くのは polyarchy_common/capture.py の 1 か所・モデルは HF_HUB_OFFLINE で読むだけ）。
+# /tmp はこのサービス専用。★実行中に書く先を足したら ReadWritePaths にも足す（足さないと Read-only file system＝
+# 捕捉ログは fail-open なので黙って書けなくなる）。フォルダは bootstrap が先に作る（無いと起動しない）。test_common が突き合わせる。
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/polyarchy/polyarchy/companies/data/query_log
 ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m companies.serving.mcp_server --http --port 8767
 Restart=always
 RestartSec=5

@@ -29,6 +29,15 @@ Environment=TOKENIZERS_PARALLELISM=false
 # サービスだけが受ける。3＝平常の線（同時に 3 人）。計算のスレッドの数は起動の行に出る（docs/性能と同時実行_開発計画.md §6）。
 Environment=MCP_TOOL_CONCURRENCY=3
 # 待受アドレスは MCP_HTTP_HOST（deploy.env・無ければ 127.0.0.1＝直露出しない）。ポートは cloudflared ingress・health と対なのでここで固定。
+# 封じ込め（B46 (a)・2026-10-19）＝権限の昇格を封じ、コード・Python 環境・設定・モデルは読むだけにする。書ける先は
+# 捕捉ログのフォルダだけ（実行中に書くのは polyarchy_common/capture.py の 1 か所・モデルは HF_HUB_OFFLINE で読むだけ）。
+# /tmp はこのサービス専用。★実行中に書く先を足したら ReadWritePaths にも足す（足さないと Read-only file system＝
+# 捕捉ログは fail-open なので黙って書けなくなる）。フォルダは bootstrap が先に作る（無いと起動しない）。test_common が突き合わせる。
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/polyarchy/polyarchy/deliberations/data/query_log
 ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m deliberations.serving.mcp_server --http --port 8768
 Restart=always
 RestartSec=5

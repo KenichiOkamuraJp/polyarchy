@@ -20,6 +20,16 @@ Environment=QDRANT__SERVICE__GRPC_PORT=6334
 Environment=QDRANT__STORAGE__STORAGE_PATH=/opt/polyarchy/polyarchy/recommendations/data/qdrant
 Environment=QDRANT__STORAGE__SNAPSHOTS_PATH=/opt/polyarchy/polyarchy/recommendations/data/qdrant_snapshots
 Environment=QDRANT__TELEMETRY_DISABLED=true
+# 封じ込め（B46 (a)・2026-10-19）＝書ける先は索引と写しのフォルダだけ。起動の目印のファイル（既定は作業フォルダの
+# .qdrant-initialized＝作業フォルダはコードの側で読むだけ）は RuntimeDirectory（/run/qdrant・止めると消える）へ。目印が書けなくても
+# WARN だけで起動はする（読み取り専用の root で確かめた・1.19.0）。フォルダは bootstrap が先に作る（無いと起動しない）。
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RuntimeDirectory=qdrant
+Environment=QDRANT_INIT_FILE_PATH=/run/qdrant/.qdrant-initialized
+ReadWritePaths=/opt/polyarchy/polyarchy/recommendations/data/qdrant /opt/polyarchy/polyarchy/recommendations/data/qdrant_snapshots
 ExecStart=/usr/local/bin/qdrant
 Restart=always
 RestartSec=5

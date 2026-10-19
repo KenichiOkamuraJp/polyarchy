@@ -236,6 +236,8 @@ curl -sI https://recommendations.<domain>/healthz | head -1   # staging は reco
 | polyarchy-topuser.timer | 1 人の大量の利用（5 分ごと・区切りの 2 分後・本体は `/usr/local/bin/polyarchy-top-user`＝直近 1 時間の最多の 1 人の数をメトリクス `top_user_calls_1h` へ＝§1「top-user」） | — |
 | polyarchy-updatecheck.timer | 更新チェック（freshness＋提言新着→ダッシュボード反映・毎日 06:10 JST。手動キック＝SSM ドキュメント check-updates） | — |
 
+**封じ込め（2026-10-19・B46 (a)）**＝上の qdrant・polyarchy-mcp・polyarchy-stats・polyarchy-companies・qdrant-deliberations・polyarchy-deliberations は、コード・Python 環境・設定・モデルを読むだけで、書けるのは unit の `ReadWritePaths`（捕捉ログのフォルダ・Qdrant の索引と写し）だけ（`ProtectSystem=strict`・`NoNewPrivileges`・`PrivateTmp`＝/tmp はユニット専用・`ProtectHome`）。症状と見分け＝unit が起動しない（`journalctl -u <unit>` に `Read-only file system`・`Failed to set up mount namespacing`＝`ReadWritePaths` のフォルダが無い）・捕捉ログが増えない（`クエリ捕捉に失敗`）。自動適用の切り戻しは unit も旧版に戻す（`apply_data_update.sh` の `units_restore`）。箱で unit を手で書き換えない＝直すのはリポジトリの `deploy/systemd/`。
+
 ## 3. データ復元（S3 が原本）
 
 ```bash

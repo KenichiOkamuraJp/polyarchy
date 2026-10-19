@@ -20,6 +20,15 @@ Environment=PYTHONPATH=/opt/polyarchy/polyarchy
 Environment=STATS_QUERY_LOG=/opt/polyarchy/polyarchy/stats/data/query_log/queries.jsonl
 # Environment=MCP_ALLOWED_HOSTS=stats.<domain>,127.0.0.1:8766
 # 待受アドレスは MCP_HTTP_HOST（deploy.env・無ければ 127.0.0.1＝直露出しない）。ポートは cloudflared ingress・health と対なのでここで固定。
+# 封じ込め（B46 (a)・2026-10-19）＝権限の昇格を封じ、コード・Python 環境・設定・モデルは読むだけにする。書ける先は
+# 捕捉ログのフォルダだけ（実行中に書くのは polyarchy_common/capture.py の 1 か所・モデルは HF_HUB_OFFLINE で読むだけ）。
+# /tmp はこのサービス専用。★実行中に書く先を足したら ReadWritePaths にも足す（足さないと Read-only file system＝
+# 捕捉ログは fail-open なので黙って書けなくなる）。フォルダは bootstrap が先に作る（無いと起動しない）。test_common が突き合わせる。
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/polyarchy/polyarchy/stats/data/query_log
 ExecStart=/opt/miniconda/envs/polyarchy/bin/python -m stats.serving.mcp_server --http --port 8766
 Restart=always
 RestartSec=5

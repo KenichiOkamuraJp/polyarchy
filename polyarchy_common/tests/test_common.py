@@ -2557,6 +2557,45 @@ def test_apply_does_not_restart_what_bootstrap_just_started():
     assert "restart polyarchy-companies" in calls, calls
 
 
+HARDENED_UNITS = ("polyarchy-mcp", "polyarchy-stats", "polyarchy-companies", "polyarchy-deliberations",
+                  "qdrant", "qdrant-deliberations")
+
+
+def test_units_are_confined():
+    """公開面を持つ 4 つの MCP と Qdrant 2 つの封じ込め（B46 (a)・2026-10-19）。固定すること＝① 4 つの指定（NoNewPrivileges・
+    ProtectSystem=strict・ProtectHome・PrivateTmp）② 書ける先（ReadWritePaths）が、その unit が env で指す書き込み先を覆う＝MCP は
+    捕捉ログ（*_QUERY_LOG）のフォルダ・Qdrant は索引（STORAGE_PATH）と写し（SNAPSHOTS_PATH）③ Qdrant の起動の目印は
+    RuntimeDirectory の下（既定の作業フォルダは読むだけ）④ 書ける先はどれも bootstrap が先に作る（strict の下ではサービスが自分で
+    作れない・無いと unit が起動しない）。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    made = set()
+    for line in re.findall(r"^\s*mkdir -p (.+?)(?:;|$)", boot, re.M):
+        for a in re.findall(r'"([^"]+)"', line):
+            made.add(a.replace("$APP_DIR", "/opt/polyarchy/polyarchy/recommendations")
+                      .replace("$REPO_DIR", "/opt/polyarchy/polyarchy"))
+    for name in HARDENED_UNITS:
+        u = (root / f"deploy/systemd/{name}.service").read_text(encoding="utf-8")
+        body = [l for l in u.splitlines() if l and not l.startswith("#")]
+        for d in ("NoNewPrivileges=yes", "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes"):        # ①
+            assert d in body, (name, d)
+        rw = [p for l in body if l.startswith("ReadWritePaths=") for p in l.split("=", 1)[1].split()]
+        env = dict(re.findall(r"^Environment=([A-Z0-9_]+)=(\S+)$", u, re.M))
+        if name.startswith("qdrant"):
+            need = [env["QDRANT__STORAGE__STORAGE_PATH"], env["QDRANT__STORAGE__SNAPSHOTS_PATH"]]
+            rd = re.search(r"^RuntimeDirectory=(\S+)$", u, re.M)
+            assert rd and env.get("QDRANT_INIT_FILE_PATH", "").startswith(f"/run/{rd.group(1)}/"), name       # ③
+        else:
+            need = [str(Path(v).parent) for k, v in env.items() if k.endswith("_QUERY_LOG")]
+            assert len(need) == 1, (name, need)
+        for p in need:                                                                                       # ②
+            assert any(p == r or p.startswith(r.rstrip("/") + "/") for r in rw), (name, p, rw)
+        for r in rw:                                                                                         # ④
+            assert r.lstrip("-") in made, (name, r, "bootstrap が作らない")
+
+
 def test_rollback_restores_units():
     """切り戻しで unit も旧版に戻す（2026-10-19・B46 (a) の前に）。unit を置くのは bootstrap で、切り戻しは bootstrap を走らせない
     ＝新しい版の unit で起動できなかったとき、旧版のコードに戻しても unit が新しいままで起動しない。固定すること＝① 切り戻しの
