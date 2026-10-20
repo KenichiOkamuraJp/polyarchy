@@ -567,7 +567,7 @@ bash deploy/scripts/lock_deps.sh [--upgrade]
 conda create -y -n polyarchy-lock -c conda-forge --override-channels python=3.12
 python deploy/scripts/lock_mac_variant.py deploy/requirements/lock-all.txt    # → /tmp/lock-mac.txt
 P=$HOME/miniconda3/envs/polyarchy-lock/bin            # 自分の conda の envs パスに読み替え
-$P/pip install --require-hashes -r /tmp/lock-mac.txt
+$P/pip install --require-hashes -r /tmp/lock-mac.txt    # 本体の依存の宣言が変わった後（例：mcp の版）は「polyarchy … requires …」の警告が出る＝次の行で消える
 $P/pip install --no-deps --no-build-isolation -e .       # ★パッケージが増えた git pull の後も入れ直す（§5・配る前の確認が照合する）
 # ③ 全ゲート＋配布＝release.sh を「PATH の python をロック env に向けて」回す（ロックとの一致は release.sh の配る前の確認が照合する）。数値が README「品質の担保」と一致することが採否の基準。
 #    依存を上げて数値が動いたら**上げずに現行版で固定**（目的は固定であって更新ではない）
