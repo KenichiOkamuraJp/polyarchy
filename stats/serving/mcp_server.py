@@ -70,7 +70,8 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
     from mcp.types import ToolAnnotations
 
     log = get_logger("polyarchy.stats")
-    mcp = MCPServer(SERVER_NAME, instructions=SERVER_INSTRUCTIONS, log_level="WARNING")
+    mcp = MCPServer(SERVER_NAME, instructions=SERVER_INSTRUCTIONS, log_level="WARNING",
+                    subscriptions=False)  # subscriptions=False＝新しい版の subscriptions/listen（一覧の変化の知らせを待つ口）を受けない＝ツールは動いている間に変わらない（B36）
     # 公式コネクタの審査要件：全ツールに title と readOnlyHint（読み取り専用）。
     def ro(title: str) -> ToolAnnotations:  # 注釈にも title を入れる（ディレクトリのポータルが見るのは annotations.title＝最上位の title だけでは「title が無い」と指摘される・2026-10-10）
         return ToolAnnotations(title=title, readOnlyHint=True, destructiveHint=False, openWorldHint=False)

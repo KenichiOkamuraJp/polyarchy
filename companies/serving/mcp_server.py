@@ -48,7 +48,7 @@ SERVER_INSTRUCTIONS = (
     "1 社の年ごとの並びは lookup_segments/lookup_regions に period_from/period_to(区分の組み替えは regrouped で事実として示し、旧区分と新区分を対応づけない)。"
     "値そのものは各提出会社の開示に帰属し、本サービスは値を保証しない(原典で確認すること)。"
 )
-mcp = MCPServer("polyarchy-companies", instructions=SERVER_INSTRUCTIONS)
+mcp = MCPServer("polyarchy-companies", instructions=SERVER_INSTRUCTIONS, subscriptions=False)  # subscriptions=False＝新しい版の subscriptions/listen（一覧の変化の知らせを待つ口）を受けない＝ツールは動いている間に変わらない（B36）
 
 
 def _compact_json(r: dict) -> str:

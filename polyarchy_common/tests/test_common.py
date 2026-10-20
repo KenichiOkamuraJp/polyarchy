@@ -3018,6 +3018,59 @@ def test_mcp_both_protocol_eras():
         assert got == want, f"{svc}: 新しい版のツールの定義が記録と違う（{_first_diff(want, got)}）"
 
 
+def _listen_held_open(base: str, seconds: float = 5.0) -> tuple:
+    """新しい版の subscriptions/listen を送り、seconds 秒のうちに応答が閉じるか（(閉じた, 最後に読んだ JSON)）。開いたまま＝(False, …)。"""
+    import json
+    import time
+    import httpx
+    body = {"jsonrpc": "2.0", "id": 9, "method": "subscriptions/listen",
+            "params": {"notifications": {"toolsListChanged": True, "promptsListChanged": True, "resourcesListChanged": True},
+                       "_meta": {"io.modelcontextprotocol/protocolVersion": MODERN_VERSION,
+                                 "io.modelcontextprotocol/clientInfo": {"name": "test_common", "version": "0"},
+                                 "io.modelcontextprotocol/clientCapabilities": {}}}}
+    headers = {"content-type": "application/json", "accept": "application/json, text/event-stream",
+               "mcp-protocol-version": MODERN_VERSION, "mcp-method": "subscriptions/listen"}
+    end, last = time.monotonic() + seconds, None
+    try:
+        with httpx.Client(timeout=seconds) as c, c.stream("POST", base + "/mcp", json=body, headers=headers) as r:
+            for line in r.iter_lines():
+                text = line[5:].strip() if line.startswith("data:") else line.strip()
+                if text.startswith("{"):
+                    last = json.loads(text)
+                    if "error" in last or "result" in last:
+                        return True, last
+                if time.monotonic() > end:
+                    return False, last
+        return True, last
+    except httpx.ReadTimeout:
+        return False, last
+
+
+def test_no_subscription_streams():
+    """新しい版（2026-07-28）の subscriptions/listen を受け付けない（B36 の続き・2026-10-20）。2.x は既定でこの要求を受け、応答を
+    開けたまま「ツールの一覧が変わった」などの知らせを待たせる（staging で claude.ai の 1 本が 295 秒開いていた・ツールの行の無い長い
+    POST＝RUNBOOK §1 の「同じ時刻に長い POST」の読み分けを濁す）。こちらのツールは動いている間に変わらない＝知らせは 1 本も来ない
+    ＝名乗りを実態に合わせる。固定すること＝4 サービスとも ① 新しい版の server/discover は一覧の変化も購読も名乗らない
+    （listChanged・subscribe が false）② 挨拶の手順の名乗りも false のまま（1.x からの形）③ subscriptions/listen は開けたままに
+    せず、すぐ断る。ツールの定義は変えない（test_tool_definitions_unchanged）。"""
+    from polyarchy_common import mcp_http
+    for svc in SERVICES:
+        app, _ = mcp_http.build_streamable_http_app(_service_mcp(svc), logger_name=f"t.subs.{svc}")
+        base, stop = _serve_in_thread(app)
+        try:
+            st, disc = _rpc(base, "server/discover", era="modern")
+            assert st == 200 and disc and "result" in disc, (svc, st, disc)
+            init, _tools = _legacy_session(base)
+            for era, caps in (("modern", disc["result"]["capabilities"]), ("legacy", init["capabilities"])):   # ①②
+                flags = {f"{k}.{f}": v for k, c in caps.items() if isinstance(c, dict)
+                         for f, v in c.items() if f in ("listChanged", "subscribe")}
+                assert not any(flags.values()), f"{svc}: {era} の名乗りが一覧の変化・購読を知らせると言っている（{flags}）"
+            closed, last = _listen_held_open(base)                                                          # ③
+            assert closed and last and "error" in last, f"{svc}: subscriptions/listen を開けたままにした（{last}）"
+        finally:
+            stop()
+
+
 if __name__ == "__main__":
     import json
     import sys

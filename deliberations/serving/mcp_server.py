@@ -48,7 +48,7 @@ LIST_DESC = (
 )
 
 log = get_logger("polyarchy.deliberations.mcp")
-mcp = MCPServer("polyarchy-deliberations", instructions=INSTRUCTIONS)
+mcp = MCPServer("polyarchy-deliberations", instructions=INSTRUCTIONS, subscriptions=False)  # subscriptions=False＝新しい版の subscriptions/listen（一覧の変化の知らせを待つ口）を受けない＝ツールは動いている間に変わらない（B36）
 _svc = None
 
 

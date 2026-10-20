@@ -125,7 +125,8 @@ def build_server(service):
     # log_level="WARNING": MCPServer は __init__ の configure_logging で root を INFO＋RichHandler に
     # 設定し、低レベルサーバが英語で "Processing request of type ..." を INFO 出力する。WARNING に
     # 上げて黙らせる（自前ロガーは propagate=False なので影響なし）。
-    mcp = MCPServer(SERVER_NAME, instructions=SERVER_INSTRUCTIONS, log_level="WARNING")
+    mcp = MCPServer(SERVER_NAME, instructions=SERVER_INSTRUCTIONS, log_level="WARNING",
+                    subscriptions=False)  # subscriptions=False＝新しい版の subscriptions/listen（一覧の変化の知らせを待つ口）を受けない＝ツールは動いている間に変わらない（B36）
     # MCPServer の configure_logging が levels をいじった後にも確実に効かせる（冪等）。
     configure_quiet_logging()
 
