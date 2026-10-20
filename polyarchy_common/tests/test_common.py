@@ -2696,6 +2696,52 @@ def test_box_lock_has_no_genai_clients():
     assert set(extra) == set(have) - set(keep) - cl.KEEP
 
 
+def test_bootstrap_uninstall_zero_and_some():
+    """bootstrap ③ の「ロックに無いものを外す」を、外すものが 0 件のときも動かす（2026-10-20・9a4b864 の配布で切り戻し）。依存が
+    変わらない配布で check_lock.py --not-in-lock が空の行を 1 行出し、mapfile がそれを 1 件と数えて `pip uninstall ''` で止まった
+    （前の 2 回は外すものがあって通っていた＝検査は文字の並びだけだった）。固定すること＝① check_lock.py --not-in-lock は外すものが
+    無ければ何も出さない ② bootstrap ③ の実物の行を偽の sudo・pip の上で動かす：空の出力・空の行だけの出力では uninstall を呼ばない・
+    「外す」の行も出さない ③ 名前があれば、その名前だけを（空の名前を混ぜずに）uninstall に渡す。"""
+    import re
+    import subprocess
+    import sys
+    import tempfile
+    from importlib import metadata
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    names = sorted({re.sub(r"[-_.]+", "-", m.metadata["Name"]).lower() for m in metadata.distributions() if m.metadata["Name"]})
+    lock = d / "lock.txt"                                                                                   # ① env の全部を載せたロック
+    lock.write_text("".join(f"{n}==0 \\\n    --hash=sha256:00\n" for n in names), encoding="utf-8")
+    r = subprocess.run([sys.executable, str(root / "deploy/scripts/check_lock.py"), "--not-in-lock", str(lock)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and r.stdout == "", repr(r.stdout)
+
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")                            # ②③ 実物の行
+    m = re.search(r"^NOT_IN_LOCK=\(\)$.*?^fi$", boot, re.M | re.S)
+    assert m, "bootstrap ③ の外す段が見つからない"
+    (d / "bin").mkdir()
+    for name, body in {"sudo": 'shift 2; exec "$@"',                                                         # sudo -u <user> … を素通し
+                       "fakepy": f'cat "{d}/out"',                                                           # check_lock の出力の代わり
+                       "fakepip": f'for a in "$@"; do [[ -n "$a" ]] || {{ echo "空の名前" >&2; exit 1; }}; done; echo "$*" >> "{d}/pip"'}.items():
+        (d / "bin" / name).write_text("#!/bin/bash\n" + body + "\n")
+        (d / "bin" / name).chmod(0o755)
+
+    def run(out: str):
+        (d / "out").write_text(out)
+        (d / "pip").write_text("")
+        script = (f'set -euo pipefail; export PATH="{d / "bin"}:$PATH"\n'
+                  f'SVC_USER=svc ENV_PY="{d}/bin/fakepy" ENV_PIP="{d}/bin/fakepip" REPO_DIR=/x LOCK_FILE=/x/lock.txt\n' + m.group(0))
+        p = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        return p.returncode, p.stdout, (d / "pip").read_text().splitlines()
+
+    for out in ("", "\n", "\n\n"):                                                                          # ② 0 件
+        rc, so, pip = run(out)
+        assert rc == 0 and pip == [] and "外す" not in so, (repr(out), rc, so, pip)
+    rc, so, pip = run("httpx-sse\npydantic-settings\n")                                                    # ③ 2 件
+    assert rc == 0 and pip == ["uninstall --no-input -y httpx-sse pydantic-settings"] and "（2 件）" in so, (rc, so, pip)
+
+
 def test_terraform_state_on_s3():
     """terraform の state を S3 に置く（B46 (c)・2026-10-19）。local の state は deploy.sh を流したフォルダにだけあり、失うと apply と
     destroy ができなかった。固定すること＝① versions.tf の backend は s3（値は持たない）で、deploy の各スクリプトの terraform init は

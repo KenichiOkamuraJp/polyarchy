@@ -62,7 +62,9 @@ def not_in_lock(lock: Path) -> list[str]:
 
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--not-in-lock":
-        print("\n".join(not_in_lock(Path(sys.argv[2]))))
+        names = not_in_lock(Path(sys.argv[2]))
+        if names:                      # 0 件なら何も出さない（空の行を出すと bootstrap ③ が 1 件と数えた・2026-10-20）
+            print("\n".join(names))
         return 0
     lock = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_LOCK
     n = len(pins(lock))

@@ -110,7 +110,11 @@ sudo -u "$SVC_USER" env HF_HOME="$HF_HOME" "$ENV_PIP" install --no-input --no-de
 # ロックに無いものを外す（B46 (b)・2026-10-19）＝pip install -r はロックから外れたものを消さない＝前の版のロックの依存（生成 AI の
 # API のクライアントなど）が箱に残る。外すのは env にあってロックに無いもの（pip と本体は残す・check_lock.py --not-in-lock）。
 # 切り戻しは旧版のロックで入れ直す（apply の pip_resolve）＝外したものも戻る。
-mapfile -t NOT_IN_LOCK < <(sudo -u "$SVC_USER" "$ENV_PY" "$REPO_DIR/deploy/scripts/check_lock.py" --not-in-lock "$LOCK_FILE")
+# 空の行は数えない（外すものが 0 件の配布で空の行を 1 件と数え `pip uninstall ''` で止まった・2026-10-20＝test_common が 0 件も動かす）。
+NOT_IN_LOCK=()
+while IFS= read -r pkg; do
+  [[ -n "$pkg" ]] && NOT_IN_LOCK+=("$pkg")
+done < <(sudo -u "$SVC_USER" "$ENV_PY" "$REPO_DIR/deploy/scripts/check_lock.py" --not-in-lock "$LOCK_FILE")
 if (( ${#NOT_IN_LOCK[@]} )); then
   echo "[bootstrap] ③ ロックに無いものを外す（${#NOT_IN_LOCK[@]} 件）: ${NOT_IN_LOCK[*]}"
   sudo -u "$SVC_USER" "$ENV_PIP" uninstall --no-input -y "${NOT_IN_LOCK[@]}"
