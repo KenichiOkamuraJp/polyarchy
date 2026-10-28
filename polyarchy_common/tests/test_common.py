@@ -2557,6 +2557,37 @@ def test_apply_does_not_restart_what_bootstrap_just_started():
     assert "restart polyarchy-companies" in calls, calls
 
 
+def test_ops_dirs_owned_by_service_user():
+    """新しい環境の最初の構築で、ダッシュボードが Permission denied で落ちた（2026-10-28・unit-failed・B47）。
+    自動適用（root）が走るたびに最初に `ops/dashboard`（適用の記録の置き場）を mkdir する＝まだ一度も release.sh で配っていない環境では
+    コードの展開（その後の chown -R）が走らず、`ops/` が root の持ち物のまま残る → polyarchy で動くダッシュボード・同期・週次レポートが
+    書けない（上流の staging は配布のたびに chown されるので出なかった）。固定すること＝① 自動適用は `ops/` と適用の記録の置き場を
+    polyarchy の持ち物として作る（mkdir で作らない）② bootstrap は、タイマーを動かす前に、polyarchy で動く生成物の置き場
+    （polyarchy_common の `ROOT / "ops" / "<名前>"` と箱のシェルの `ops/<名前>/`）と `ops/` を polyarchy の持ち物として作る。"""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    apply = (root / "deploy/bootstrap/apply_data_update.sh").read_text(encoding="utf-8")
+    for line in re.findall(r"^\s*mkdir -p (.+)$", apply, re.M):                                              # ①
+        assert "$MARK_DIR" not in line and "$REPO_DIR/ops" not in line, line
+    owned = [l for l in re.findall(r"^\s*install -d -o polyarchy -g polyarchy (.+)$", apply, re.M)]
+    assert any('"$REPO_DIR/ops"' in l and '"$MARK_DIR"' in l for l in owned), owned
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")
+    first_timer = boot.index("systemctl enable --now polyarchy-")
+    made = set()
+    for line in re.findall(r'^\s*install -d -o "\$SVC_USER" -g "\$SVC_USER" (.+)$', boot[:first_timer], re.M):
+        made.update(re.findall(r'"\$REPO_DIR/([^"]+)"', line))
+    need = {"ops"}
+    for py in (root / "polyarchy_common").glob("*.py"):                                                       # ②
+        need.update("ops/" + m for m in re.findall(r'ROOT / "ops" / "([a-z_]+)"', py.read_text(encoding="utf-8")))
+    for sh in (root / "deploy/bootstrap").glob("*.sh"):     # 箱で動くシェルの書き先も（fuelsync.sh など）。S3 のキー（…/ops/report/）は数えない
+        t = sh.read_text(encoding="utf-8")
+        need.update("ops/" + m for m in re.findall(r'\$REPO_DIR/ops/([a-z_]+)', t))
+        need.update("ops/" + m for m in re.findall(r'(?<![\w/$])ops/([a-z_]+)/', t))
+    assert {"ops/dashboard", "ops/usage"} <= need, need      # 生成物の置き場を見つけられていること（検査そのものの確かめ）
+    assert need <= made, (sorted(need - made), "bootstrap がタイマーより前に polyarchy の持ち物として作らない")
+
+
 HARDENED_UNITS = ("polyarchy-mcp", "polyarchy-stats", "polyarchy-companies", "polyarchy-deliberations",
                   "qdrant", "qdrant-deliberations")
 

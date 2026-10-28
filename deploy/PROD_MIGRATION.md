@@ -70,6 +70,7 @@ prod の作業は**導入団体のアカウント・導入団体の PC・導入�
 | アカウント | GitHub・AWS・Cloudflare・IdP・Claude Code とも導入団体名義（費用も導入団体）。個人のアカウントでログインしない |
 | git の名義 | `git config user.name / user.email` を導入団体のアカウントに（コミットの名義が作業の帰属の記録になる） |
 | OS | スクリプトは bash＋macOS／Linux 前提。Windows なら WSL2（Ubuntu）の中にクローンして作業する（Keychain が無い＝Cloudflare のトークンは `CF_API_TOKEN` で渡す） |
+| ネットワーク（TLS の検査） | ★団体のネットワークが HTTPS を検査して署名し直す（企業向けのセキュリティの製品が HTTPS の通信を検査する構成）と、WSL・Linux はその証明書を信頼しておらず、HF・取得元への接続が `CERTIFICATE_VERIFY_FAILED`（curl は 60）で止まる。PyPI は検査の外のことがある＝pip が通っても安心しない。見分け方＝`openssl s_client -connect huggingface.co:443` の issuer が団体の検査の名前。手当て＝団体のルート証明書（Windows の「信頼されたルート」にある）を OS の信頼に入れ、Python には `SSL_CERT_FILE`・`REQUESTS_CA_BUNDLE` で OS の束を指す（Python の HTTP は既定で OS の束を読まない）。検証は切らない。★証明書を入れても、大きなファイル（モデルの重み 約 1.2GB）は検査が抱えたまま届かないことがある（実例＝0 バイトのまま 10 分以上進まない）＝重みは上流から受け取る（§0.6）か、取得元を検査の対象から外してもらう。稼働後のデータ更新（e-Stat・EDINET・PDF の収集）もこの PC から出る＝最初に情報システムと決めておく |
 | ツール | 冒頭「前提」のとおり。Python 環境は依存のロックファイルから作る（RUNBOOK §7。Mac は §7 ② の変種＝`lock_mac_variant.py`）。`release.sh` はこの環境を PATH の先頭に通して実行 |
 | フォルダ | **配布用のクローンを開発用と分ける**（RUNBOOK §5「配布用のクローンを開発用と分ける」）＝データを置き、`qdrant-dev` のマウント元にし、`release.sh` を流すのは配布用のクローン |
 | `.mcp.json` | `.mcp.json.example` を複製して `<PYTHON>`・`<REPO>` を自分の環境のパスに（ローカル stdio で使う場合のみ・git 外） |
@@ -101,7 +102,10 @@ prod の作業は**導入団体のアカウント・導入団体の PC・導入�
   - 統計DB＝`stats/data/`（系列の登録簿・値・評価問）
   - 企業情報DB＝`companies/data/`（値のストア・評価問）。有価証券報告書の原本（約 27GB）は任意＝EDINET の API は約 10 年より前の書類を取り直せない（RUNBOOK §3）
   - 審議会DB＝`deliberations/data/`（原資料・解析結果 `cache/`・BM25 の語彙・Qdrant のストレージ）
-  - 検索のモデルの重みは受け取らなくてよい（§0.7 で固定の版を取り直す）
+  - 検索のモデルの重みは受け取らなくてよい（§0.7 で固定の版を取り直す）。ただし導入団体の PC から HF の重みが取れないネットワーク（§0.5.2「ネットワーク」）では受け取る＝上流が `python deploy/bootstrap/prefetch_models.py --stage-upload <dir>`（手元の HF キャッシュの固定の版と SHA256SUMS）を `tar -h` で固めて渡し、受け取る側は `--staged <dir>` で照合して HF キャッシュに置く（箱の bootstrap ⑤ と同じ）
+- **受け取る側の注意**（導入団体）：
+  - **固めたファイル（tar）は 1 つずつダウンロードし、WSL／Linux の中で展開する**。共有ドライブの「フォルダごとのダウンロード」は zip に固め直して分割することがあり、それを Windows で展開すると 260 字を超えるパスが黙って落ちる（実例＝政策主張DB の Qdrant のストレージの一部が欠け、件数の突き合わせで見つかった）。展開の後は、添えられた sha256 と件数で突き合わせる。
+  - **有価証券報告書の原本（`companies/data/cache/`）は `deploy.sh upload` では上がらない**（`data/` の外の置き場）＝受け取ったら §4 の後に RUNBOOK §3 の `s3://<bucket>/archive/companies/edinet/`（STANDARD_IA）へ `aws s3 sync` で上げ、件数とバイト数を突き合わせる。
 - 受け取った後は手元で持つ（S3 が原本になるのは §4 の後）。捕捉ログ（`*/data/query_log/`）は受け取らない（上流の利用者のログ）。
 
 ## 0.7 手元の準備（2026-10-15）
@@ -151,6 +155,7 @@ aws sts get-caller-identity --profile adopter-prod   # user/adopter-deployer と
 
 ### 2.1 ① 入口＝導入団体の独自ドメインのゾーン
 - 導入団体の独自ドメインを Cloudflare に載せる（ネームサーバを Cloudflare へ／既に載っていれば不要）。
+- **上流のアカウントで登録したドメインを導入団体に渡すとき**は、ゾーンを足すだけでなく、**登録そのものをアカウント間で移す**（Cloudflare Registrar の場合＝譲り先でサイトを追加してプランを選ぶ → 譲り元で DNSSEC を切る → 譲り元のドメインの管理画面から移動を申請 → 譲り先がメールで 5 日以内に承認）。移した直後は登録簿（RDAP／WHOIS）の NS が古いまま見えることがあるが、ゾーンが Active で公開の DNS が新しい NS で答えていればよい。移した後に登録者の情報を導入団体に改める。
 - サブドメインを **4 本**決める：`recommendations.`・`stats.`・`companies.`・`deliberations.<導入団体ドメイン>`（Web は無し）。
   ★**公開した後は、ホスト名・パス・発行者（IdP）を変えない**（利用者の接続がそこに紐づく＝変えると全員がコネクタを作り直す・README §9.5）。
 
@@ -229,6 +234,10 @@ prod で用意するのは IdP 側の設定：
 > **env の書き方（非自明）**：`AUTH_AUD_<SVC>` の値は**トークンの `aud` と完全一致**で書く。AuthKit は resource indicator の値を `aud` に載せる＝
 > **AUD＝上記 3 の URL（パス込み）**。resource URL 自体は bootstrap が `TUNNEL_HOST_<SVC>＋SSM のパス`から合成する（env に書くのは AUD だけ）。
 > Production 環境では登録時のメールアドレスの確認（コードの入力）が必須だった＝利用者への案内に入れる。
+
+- **ログインの方法を有効にする**：Production 環境は Email + Password が既定で無効だった（2026-10）＝有効なのが SSO だけだと、招待のリンクが「SSO で続行」しか出さない。Authentication → Methods で Email + Password を有効にする（Magic Auth は任意）。Sign up を切った招待制では、運営者自身も先に招待しておく。
+- **DCR が効いたかの確かめ方**：`https://<issuer>/.well-known/oauth-authorization-server` に `registration_endpoint` が出ること（`/.well-known/openid-configuration` の方は null のまま＝そちらで判断しない）。
+- **招待を承諾した直後の画面**：招待メールからの登録はクライアント（Claude／ChatGPT）が始めたログインではない＝登録が終わると IdP の既定の転送先（`/default-redirect`・「サインインのコールバックを設定してください」の類の開発者向けの画面）が出る。登録は済んでいる＝利用者向けの案内に「この画面が出たら Claude／ChatGPT に戻ってコネクタを追加する」と書く（§6）。
 
 ### 2.6 中継の口（任意・千人規模の問を 1 つの bot が中継するとき・2026-10-16）
 
@@ -317,7 +326,8 @@ cd deploy
 bash scripts/deploy.sh prod all
 ```
 `all` ＝ **秘密の登録（§3.2 の `deploy.sh prod secrets` の行）→ S3 バケットの作成 → コードとデータの上り（約 10GB）→（確認）→ terraform apply**。
-- 上りは §0.7 の準備が前提（ロックの環境・HF のキャッシュの固定の版・審議会DB の束・`qdrant-dev` を止めておく）。終わったら `docker start qdrant-dev`。
+- 上りは §0.7 の準備が前提（ロックの環境・HF のキャッシュの固定の版・審議会DB の束・`qdrant-dev` を止めておく）。終わったら `docker start qdrant-dev`。上りもロックの環境を PATH の先頭に通して流す（モデルの重みを固めるのにロックの python を使う＝`upload_to_s3.sh`）。
+- **プランを読んでから適用する形**：`all` の最初の確認（「本適用に進みますか」）はプランを見る**前**に出る（その後 terraform がプランを出してもう一度 yes を聞く）。秘密の登録（§3.2）が済んでいれば、`deploy.sh prod upload` → `deploy.sh prod plan`（保存したプランを読む）→ `deploy.sh prod apply-plan`（読んだプランをそのまま適用・直後の plan で差分 0 を確かめる）に分けてよい。
 - terraform の state は **S3**（2026-10-19〜・`versions.tf` の backend）＝バケット `polyarchy-tfstate-prod-<アカウントID>`（版を残す・公開の遮断・暗号化・TLS 以外を拒否）・キー `polyarchy/prod/terraform.tfstate`・ロックは S3 の native（同じ state への同時の apply を止める）。バケットは最初の `deploy.sh` が作る（`lib.sh` の `ensure_state_bucket`＝terraform の外）。どのフォルダから `deploy.sh` を流しても同じ state を見る＝作業用 PC を失っても apply と destroy ができる。★terraform を直に `init` しない（backend の値は `deploy.sh` が渡す）。terraform は 1.10 以上。
   - **local の state で建てた環境を移す（1 回だけ・運営者）**：state を持つフォルダで `bash scripts/deploy.sh <env> state-migrate`＝S3 に同じ環境の state が既にあれば止める（上書きしない）→ 手元の state を `terraform.tfstate.pre-s3-<日時>` に残す → `terraform init -migrate-state` → **移した後の plan が No changes** まで確かめる。移す前のフォルダで `plan`・`apply` を流すと「local の state がある＝先に state-migrate」で止まる（`-reconfigure` で進めると local の state を捨てた空の state から作り直す計画になる＝やらない）。移した後の `pre-s3-*` は、plan が No changes を確かめてから退避してよい（git 外）。移した後の S3 の state は serial が 1 から・lineage が新しい値になる（staging・terraform 1.15.8 の実測・リソースと outputs は同じ）＝`pre-s3-*` を S3 に戻すなら `terraform state push -force` が要る（lineage が違うと断られる）。state を前に戻すときは、まず S3 の版（版を残す設定）から。
 - **IAM 反映待ち**で instance profile 作成が 403 になったら、少し待って**同じ apply を再実行**すれば通る。
@@ -337,6 +347,7 @@ systemctl is-active qdrant polyarchy-mcp polyarchy-stats polyarchy-companies qdr
 systemctl list-timers 'polyarchy-*'                # health・fuelsync・logprune・usagereport・dashboard・updatecheck・dataapply・edgeprobe・topuser
 ```
 （cloudflared は §5.3 で起動する。web のユニットは設置されない。ユニットの一覧と役割＝RUNBOOK §2。）
+★セッションは最初 `sh` で開く＝**`bash` に切り替えてから 1 行ずつ貼る**（複数行をまとめて貼ると行がつながり〔`--no-pager` の後ろに次の行が付く等〕、後の行が走らないことがある）。§5.2 の smoke も 1 行ずつ。
 
 ### 5.2 箱の上の smoke（キー不要・HF に接続しない）
 自動適用が配布のたびに流すものと同じ（`apply_data_update.sh` の `smoke`）：
@@ -369,13 +380,14 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://<ホスト><パス> \
 
 ## 6. go-live（利用者への配布）
 
-- 各利用者の Claude／ChatGPT → コネクタを追加 → URL `https://<ホスト><パス>`（4 本）。**初回の接続でログインが挟まる**＝利用者向けの案内には「コネクタの追加 → ブラウザでログイン → 接続完了」を載せる。名簿にない利用者は IdP の入口で弾かれる＝これが名簿限定の実体。
+- 各利用者の Claude／ChatGPT → コネクタを追加 → URL `https://<ホスト><パス>`（4 本）。**初回の接続でログインが挟まる**＝利用者向けの案内には「コネクタの追加 → ブラウザでログイン → 接続完了」と、招待を承諾した直後に出る開発者向けの画面（§2.5）を載せる。名簿にない利用者は IdP の入口で弾かれる＝これが名簿限定の実体。
 - **ChatGPT**：利用者ごとの認可は「個人の設定 → アプリ → 接続」で行う（作成の画面では出ない）。Business ではコネクタを公開した後にツールの定義を更新できない＝定義が変わる配布の後は作り直し（ルート CLAUDE.md §5）。
 - 生成は各利用者の Claude／ChatGPT＝導入団体の箱は生成の課金 0。層は公開固定（ツールに layer 引数は無い）。
 - **配布前チェック**：
   - JWT テンプレート（email）が設定済み（§2.5 の順序）。
-  - **自団体のプライバシーポリシーを公開し、SSM `privacy_url` に入れてから配布**（無いと政策主張DB のサーバの説明が上流のページを案内する）＝捕捉ログ（利用者キー user_hash・接続元のクライアントの種別・30 日削除）を載せる。`deploy/pages/` は上流のページの例。
+  - **自団体のプライバシーポリシーを公開し、SSM `privacy_url` に入れてから配布**（無いと政策主張DB のサーバの説明が上流のページを案内する）＝捕捉ログ（利用者キー user_hash・接続元のクライアントの種別・30 日削除）を載せる。`deploy/pages/` は上流のページの例。団体の一般のプライバシーポリシーは捕捉ログに触れていないことが多い＝暫定でそれを入れるなら、go-live までに捕捉ログを載せたページへ差し替える。
   - Cloudflare のダッシュボードでトンネルの健全性の通知を ON（RUNBOOK §0）。
+  - **組織の Claude（Team／Enterprise）でカスタムコネクタが許されているか**：組織の設定で禁止されていると、その組織のアカウントの利用者はつなげない（個人のアカウントではつながる）＝go-live の前に、組織の管理者がコネクタとして追加するか・許可するかを決める。
   - アラームのメールの Confirm を押した（§3.1 `ALERT_EMAIL`）。
 - 運用の見方（ダッシュボード・週次レポート・監査の線）＝[docs/導入団体側_監査ガイド.md](../docs/導入団体側_監査ガイド.md)。
 
@@ -410,6 +422,7 @@ prod でも同じ terraform・systemd で担保される（`terraform apply` で
 
 - [x] **conda ToS**：`conda tos accept` ＋ env 作成を conda-forge 固定（bootstrap ③）。
 - [x] **データ同期の所有権**：sync を root で実行し取得後 chown（bootstrap ⑥）。
+- [x] **`ops/` の所有権**：自動適用（root）が `ops/dashboard` を先に作ると、まだ一度も配っていない新しい環境ではダッシュボード・捕捉ログの同期・週次レポートが書けず unit-failed（2026-10-28・残タスク B47）＝自動適用と bootstrap（最初のタイマーの前）が `install -d -o polyarchy` で作る。既に root になっている箱も bootstrap の再走行で直る。
 - [x] **検索のモデルの重み**：箱は HF に接続しない（ユニットは `HF_HUB_OFFLINE=1`）。重みは S3 `data/models/` から置き、SHA256SUMS で照合する（bootstrap ⑤）。版は `PINNED_REVISIONS` の commit で固定。
 - [x] **IAM operator に `iam:TagInstanceProfile`**：[iam-operator-policy.json](iam-operator-policy.json) に反映済。
 - [x] **`iam:ListInstanceProfilesForRole` は「ロール」側の文に置く**：アクション名に反して評価対象のリソースは**ロール**。instance-profile 側の文に置くと

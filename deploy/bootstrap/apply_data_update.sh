@@ -35,7 +35,10 @@ PY=/opt/miniconda/envs/polyarchy/bin/python
 PIP=/opt/miniconda/envs/polyarchy/bin/pip
 FORCE=0; [[ "${1:-}" == "--force" ]] && FORCE=1
 TMP="$(mktemp)"
-mkdir -p "$MARK_DIR" "$RB_DIR" "$REL_DIR"
+# ops/ と適用の記録の置き場は polyarchy の持ち物（ダッシュボード・同期・週次レポートが polyarchy で書く）。mkdir で作ると、
+# まだ一度も配っていない環境ではコードの展開（chown -R）が走らず root のまま残る（2026-10-28・新しい環境の初回構築で unit-failed）。
+install -d -o polyarchy -g polyarchy "$REPO_DIR/ops" "$MARK_DIR"
+mkdir -p "$RB_DIR" "$REL_DIR"
 
 log()  { echo "[dataapply] $*"; }
 warn() { echo "[dataapply] ⚠ $*" >&2; }

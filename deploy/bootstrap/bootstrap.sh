@@ -474,6 +474,9 @@ if [[ "$VECTOR_BACKEND" == "qdrant" ]]; then
 fi
 systemctl enable polyarchy-mcp.service
 systemctl restart polyarchy-mcp.service
+# polyarchy で動く生成物の置き場（同期の結果・ダッシュボード・週次レポート）を、最初のタイマーより先に polyarchy の持ち物で作る
+# （root の自動適用が先に作ると書けない＝2026-10-28・新しい環境の初回構築で unit-failed）。install -d は既にあっても持ち主を直す。
+install -d -o "$SVC_USER" -g "$SVC_USER" "$REPO_DIR/ops" "$REPO_DIR/ops/dashboard" "$REPO_DIR/ops/usage"
 systemctl enable --now polyarchy-fuelsync.timer
 systemctl enable --now polyarchy-logprune.timer
 if [[ "$ENABLE_WEB_APP" == "true" ]]; then
