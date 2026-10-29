@@ -12,6 +12,9 @@ export PYTHONPATH="$REPO_DIR"
 mkdir -p stats/data/cache recommendations/data/cache
 if [[ -f /etc/polyarchy/estat.env ]]; then set -a; source /etc/polyarchy/estat.env; set +a; fi
 [[ -n "${ESTAT_APP_ID:-}" ]] || echo "[update-check] ⚠ ESTAT_APP_ID なし＝e-Stat 系の更新は検知できない（SSM estat_app_id を登録）" >&2
+# 取得の UA の連絡先は SSM crawler_contact → /etc/polyarchy/crawler.env（bootstrap）。無ければ連絡先なしの UA で目次を見る。
+if [[ -f /etc/polyarchy/crawler.env ]]; then set -a; source /etc/polyarchy/crawler.env; set +a; fi
+[[ -n "${CRAWLER_CONTACT:-}" ]] || echo "[update-check] ⚠ CRAWLER_CONTACT なし＝新着チェックの UA に連絡先が載らない（SSM crawler_contact を登録）" >&2
 echo "[update-check] ① stats freshness"
 # freshness の終了コード＝0 変化なし／1 **更新あり**（正常）／2 取得失敗。1 を失敗扱いしない（2026-09-03 修正）。
 set +e; "$PY" -m stats.ops.freshness --json > stats/data/cache/freshness_last_run.json; RC=$?; set -e

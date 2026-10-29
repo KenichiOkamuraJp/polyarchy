@@ -177,6 +177,16 @@ do_register_secrets() {
     fi
   fi
 
+  # 取得の UA に載せる発行体向けの連絡先（政策主張DB の新着チェック・2026-10-30）。秘密ではない＝String。CRAWLER_CONTACT があれば登録
+  # （空なら触らない＝登録済みの値は残る。外すときは delete-parameter）。環境ごとに運営者の連絡先（導入団体 prod は導入団体の窓口）。
+  if [[ -n "${CRAWLER_CONTACT:-}" ]]; then
+    log "SSM: $SSM_PREFIX/crawler_contact（String・取得の UA の連絡先）"
+    aws ssm put-parameter --overwrite --type String \
+      --name "$SSM_PREFIX/crawler_contact" --value "$CRAWLER_CONTACT" >/dev/null
+  else
+    warn "CRAWLER_CONTACT 未設定＝箱の新着チェックの UA に連絡先が載らない（推奨）"
+  fi
+
   # Cloudflare Access Managed OAuth（公式コネクタ化・案 A）。env に ACCESS_TEAM_DOMAIN と ACCESS_AUD_STATS / ACCESS_AUD_MCP が
   # あれば登録（秘密ではないが SSM を単一の真実にする）。bootstrap が該当サービスの env に MCP_ACCESS_* を書く。
   if [[ -n "${ACCESS_TEAM_DOMAIN:-}" ]]; then

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
 import sys
 import time
@@ -36,7 +37,27 @@ from bs4 import BeautifulSoup
 from recommendations.core.config import PDF_DIR, DATA_DIR
 
 CATALOG = DATA_DIR / "catalog.csv"
-UA = {"User-Agent": "Mozilla/5.0 (personal policy-RAG research; contact: kenichi.okamura.jp@gmail.com)"}
+# 取得の UA に載せる発行体向けの連絡先（2026-10-30）＝環境変数 CRAWLER_CONTACT（メールアドレスか URL）。コードに連絡先を書かない
+# （複製した導入団体の箱が上流の運営者の連絡先を名乗らないように）。手元は recommendations/.env（git 外・config の load_dotenv が読む）、
+# 箱は SSM crawler_contact → /etc/polyarchy/crawler.env（bootstrap）→ 更新チェック。空なら連絡先なしの UA＝発行体への窓口の明示
+# （再配布条件 §5）が欠ける＝警告を出す。形が想定外（空白・記号）の値は使わない。
+CONTACT_RE = re.compile(r"[A-Za-z0-9._%+@:/-]+")
+
+
+def crawler_contact() -> str:
+    c = os.getenv("CRAWLER_CONTACT", "").strip()
+    if c and not CONTACT_RE.fullmatch(c):
+        print("⚠ CRAWLER_CONTACT の形が想定外（メールアドレスか URL・空白なし）＝UA に載せない", file=sys.stderr)
+        return ""
+    return c
+
+
+def user_agent() -> str:
+    c = crawler_contact()
+    return f"Mozilla/5.0 (policy-RAG research; contact: {c})" if c else "Mozilla/5.0 (policy-RAG research)"
+
+
+UA = {"User-Agent": user_agent()}
 SLEEP_S = 1.5  # サーバ負荷に配慮したリクエスト間隔
 
 CATALOG_COLUMNS = [
@@ -1255,6 +1276,8 @@ def main() -> None:
     ap.add_argument("--source", choices=list(GOV_SOURCES), default=None,
                     help="政府のサブ系統を1つに限定（cefp/kisei/zaiseishin/dgk/aiplan/dsgl/juten/seicho/aigl）")
     args = ap.parse_args()
+    if not crawler_contact():
+        print("⚠ CRAWLER_CONTACT 未設定＝取得の UA に連絡先が載らない（recommendations/.env に書く）", file=sys.stderr)
 
     print(f"収集: {args.org}  years={args.years}  limit={args.limit}  "
           f"source={args.source}  skip_existing={args.skip_existing}")

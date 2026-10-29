@@ -1873,6 +1873,57 @@ def test_privacy_url_from_ssm():
     assert "docs.polyarchy.net" not in instructions("https://example.org/privacy")
 
 
+def test_crawler_contact_from_env():
+    """団体のサイトを取りに行くときの UA の連絡先は、コードに書かず環境ごとに渡す（2026-10-30）。複製した導入団体の箱・手元が、上流の
+    運営者の連絡先を名乗らないように。固定すること＝① collect.py にメールアドレスの文字列が無い ② UA は env の CRAWLER_CONTACT から
+    （空・形が想定外なら連絡先なし）③ bootstrap は SSM crawler_contact をメールアドレスか URL の形のときだけ crawler.env に書く
+    （更新チェックが source する＝記号を通さない）④ 更新チェックが crawler.env を読み、deploy.sh secrets が env から SSM へ入れる。"""
+    import os
+    import re
+    import shlex
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    src = (root / "recommendations/ingest/collect.py").read_text(encoding="utf-8")
+    assert not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", src), "collect.py に連絡先の文字列がある"          # ①
+
+    def ua(contact):                                                                                       # ②
+        env = {**os.environ, "PYTHONPATH": str(root), "CRAWLER_CONTACT": contact}   # 空でも入れる＝手元の .env に上書きさせない
+        r = subprocess.run([sys.executable, "-c", "from recommendations.ingest.collect import UA; print(UA['User-Agent'])"],
+                           cwd=root, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr[-500:]
+        return r.stdout.strip()
+    assert ua("ops@example.org") == "Mozilla/5.0 (policy-RAG research; contact: ops@example.org)"
+    assert ua("https://example.org/contact") == "Mozilla/5.0 (policy-RAG research; contact: https://example.org/contact)"
+    assert ua("") == "Mozilla/5.0 (policy-RAG research)"
+    assert ua("a b") == ua("x;rm") == "Mozilla/5.0 (policy-RAG research)"
+
+    boot = (root / "deploy/bootstrap/bootstrap.sh").read_text(encoding="utf-8")                              # ③
+    block = re.search(r'^CONTACT="\$\(ssm_get crawler_contact\)"\n.*?^fi\n', boot, re.M | re.S).group(0)
+    d = Path(tempfile.mkdtemp())
+
+    def run(value):
+        f = d / "crawler.env"
+        f.write_text("old\n")
+        stub = f"ssm_get() {{ printf %s {shlex.quote(value)}; }}\n"
+        script = stub + block.replace("/etc/polyarchy/crawler.env", str(f))
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return f.read_text() if f.exists() else None
+    assert run("ops@example.org") == "CRAWLER_CONTACT=ops@example.org\n"
+    assert run("") is None                                   # 未登録＝ファイルを消す（古い値を残さない）
+    assert run("a$(id)") is None and run("x;y") is None      # 形が想定外＝書かない
+
+    upd = (root / "deploy/bootstrap/update_check.sh").read_text(encoding="utf-8")                            # ④
+    assert upd.index("source /etc/polyarchy/crawler.env") < upd.index("recommendations.ingest.check_new")
+    lib = (root / "deploy/scripts/lib.sh").read_text(encoding="utf-8")
+    assert re.search(r'--name "\$SSM_PREFIX/crawler_contact" --value "\$CRAWLER_CONTACT"', lib)
+    for env in ("staging", "prod"):
+        assert re.search(r"^CRAWLER_CONTACT=$", (root / f"deploy/env/{env}.env.example").read_text(encoding="utf-8"), re.M)
+
+
 def test_secrets_without_tunnel_credentials_file():
     """`deploy.sh <env> secrets` は、トンネルの資格情報のファイルが手元に無くても、SSM に登録済みなら止まらない（2026-10-15）。
     資格情報は登録の後に作業用 PC から消す（ルート CLAUDE.md §5）＝消した後に認証の値などを登録し直せなかった。登録済みでも

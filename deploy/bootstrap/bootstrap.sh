@@ -430,6 +430,18 @@ if [[ "$ENABLE_STATS_APP" == "true" ]]; then
 else
   rm -f /etc/systemd/system/polyarchy-stats.service
 fi
+# 取得の UA に載せる発行体向けの連絡先（任意・SSM crawler_contact・2026-10-30）→ /etc/polyarchy/crawler.env（更新チェックの
+# 政策主張DB の新着チェックが読む）。コードに連絡先を書かない＝環境ごとに運営者が登録する。メールアドレスか URL の形だけを書く
+# （更新チェックが source する＝記号を通さない）。無ければファイルを消す＝連絡先なしの UA。
+CONTACT="$(ssm_get crawler_contact)"
+if [[ "$CONTACT" =~ ^[A-Za-z0-9._%+@:/-]+$ ]]; then
+  printf 'CRAWLER_CONTACT=%s\n' "$CONTACT" > /etc/polyarchy/crawler.env; chmod 644 /etc/polyarchy/crawler.env
+  echo "[bootstrap] 取得の UA の連絡先を SSM から設定（crawler.env）"
+else
+  rm -f /etc/polyarchy/crawler.env
+  if [[ -z "$CONTACT" ]]; then echo "[bootstrap] ⚠ SSM に crawler_contact 未登録＝取得の UA に連絡先が載らない" >&2
+  else echo "[bootstrap] ⚠ SSM crawler_contact の形が想定外（メールアドレスか URL・空白なし）＝使わない" >&2; fi
+fi
 if [[ "$ENABLE_COMPANIES_APP" == "true" ]]; then
   # companies の秘密パス（SSM companies_http_path・無ければ既定 /mcp）＋認証（SSM auth_aud_companies＝案 B のスイッチ）。
   write_service_env companies /etc/polyarchy/companies.env "$(ssm_get companies_http_path)" "$(ssm_get access_aud_companies)" "$(ssm_get auth_aud_companies)" "${TUNNEL_HOST_COMPANIES:-}"

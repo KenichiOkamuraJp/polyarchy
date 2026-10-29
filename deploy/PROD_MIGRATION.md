@@ -291,6 +291,7 @@ cp env/prod.env.example env/prod.env
 | `ENABLE_STATS_APP`・`ENABLE_COMPANIES_APP`・`ENABLE_DELIBERATIONS_APP` | `true`（4 サービスとも出す） |
 | `AUTH_ISSUER`・`AUTH_AUD_MCP`・`AUTH_AUD_STATS`・`AUTH_AUD_COMPANIES`・`AUTH_AUD_DELIBERATIONS` | §2.5 の issuer・4 本の URL（パス込み・三点一致） |
 | `ESTAT_SOURCE` | 導入団体が登録した e-Stat の appId の在りか（`file:<…>/stats/.env` など＝値は文書に書かない）。箱の更新チェックが使う |
+| `CRAWLER_CONTACT` | 団体のサイトを取りに行くときの UA に載せる導入団体の連絡先（メールアドレスか URL）。空だと連絡先なしの UA＝発行体への窓口の明示が欠ける。手元の取込は `recommendations/.env` の同じ名前の行を読む |
 | `ALERT_EMAIL` | アラームの宛先（§4 の後に AWS から確認のメールが届く＝Confirm を押すまで通知は来ない） |
 | `BUCKET` | 配布用のクローンから `release.sh` を流すとき（terraform の state を持たないフォルダ）に要る＝`polyarchy-prod-<アカウントID>` |
 | `INSTANCE_TYPE`・`TOP_USER_CALLS_THRESHOLD` | 空＝既定（t3.xlarge・200）。変えるときの手順は RUNBOOK §1 |
@@ -306,6 +307,7 @@ cp env/prod.env.example env/prod.env
 | `<識別子>_http_path`（4 本） | 必須 | §2.3 の `put-parameter` | 待受のパス・ガードの規則 |
 | `auth_issuer`・`auth_aud_<識別子>`（4 本） | 必須 | `deploy.sh prod secrets`（env の `AUTH_*` から） | 認証 |
 | `estat_app_id` | 推奨 | `deploy.sh prod secrets`（env の `ESTAT_SOURCE` から） | 統計DB の更新チェック（e-Stat 系） |
+| `crawler_contact` | 推奨 | `deploy.sh prod secrets`（env の `CRAWLER_CONTACT` から・String） | 政策主張DB の新着チェックの UA の連絡先（無ければ連絡先なしの UA） |
 | `privacy_url` | 推奨 | `put-parameter --type String --value https://<自団体のプライバシーポリシー>` | 政策主張DB のサーバの説明が案内するページ（無ければ上流のページが案内される＝§6） |
 | `usage_operator_hashes` | 任意 | RUNBOOK §5「週次利用レポートで運営者自身の利用を除く」 | 週次レポートの除外 |
 | `openai_apps_challenge_<識別子>` | 任意 | README §9.5 | OpenAI のディレクトリへの掲載の確認 |
