@@ -79,6 +79,10 @@ def check() -> dict:
         try:
             cands = plan()
             row["total_index"] = len(cands)
+            # 目次 0 件＝取れていない（2026-10-30・連合のサイトが HTTP 200 でメンテナンスのページを返し、「新着 0」と書いていた）。
+            # どの団体も目次が空になることはない＝「無い」ではなく「チェック失敗」にする。
+            if not cands:
+                raise RuntimeError("目次が 0 件（サイトのメンテナンス・改装の疑い＝取れていない）")
             for bases, title in cands:
                 if not _known(ids, bases):
                     row["new"] += 1

@@ -43,6 +43,9 @@ recommendations/data/eval/results/
 recommendations/data/query_log/
 recommendations/data/perf/
 stats/data/query_log/
+# 箱で生まれるもの（新着チェックの結果 等・捕捉ログ）＝どのサービスでも追跡しない（test_common が検査）
+*/data/cache/
+*/data/query_log/
 # 週次利用レポートの HTML は生成物（ops/usage/weekly.jsonl から再生成可）
 ops/usage/*.html
 # ローカル専用の作業資料＝git にも tar にも載せない

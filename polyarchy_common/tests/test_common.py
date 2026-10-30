@@ -2898,6 +2898,53 @@ def test_check_new_import_failure_is_visible():
         od.UPDATE_CHECK_PATH = keep
 
 
+def test_check_new_empty_index_is_failure():
+    """目次が 0 件の団体は「新着 0」ではなく「チェック失敗」（2026-10-30・手元の実走で連合のサイトがメンテナンス中＝HTTP 200 で
+    メンテナンスのページを返し、目次の解析が 0 件・error なし＝「新着 0」と書いていた）。取れていないものを「無い」と書かない。
+    取得は本物の解析の関数のまま、_get だけをメンテナンスのページに差し替える（通信しない）。1 件でも取れた団体は失敗にしない。"""
+    import types
+    import tempfile
+    from pathlib import Path
+    from recommendations.ingest import check_new as c
+    from recommendations.ingest import collect as col
+    d = Path(tempfile.mkdtemp())
+    (d / "catalog.csv").write_text("doc_id\n", encoding="utf-8")
+    maint = ("<!DOCTYPE html><html lang=\"ja\"><head><meta charset=\"UTF-8\"><title>メンテナンス中</title></head>"
+             "<body><h1>ただいまメンテナンス中です</h1></body></html>")
+    keep = (c.CATALOG, col._get, col.nissho_index)
+    try:
+        c.CATALOG = d / "catalog.csv"
+        def no_json():
+            raise ValueError("not JSON")                        # requests と同じ＝HTML に .json() は例外
+        col._get = lambda url: types.SimpleNamespace(text=maint, status_code=200, url=url, json=no_json)
+        col.nissho_index = lambda: [{"year": 2026, "stem": "x", "title": "取れた 1 件"}]   # 対照＝取れた団体
+        out = c.check()
+    finally:
+        c.CATALOG, col._get, col.nissho_index = keep
+    rows = out["orgs"]
+    assert rows["nissho"]["error"] is None and rows["nissho"]["total_index"] == 1, rows["nissho"]
+    bad = {k: r for k, r in rows.items() if k != "nissho" and not r["error"]}
+    assert not bad, bad                                    # 0 件（か解析の例外）＝全部「チェック失敗」
+    assert "0 件" in rows["rengo"]["error"], rows["rengo"]   # 連合の解析は例外を出さず 0 件を返す＝この判定で拾う
+    assert all(r["new"] == 0 for k, r in rows.items() if k != "nissho"), rows
+
+
+def test_box_born_not_tracked():
+    """箱で生まれるもの（<svc>/data/cache/・query_log/）を git で追跡しない（2026-10-30＝政策主張DB の新着チェックの結果
+    update_check.json が公開の最初のコミットから追跡されていた＝手元で流すたびに差分になり、公開リポに 09-03 の結果が残っていた。
+    code tar は */data を除くので箱には影響しない）。"""
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    tracked = subprocess.run(["git", "ls-files", "--", "*/data/cache/*", "*/data/query_log/*"],
+                             cwd=root, capture_output=True, text=True, check=True).stdout.split()
+    assert not tracked, tracked
+    probe = [f"{s}/data/{b}/x.json" for s in ("recommendations", "stats", "companies", "deliberations")
+             for b in ("cache", "query_log")]
+    ign = subprocess.run(["git", "check-ignore", "--no-index", *probe], cwd=root, capture_output=True, text=True).stdout.split()
+    assert sorted(ign) == sorted(probe), sorted(set(probe) - set(ign))
+
+
 def test_bootstrap_uninstall_zero_and_some():
     """bootstrap ③ の「ロックに無いものを外す」を、外すものが 0 件のときも動かす（2026-10-20・9a4b864 の配布で切り戻し）。依存が
     変わらない配布で check_lock.py --not-in-lock が空の行を 1 行出し、mapfile がそれを 1 件と数えて `pip uninstall ''` で止まった
