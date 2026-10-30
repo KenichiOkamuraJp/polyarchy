@@ -238,7 +238,7 @@ curl -sI https://recommendations.<domain>/healthz | head -1   # staging は reco
 
 **封じ込め（2026-10-19・B46 (a)）**＝上の qdrant・polyarchy-mcp・polyarchy-stats・polyarchy-companies・qdrant-deliberations・polyarchy-deliberations は、コード・Python 環境・設定・モデルを読むだけで、書けるのは unit の `ReadWritePaths`（捕捉ログのフォルダ・Qdrant の索引と写し）だけ（`ProtectSystem=strict`・`NoNewPrivileges`・`PrivateTmp`＝/tmp はユニット専用・`ProtectHome`）。症状と見分け＝unit が起動しない（`journalctl -u <unit>` に `Read-only file system`・`Failed to set up mount namespacing`＝`ReadWritePaths` のフォルダが無い）・捕捉ログが増えない（`クエリ捕捉に失敗`）。自動適用の切り戻しは unit も旧版に戻す（`apply_data_update.sh` の `units_restore`）。箱で unit を手で書き換えない＝直すのはリポジトリの `deploy/systemd/`。
 
-**更新チェックの出力を読む（2026-10-30・B48）**＝`polyarchy-updatecheck` の出力は journal だけ（CW Logs へは送らない）。①stats freshness・②提言の新着チェックの失敗は best-effort で続行する＝unit は失敗にならず unit-failed も鳴らない。見るところ＝ダッシュボードの「提言の新着チェック」の「チェック失敗：」（目次の取得の import が落ちたときは全団体が並ぶ・目次が 0 件の団体も並ぶ＝サイトのメンテナンスなら翌日に消える・続くなら改装を疑い、collect の解析を見直す）と「最終チェック」の時刻（毎日 06:10 JST より古ければ止まっている）。中身を読むなら SSM ドキュメント `check-updates`（この実行の分を全部出す）か、読み取りだけの Run Command で `journalctl -u polyarchy-updatecheck --since "<時刻>" --no-pager`。★`-n 20` などの末尾だけでは冒頭の警告（`⚠ ESTAT_APP_ID なし`・`⚠ CRAWLER_CONTACT なし`）が入らない＝「出ていない」と読まない。
+**更新チェックの出力を読む（2026-10-30・B48）**＝`polyarchy-updatecheck` の出力は journal だけ（CW Logs へは送らない）。①stats freshness・②提言の新着チェックの失敗は best-effort で続行する＝unit は失敗にならず unit-failed も鳴らない。見るところ＝ダッシュボードの「提言の新着チェック」の「チェック失敗：」（目次の取得の import が落ちたときは全団体が並ぶ・目次が 0 件の団体も並ぶ＝サイトのメンテナンスなら開け直されると消える。閉じたまま数日続くこともある＝それだけでは改装と見なさない。開け直されたのに 0 件なら改装を疑い、ページの冒頭を添えて collect の解析を見直す）と「最終チェック」の時刻（毎日 06:10 JST より古ければ止まっている）。中身を読むなら SSM ドキュメント `check-updates`（この実行の分を全部出す）か、読み取りだけの Run Command で `TZ=Asia/Tokyo journalctl -u polyarchy-updatecheck --since "<時刻> UTC" --no-pager`。★箱の時計は UTC＝`--since` に JST の時刻をそのまま書くと 9 時間先の意味になり `-- No entries --` が返る（`UTC` を付けるか UTC で書く・`TZ=Asia/Tokyo` は表示を JST にするだけ）。★`-n 20` などの末尾だけでは冒頭の警告（`⚠ ESTAT_APP_ID なし`・`⚠ CRAWLER_CONTACT なし`）が入らない＝「出ていない」と読まない。
 
 ## 3. データ復元（S3 が原本）
 
@@ -463,6 +463,8 @@ bash deploy/scripts/update.sh staging      # 新着検出→収集→追い判�
 # ①収集：5 団体アダプタで PDF 取得＋catalog.csv 登録（org= keidanren|doyukai|nissho|rengo|gov）
 python -m recommendations.ingest.collect --check-ua              # 取得の UA だけ表示（取得しない・CRAWLER_CONTACT が無ければ ⚠ と終了コード 1）
 python -m recommendations.ingest.collect <org> --skip-existing   # gov は --source で審議会を指定
+#   ★既存ファイルを使った行は catalog の記述（題名・日付・URL・取得日など）を書き換えない＝catalog の差分は新しい行だけが正（2026-10-30）
+#     既存の行が変わっていたら、その行は今回取り直したもの（--skip-existing を付け忘れた・ファイルが無かった）＝取込の payload と食い違う
 # ②取込（v7/Qdrant 本線・doc 単位増分・冪等。ローカル qdrant-dev を起動しておく）
 COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.qdrant_ingest ingest
 # ③分野タグ・文書性格の追い判定（新規行だけ判定・--dry-run で対象確認から）

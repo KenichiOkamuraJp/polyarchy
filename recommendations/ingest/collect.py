@@ -1234,13 +1234,21 @@ ADAPTERS = {"keidanren": collect_keidanren, "keidanren_legacy": collect_keidanre
             "doyukai": collect_doyukai}
 
 
+# 既存ファイルを使った行（今回は取得していない）で既存行の値を残す列＝取込の時点の記述（索引の payload と揃える）。
+REUSED_KEEP = ("title", "date", "date_int", "doc_type", "field_tags", "source_url", "retrieved_at")
+
+
 def write_catalog(rows: list[dict]) -> None:
     """カタログに追記（file_name で重複排除、既存を新規で上書き）。
     ★後工程列（policy_tags/doc_nature）は新規行が空なら既存値を温存する（2026-09-03 修正＝
     --skip-existing の再収集で既存行のタグが消え全再判定になる事故の再発防止）。
     ★既存ファイルを使った行（今回は取得していない）は、既存行の source_url・retrieved_at を残す
     （2026-10-02 修正＝出典は取得時点の事実・retrieved_at は取得日〔coverage の last_ingested の意味論〕。
-    一覧ページのリンク先が変わると source_url が決定ページへ、再走査のたびに retrieved_at が当日へ書き換わっていた）。"""
+    一覧ページのリンク先が変わると source_url が決定ページへ、再走査のたびに retrieved_at が当日へ書き換わっていた）。
+    ★2026-10-30 に広げた＝既存ファイルを使った行は、記述の列（REUSED_KEEP＝題名・日付・種別・分野も）を既存行のまま残す。
+    取込は取込済みの文書を飛ばす＝カタログだけ変えると索引の payload と食い違う（経団連の年別目次が取得済みの 055・056 の
+    日付を掲載の更新日らしい 10-13 で出し、date・date_int を上書きした）。直したいときは再取得（--skip-existing なし）と再取込で。
+    取得できなかった行（status=error）は retrieved_at を進めない（取得していない＝再試行のたびに当日になっていた）。"""
     existing = {}
     if CATALOG.exists():
         with CATALOG.open(encoding="utf-8") as f:
@@ -1253,10 +1261,10 @@ def write_catalog(rows: list[dict]) -> None:
             for col in ("policy_tags", "doc_nature"):
                 if not (r.get(col) or "").strip() and (old.get(col) or "").strip():
                     r[col] = old[col]
-            if reused:
-                for col in ("source_url", "retrieved_at"):
-                    if (old.get(col) or "").strip():
-                        r[col] = old[col]
+            keep = REUSED_KEEP if reused else ("retrieved_at",) if r.get("status") == "error" else ()
+            for col in keep:
+                if (old.get(col) or "").strip():
+                    r[col] = old[col]
         existing[r["file_name"]] = r
     CATALOG.parent.mkdir(parents=True, exist_ok=True)
     with CATALOG.open("w", encoding="utf-8", newline="") as f:

@@ -2929,6 +2929,44 @@ def test_check_new_empty_index_is_failure():
     assert all(r["new"] == 0 for k, r in rows.items() if k != "nissho"), rows
 
 
+def test_collect_keeps_existing_rows():
+    """収集の再走査（--skip-existing）は、今回取得していない行のカタログの記述を書き換えない（2026-10-30・運用側の定型更新から）。
+    ① 経団連の年別目次が取得済みの 055・056 の日付を 10-05 → 10-13（掲載の更新日と思われる）で出し、collect が既存の行の
+    date・date_int を上書きした＝取込は取込済みの文書を飛ばす＝索引の payload の日付と食い違う（10-02 の source_url と同じ構図）。
+    ② 取得できない既存の行（status=error）を再試行するたび retrieved_at が当日になっていた（取得していないのに取得日が進む）。
+    今回取得した行（再取得を含む）は新しい値を書く。"""
+    import csv
+    import tempfile
+    from pathlib import Path
+    from recommendations.ingest import collect as col
+    d = Path(tempfile.mkdtemp())
+    keep = col.CATALOG
+    try:
+        col.CATALOG = d / "catalog.csv"
+        old = [col.catalog_row("a.pdf", "keidanren", "旧の題名", "2026-10-05", "提言", "総合政策", "https://x/a.pdf", "ok", "2026-10-06"),
+               col.catalog_row("b.pdf", "doyukai", "取れない", "1999-10-05", "提言", "", "https://x/b.pdf", "error", "2026-09-03"),
+               col.catalog_row("c.pdf", "keidanren", "再取得", "2026-10-05", "提言", "", "https://x/c.pdf", "ok", "2026-10-06")]
+        old[0]["policy_tags"] = "政治・統治機構・憲法"
+        col.write_catalog(old)
+        a = col.catalog_row("a.pdf", "keidanren", "目次の題名", "2026-10-13", "資料", "環境", "https://x/a2.pdf", "ok", "2026-10-30")
+        a["_reused"] = True                                                    # 既存ファイルを使った＝今回は取得していない
+        b = col.catalog_row("b.pdf", "doyukai", "取れない", "1999-10-05", "提言", "", "https://x/b.pdf", "error", "2026-10-30")
+        c = col.catalog_row("c.pdf", "keidanren", "再取得", "2026-10-13", "提言", "", "https://x/c.pdf", "ok", "2026-10-30")
+        n = col.catalog_row("n.pdf", "keidanren", "新着", "2026-10-13", "提言", "", "https://x/n.pdf", "ok", "2026-10-30")
+        col.write_catalog([a, b, c, n])
+        with col.CATALOG.open(encoding="utf-8") as f:
+            rows = {r["file_name"]: r for r in csv.DictReader(f)}
+    finally:
+        col.CATALOG = keep
+    ra = rows["a.pdf"]
+    assert (ra["date"], ra["date_int"], ra["title"], ra["doc_type"], ra["field_tags"], ra["source_url"], ra["retrieved_at"]) == \
+        ("2026-10-05", "20261005", "旧の題名", "提言", "総合政策", "https://x/a.pdf", "2026-10-06"), ra
+    assert ra["policy_tags"] == "政治・統治機構・憲法", ra
+    assert rows["b.pdf"]["retrieved_at"] == "2026-09-03", rows["b.pdf"]              # 取れなかった＝取得日を進めない
+    assert (rows["c.pdf"]["date"], rows["c.pdf"]["retrieved_at"]) == ("2026-10-13", "2026-10-30"), rows["c.pdf"]   # 取得した＝新しい値
+    assert (rows["n.pdf"]["date"], rows["n.pdf"]["retrieved_at"]) == ("2026-10-13", "2026-10-30"), rows["n.pdf"]
+
+
 def test_box_born_not_tracked():
     """箱で生まれるもの（<svc>/data/cache/・query_log/）を git で追跡しない（2026-10-30＝政策主張DB の新着チェックの結果
     update_check.json が公開の最初のコミットから追跡されていた＝手元で流すたびに差分になり、公開リポに 09-03 の結果が残っていた。
