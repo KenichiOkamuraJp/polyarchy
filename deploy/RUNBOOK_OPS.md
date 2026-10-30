@@ -422,6 +422,7 @@ bash deploy/scripts/release.sh staging                     # 配る前の確認�
 - ゲートを回す python の依存＝箱のロック（`deploy/scripts/check_lock.py`＝開発側で基準値を測る前にも手で回せる）
 - 政策主張DB の BM25 語彙の `n_docs`＝`qdrant-dev` の点数（語彙と索引が同じ時点）
 - コードの範囲（`*/data/` の外）に未コミットの差分が無い（tar は HEAD から作る）
+- 上る元（`upload_to_s3.sh` の同期の一覧と同じ除き方）が全部読める（`upload_to_s3.sh --check-readable`＝ゲートの後の upload でも S3 に何か書く前にもう一度見る・2026-10-30）
 
 この確認は**単体で先に回してよい**（読み取りだけ・何も配らない・`qdrant-dev` も止めない）＝配布用のクローンの root で
 `bash -c 'source deploy/env/<env>.env; REPO_DIR=$PWD; source deploy/scripts/release_preflight.sh; preflight'`。
@@ -442,7 +443,7 @@ env ファイルを読ませるのは `release.sh` と同じ変数で走らせ�
 | 要素 | 内容 |
 |---|---|
 | Python | 配布用の env は**ロックファイルから**作る（§7 ②＝作業用 PC は `lock-all.txt`・Mac は `lock_mac_variant.py` の変種を `--require-hashes` で入れ、本体は `-e . --no-deps`）＝箱と同じ版でゲートを回す。開発だけなら `pip install -e ".[all]"`（ルート CLAUDE.md §4）でよい。update.sh/release.sh/triage.sh はその env を PATH の先頭に通した shell で実行 |
-| 検索 DB | Docker の `qdrant-dev`（ローカル :6333・`recommendations/data/qdrant` を S3 `data/qdrant/` から同期して起動）。release.sh は起動を確認し、upload 中だけ止める。審議会DB を有効にした環境は `qdrant-delib`（:6340・`deliberations/data/qdrant`）も。★どちらも再起動ポリシーなし＝Docker（の VM）を上げ直した後は止まっている＝2 つとも手で `docker start`（配る前の確認が応答を見る） |
+| 検索 DB | Docker の `qdrant-dev`（ローカル :6333・`recommendations/data/qdrant` を S3 `data/qdrant/` から同期して起動）。release.sh は起動を確認し、upload 中だけ止める。審議会DB を有効にした環境は `qdrant-delib`（:6340・`deliberations/data/qdrant`）も。★どちらも再起動ポリシーなし＝Docker（の VM）を上げ直した後は止まっている＝2 つとも手で `docker start`（配る前の確認が応答を見る）。★**Linux の Docker（WSL2 を含む）では、Qdrant（コンテナの root）が書いたファイルはホストでも root の持ち物**で、payload index の `values_to_points.bin` は 0600＝作業用のユーザーが読めない（取込をして初めて表に出る・Mac の Docker は持ち主がホストのユーザーに見えるので出ない）。`release.sh` はコンテナの中から読み取りの権限を足してから上げ、それでも読めないものがあれば何も上げずに止まる（2026-10-30）。手で直すなら `docker exec qdrant-dev sh -c 'find /qdrant/storage -type f ! -perm -o=r -exec chmod a+r {} + ; find /qdrant/storage -type d ! -perm -o=rx -exec chmod a+rx {} +'`（作業ツリーの中の root の持ち物は、作業用のユーザーでは消せない・動かせない＝フォルダごと入れ替えるときもコンテナの中から） |
 | モデル | ruri／リランカーは初回実行時に HF から取得（数 GB）。オフラインでは不可 |
 | CLI | `aws`（プロファイル＝`deploy/env/<env>.env` の `AWS_PROFILE`）・`terraform`（バケット名の取得元＝環境変数 `BUCKET` があれば優先＝`deploy/env/<env>.env` に書いておける。無ければ `deploy/terraform/` の state）・`git`（タグ込み clone＝`git describe` が版を刻む） |
 | git 外の設定 | `deploy/env/<env>.env`（例は `*.env.example`）・`recommendations/.env`（`ANTHROPIC_API_KEY`＝分野タグ判定／`OPENAI_API_KEY`＝チャンク境界検出）・`stats/.env`（`ESTAT_APP_ID`）・Keychain `cloudflare-api-token`（guard 用）・`~/.cloudflared/<UUID>.json` |
@@ -456,6 +457,9 @@ env ファイルを読ませるのは `release.sh` と同じ変数で走らせ�
 ```bash
 bash deploy/scripts/update.sh staging      # 新着検出→収集→追い判定→取込→release.sh（--no-release で配布前停止）
 ```
+
+- ③の取込は OpenAI（本文の区切り）・④の分野タグは Anthropic の鍵を使う（`recommendations/.env`）＝`update.sh` は②の前に 2 つとも確かめ、無ければ何も書かずに止まる（2026-10-30）。
+- ★**途中（③④）で止まったら、原因を直してもう一度 `update.sh` を流す**＝②の後は catalog に新しい行があるので①の新着チェックは 0 件になるが、取込の残り（`qdrant_ingest ingest --count`）・分野タグの未判定（`policy_tagger --count`）があれば②を飛ばして③から続ける（2026-10-30＝それまでは「新着なし」で終わり、取り込まれないまま残った）。
 
 以下は工程の内訳（個別に実行する場合・トラブル時の切り分け用）：
 

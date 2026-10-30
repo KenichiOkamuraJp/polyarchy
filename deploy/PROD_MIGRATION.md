@@ -113,7 +113,7 @@ prod の作業は**導入団体のアカウント・導入団体の PC・導入�
 `deploy.sh prod all` の上り（`upload_to_s3.sh`）と、稼働後の `release.sh` が前提にするもの。手順の正典は RUNBOOK §5「手元の製作環境」と「配布用のクローンを開発用と分ける」。
 
 1. ロックから作った Python 環境を PATH の先頭に（RUNBOOK §7 ②）。
-2. Docker で `qdrant-dev`（:6333・マウント元＝配布用のクローンの `recommendations/data/qdrant`）と `qdrant-delib`（:6340・`deliberations/data/qdrant`）を起動する。
+2. Docker で `qdrant-dev`（:6333・マウント元＝配布用のクローンの `recommendations/data/qdrant`）と `qdrant-delib`（:6340・`deliberations/data/qdrant`）を起動する。★Linux の Docker（WSL2 を含む）では、Qdrant が書いたファイルが root の持ち物になり、0600 のものは作業用のユーザーが読めない＝`release.sh` がコンテナの中から読み取りの権限を足し、それでも読めなければ上る前に止まる（RUNBOOK §5「手元の製作環境」の検索 DB の行）。
 3. **ゲートを一度、手元で回す**（README「品質の担保」の基準値どおりに通るか＝受け取ったデータが壊れていない確かめ）。
    あわせて HF のキャッシュに検索のモデルの固定の版（`polyarchy_retrieval/models.py` の `PINNED_REVISIONS`）が入る＝§4 の上りが S3 `data/models/` に置く（箱は HF に接続しない）。
 4. 審議会DB の束を書き出す：`python -m deliberations.ops.bundle export`（箱は束から Qdrant を復元する＝束が無いと審議会DB は空のまま起動する。稼働後は `release.sh` が毎回書き出す）。

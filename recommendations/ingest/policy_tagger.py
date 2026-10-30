@@ -6,6 +6,7 @@ catalog と Qdrant payload の両方へ反映する。判定基準は本モジ�
 
 使い方（収集→ingest の後に実行。本文は Qdrant から取るため ingest 後が正順）:
     python -m recommendations.ingest.policy_tagger --dry-run          # 未判定行の件数確認のみ
+    python -m recommendations.ingest.policy_tagger --count            # 未判定行の数だけ（update.sh の再開の判定）
     python -m recommendations.ingest.policy_tagger                    # 未判定行を判定して反映
     python -m recommendations.ingest.policy_tagger --file <file_name> # 特定文書を再判定（カンマ区切り可）
     python -m recommendations.ingest.policy_tagger --sync-only        # LLM を使わず catalog の現値を payload へ同期
@@ -135,6 +136,7 @@ def main() -> int:
     configure_quiet_logging()
     ap = argparse.ArgumentParser(description="分野タグ・文書性格の追い判定")
     ap.add_argument("--dry-run", action="store_true", help="未判定行の確認のみ")
+    ap.add_argument("--count", action="store_true", help="未判定行の数だけを標準出力へ（判定しない・update.sh の再開の判定）")
     ap.add_argument("--file", help="特定 file_name を再判定（カンマ区切り可）")
     ap.add_argument("--sync-only", action="store_true",
                     help="LLM を使わず catalog の現値を payload へ同期")
@@ -154,6 +156,10 @@ def main() -> int:
             return 1
     else:
         targets = [r for r in rows if not r["policy_tags"] and not r["doc_nature"]]
+
+    if args.count:
+        print(len(targets))
+        return 0
 
     if args.sync_only:
         n_ok = sum(

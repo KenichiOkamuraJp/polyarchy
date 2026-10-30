@@ -10,7 +10,7 @@
 #   ① 品質ゲート実行（一覧と基準はルート README「品質の担保」＝本数をここに写さない。companies・deliberations は env の
 #      ENABLE_COMPANIES_APP／ENABLE_DELIBERATIONS_APP=true のときだけ〔deliberations は束の書き出しも〕。qdrant-dev〔と審議会DB の qdrant-delib〕起動が前提）
 #   ② 全 PASS を機械判定（アンカーは ALL 行の数値と基準値・それ以外は各ゲートの終了コード。1つでも FAIL なら upload せず終了＝箱には何も起きない）
-#   ③ qdrant-dev を止めて upload_to_s3.sh（データ転送。転送失敗でもマニフェストは書かれない）
+#   ③ qdrant-dev の中から読み取りの権限を揃えて止め、upload_to_s3.sh（上る元が全部読めることを確かめてからデータ転送。転送失敗でもマニフェストは書かれない）
 #   ④ リリースマニフェスト release/data.json を最後に書く（→ 箱の polyarchy-dataapply.timer が
 #      15 分以内に検知して自動適用＝コード tar の再展開も含む・smoke FAIL なら自動切り戻し・人手の箱操作ゼロ・全て記録経路）
 #
@@ -33,8 +33,19 @@ cd "$REPO_DIR"
 fail() { echo "❌ リリース中止: $*（ログ: ${GATE_LOG}）" >&2; exit 1; }
 say()  { echo "── $*"; }
 
+# ★Linux の Docker（WSL2 の Docker Engine を含む）では、qdrant-dev（root で動く）が書いたファイルはホストでも root の持ち物で、
+#   payload index の values_to_points.bin は 0600＝作業用のユーザーが読めず上りが止まる（2026-10-30・導入団体の初めての増分取込）。
+#   Mac の Docker は持ち主がホストのユーザーに見える＝同じ 0600 でも読める（ここで何をしても害はない）。コンテナの中（root）から
+#   読み取りの権限だけを足す（持ち主・書き込みは変えない）。取込の直後は Qdrant の最適化がゲートの間にもファイルを足し得る＝
+#   配る前の確認の前と、止める直前の 2 回。揃えられなくても止めない＝読めるかは配る前の確認と upload_to_s3.sh が見る（fail-closed）。
+qdrant_readable() {
+  docker exec qdrant-dev sh -c 'find /qdrant/storage -type f ! -perm -o=r -exec chmod a+r {} + ; find /qdrant/storage -type d ! -perm -o=rx -exec chmod a+rx {} +' \
+    || echo "  ★qdrant-dev の中で読み取りの権限を揃えられなかった（読めないものが残れば上る前の確認が止める）" >&2
+}
+
 # shellcheck source=release_preflight.sh
 source "$SCRIPT_DIR/release_preflight.sh"
+qdrant_readable
 preflight || fail "配る前の確認で中止（上の ❌ を直して再実行）"   # COLLECTION_NAME をこのシェルに export する
 
 say "① 品質ゲート（qdrant-dev 起動が前提・全出力→${GATE_LOG}）"
@@ -121,6 +132,7 @@ if [[ -z "$BUCKET_NAME" ]]; then
     || BUCKET_NAME=""
 fi
 [[ -n "$BUCKET_NAME" ]] || fail "S3 バケット名を取得できない（環境変数 BUCKET を指定するか、terraform の state を用意する）"
+qdrant_readable
 docker stop qdrant-dev >/dev/null
 UPLOAD_OK=0
 BUCKET="$BUCKET_NAME" PROFILE="$AWS_PROFILE" REGION="$AWS_REGION" bash "$SCRIPT_DIR/upload_to_s3.sh" && UPLOAD_OK=1

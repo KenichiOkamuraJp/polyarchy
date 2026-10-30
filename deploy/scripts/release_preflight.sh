@@ -23,6 +23,8 @@
 #   f. 政策主張DB の BM25 語彙の n_docs＝qdrant-dev の点数（語彙と索引が同じ時点）
 #   g. コードの範囲（*/data/ 以外）に未コミットの差分が無い（tar は HEAD から作る＝測ったコードと配るコードを揃える）
 #   h. pyproject の全パッケージが、cwd に頼らずにこのフォルダから読める（editable install の向き先と対応づけ）
+#   i. 上る元（upload_to_s3.sh の同期の一覧と同じ除き方）が全部読める（Linux の Docker では Qdrant が書いた 0600 のファイルが
+#      root の持ち物＝読めない・2026-10-30。release.sh は手前で qdrant-dev の中から権限を揃える）
 # ═══════════════════════════════════════════════════════════════════════════
 
 PF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # このスクリプトの置き場（check_lock.py を並べて置く）
@@ -155,6 +157,9 @@ preflight() {
   pf_packages || return 1
   # f. 語彙と索引
   pf_vocab || return 1
+  # i. 上る元が全部読める（同期の一覧は upload_to_s3.sh の 1 か所＝ここに写さない。ゲートの後にも upload_to_s3.sh がもう一度見る）
+  PYTHON=python bash "$PF_DIR/upload_to_s3.sh" --check-readable \
+    || { pf_fail "上る元に読めないものがある（上の一覧）＝ゲートの前に止める"; return 1; }
   # g. コードの範囲の未コミット（data/ 配下の差分＝update.sh が書き換える catalog.csv 等は止めない）
   local dirty
   dirty="$(git -C "$REPO_DIR" status --porcelain -- . ':(exclude)*/data/*' ':(exclude)VERSION')"

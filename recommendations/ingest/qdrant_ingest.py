@@ -133,8 +133,8 @@ def build_payload(node, corpus: str, text: str) -> dict:
 
 def ingest(collection: str, corpus: str = DST_CORPUS, limit: int | None = None,
            files: list[str] | None = None, redo: bool = False,
-           dry_run: bool = False, skip_finalize: bool = False) -> None:
-    """doc（file_name）単位の増分 ingest（冪等・再開可能。設計 §3）。"""
+           dry_run: bool = False, skip_finalize: bool = False, count_only: bool = False) -> None:
+    """doc（file_name）単位の増分 ingest（冪等・再開可能。設計 §3）。count_only＝残 doc の数だけを標準出力へ（update.sh の再開の判定）。"""
     qc = _client()
     _ensure_target(qc, collection)
 
@@ -156,6 +156,9 @@ def ingest(collection: str, corpus: str = DST_CORPUS, limit: int | None = None,
     log.info("投入対象: 候補 %d doc・投入済みスキップ %d・残 %d%s",
              len(cands), skipped, len(remaining),
              f"（--limit {limit} 適用）" if limit and len(remaining) > limit else "")
+    if count_only:
+        print(len(remaining))
+        return
     if dry_run:
         for p in remaining[:20]:
             log.info("  残: %s", p.name)
@@ -274,6 +277,7 @@ def main() -> None:
     i.add_argument("--redo", action="store_true",
                    help="--files 指定の doc を削除して再投入（--files 必須）")
     i.add_argument("--dry-run", action="store_true", help="残 doc の一覧表示のみ")
+    i.add_argument("--count", action="store_true", help="残 doc の数だけを標準出力へ（投入しない・update.sh の再開の判定）")
     i.add_argument("--skip-finalize", action="store_true",
                    help="finalize（BM25 再構築＋監査）を実行しない")
 
@@ -288,7 +292,7 @@ def main() -> None:
         if args.redo and not args.files:
             sys.exit("ERROR: --redo は --files と併用してください（全 doc 再投入の誤爆防止）")
         ingest(args.collection, corpus=args.corpus, limit=args.limit, files=args.files,
-               redo=args.redo, dry_run=args.dry_run, skip_finalize=args.skip_finalize)
+               redo=args.redo, dry_run=args.dry_run, skip_finalize=args.skip_finalize, count_only=args.count)
     elif args.cmd == "finalize":
         finalize(args.collection)
 

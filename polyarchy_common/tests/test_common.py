@@ -657,13 +657,14 @@ def test_ops_dashboard_lists_every_timer():
         "install だけ": installed - enabled, "enable だけ": enabled - installed, "表だけ": shown - files}
 
 
-def _sync_cmds(path) -> list[str]:
-    """deploy のシェルの aws s3 sync を 1 コマンドずつ（行末の \\ でつないだ継続行を 1 行に・コメント行は除く）。"""
+def _sync_cmds(path, needle: str = "s3 sync") -> list[str]:
+    """deploy のシェルの aws s3 sync を 1 コマンドずつ（行末の \\ でつないだ継続行を 1 行に・コメント行は除く）。
+    needle＝探す呼び出し（upload_to_s3.sh の上りは関数 data_sync を通る＝"data_sync \""）。"""
     import re
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]
     text = re.sub(r"\\\n\s*", " ", (root / path).read_text(encoding="utf-8"))
-    return [ln for ln in text.splitlines() if "s3 sync" in ln and not ln.lstrip().startswith("#")]
+    return [ln for ln in text.splitlines() if needle in ln and not ln.lstrip().startswith("#")]
 
 
 # 箱で生まれるもの＝手元から S3 に上げない・S3 から箱へ戻さない（S3 の写しは古い＝戻すと箱の最新を上書きする）。
@@ -676,8 +677,10 @@ def test_box_born_not_shipped():
     自動適用の bootstrap 再走行の同期が箱の最新の値を上書きした。2026-10-09＝政策主張DB の同期だけ query_log/ を除外しておらず、
     自動適用のたびに S3 の写し〔fuelsync の最長 1 時間前〕が箱の原本の追記分を消していた）。"""
     import re
-    # 上り＝<svc>/data/ の丸ごと（qdrant のミラーと審議会DB の束はサブディレクトリだけ＝対象外）
-    up = [c for c in _sync_cmds("deploy/scripts/upload_to_s3.sh") if re.search(r'/data/" "s3://', c)]
+    # 上り＝<svc>/data/ の丸ごと（qdrant のミラーと審議会DB の束はサブディレクトリだけ＝対象外）。上りは関数 data_sync を通る
+    # （読めるかの確認と同期が同じ一覧を使う・2026-10-30）＝素の s3 sync で手元のデータを上げる行は残っていない
+    assert not [c for c in _sync_cmds("deploy/scripts/upload_to_s3.sh") if 's3 sync "$REPO_DIR' in c], "data_sync を通らない上り"
+    up = [c for c in _sync_cmds("deploy/scripts/upload_to_s3.sh", 'data_sync "') if re.search(r'/data/" "', c)]
     down = [c for c in _sync_cmds("deploy/bootstrap/bootstrap.sh") if re.search(r'" "\$(APP_DIR|REPO_DIR/\w+)/data/"', c)]
     assert len(up) == 3 and len(down) == 3, (up, down)   # recommendations・stats・companies
     bad = [(b, c) for c in up + down for b in BOX_BORN if f'--exclude "{b}"' not in c]
@@ -3135,6 +3138,156 @@ def test_release_counts_series_like_dashboard():
     finally:
         ops_dashboard.SERIES_PATH = saved
     assert want == 3 and r.stdout.strip() == "3", (want, r.stdout, r.stderr)
+
+
+def _fake_bin(d, scripts: dict):
+    """PATH の先頭に置く偽のコマンド（bash の台本）を作る。"""
+    import os
+    b = d / "fakebin"
+    b.mkdir(exist_ok=True)
+    for name, body in scripts.items():
+        p = b / name
+        p.write_text("#!/usr/bin/env bash\n" + body, encoding="utf-8")
+        p.chmod(0o755)
+    return str(b) + os.pathsep + os.environ.get("PATH", "")
+
+
+def test_upload_checks_readable_first():
+    """上る元に読めないファイルが 1 つでもあれば、S3 に何も書く前に止まる（2026-10-30・導入団体の Linux の作業用 PC＝Docker の
+    Qdrant〔root〕が書いた payload index の values_to_points.bin が root の持ち物・0600＝作業用のユーザーが読めない。aws s3 sync は
+    読めないファイルを警告して飛ばし、ほかの上りと --delete〔WAL の削除〕を済ませてから失敗した＝S3 の data/qdrant/ が欠けた索引の
+    まま残る）。Mac の Docker はファイルの持ち主がホストのユーザーに見える＝同じ 0600 でも読めるので表に出ない。
+    固定すること＝①読めないファイルがあると aws を 1 度も呼ばずに終了コード非 0（code tar の上りより前）②同期で除く場所
+    （cache/ など）の読めないファイルでは止めない＝除き方は同期と同じ一覧から ③--check-readable は BUCKET なしで確認だけ
+    ④release.sh は配る前の確認と qdrant-dev の停止の前に、コンテナの中で読み取りの権限を揃える・配る前の確認も読めるかを見る。"""
+    import os
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    if os.geteuid() == 0:
+        return                                                 # root は何でも読める＝この検査は作業用のユーザーで回す
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    t = d / "repo"
+    (t / "deploy/scripts").mkdir(parents=True)
+    for f in ("upload_to_s3.sh", "check_readable.py"):
+        if (root / "deploy/scripts" / f).exists():
+            shutil.copy(root / "deploy/scripts" / f, t / "deploy/scripts" / f)
+    (t / "deploy/bootstrap").mkdir(parents=True)
+    (t / "deploy/bootstrap/prefetch_models.py").write_text(
+        "import sys, pathlib; pathlib.Path(sys.argv[-1]).mkdir(parents=True, exist_ok=True)\n", encoding="utf-8")
+    (t / "recommendations/eval").mkdir(parents=True)
+    (t / "recommendations/eval/phase12_pipeline.py").write_text('CANONICAL_SHA256 = "00"\n', encoding="utf-8")
+    seg = t / "recommendations/data/qdrant/collections/c/0/segments/s/payload_index/x-map"
+    seg.mkdir(parents=True)
+    (seg / "points.bin").write_text("ok", encoding="utf-8")
+    bad = seg / "values_to_points.bin"
+    bad.write_text("x", encoding="utf-8")
+    (t / "recommendations/data/eval").mkdir(parents=True)
+    (t / "recommendations/data/eval/eval_set.json").write_text("[]", encoding="utf-8")   # 末尾の sha256 の表示が読む
+    (t / "recommendations/data/cache").mkdir(parents=True)
+    skip = t / "recommendations/data/cache/update_check.json"   # 同期で除く場所＝読めなくても止めない
+    skip.write_text("{}", encoding="utf-8")
+    (t / "stats/data/registry").mkdir(parents=True)
+    (t / "stats/data/registry/series.jsonl").write_text("{}\n", encoding="utf-8")
+    g = ["git", "-C", str(t), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(g[:3] + ["init", "-q"], check=True)
+    subprocess.run(g + ["add", "deploy", "recommendations/eval"], check=True)
+    subprocess.run(g + ["commit", "-qm", "t"], check=True)
+    log = d / "aws.log"
+    path = _fake_bin(d, {"aws": f'echo "$*" >> "{log}"\n', "curl": "exit 1\n"})   # curl 1＝Qdrant は止まっている
+    env = dict(os.environ, PATH=path, BUCKET="b", PYTHON=shutil.which("python") or "python")
+    up = ["bash", str(t / "deploy/scripts/upload_to_s3.sh")]
+    bad.chmod(0)
+    skip.chmod(0)
+    try:
+        r = subprocess.run(up, env=env, capture_output=True, text=True)
+        assert r.returncode != 0, r.stdout + r.stderr
+        assert not log.exists(), f"読めないファイルがあるのに S3 へ書いた: {log.read_text()}"
+        assert "values_to_points.bin" in r.stderr, r.stderr
+        assert "update_check.json" not in r.stderr, r.stderr          # 除く場所は数えない
+        env_nb = {k: v for k, v in env.items() if k != "BUCKET"}
+        r = subprocess.run(up + ["--check-readable"], env=env_nb, capture_output=True, text=True)
+        assert r.returncode != 0 and not log.exists(), r.stdout + r.stderr
+        bad.chmod(0o600)                                         # 持ち主が自分なら 0600 でも読める（Mac の形）
+        r = subprocess.run(up + ["--check-readable"], env=env_nb, capture_output=True, text=True)
+        assert r.returncode == 0 and not log.exists(), r.stdout + r.stderr
+        r = subprocess.run(up, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        calls = log.read_text()
+        assert "s3 cp" in calls and "data/qdrant/" in calls, calls
+    finally:
+        bad.chmod(0o644)
+        skip.chmod(0o644)
+    pf = (root / "deploy/scripts/release_preflight.sh").read_text(encoding="utf-8")
+    assert "upload_to_s3.sh\" --check-readable" in pf, "配る前の確認が上る元の読み取りを見ていない"
+    rel = (root / "deploy/scripts/release.sh").read_text(encoding="utf-8")
+    body = rel[rel.index("\nqdrant_readable() {") + 1:] if "\nqdrant_readable() {" in rel else ""
+    assert body, "release.sh に qdrant_readable（コンテナの中で読み取りの権限を揃える）が無い"
+    calls_at = [m.start() for m in re.finditer(r"^qdrant_readable$", rel, re.M)]
+    pre = rel.index("\npreflight ||")
+    stop = rel.index("\ndocker stop qdrant-dev")
+    assert any(c < pre for c in calls_at) and any(pre < c < stop for c in calls_at), \
+        "release.sh は配る前の確認の前と qdrant-dev の停止の前に qdrant_readable を呼ぶ"
+
+
+def test_update_resumes_partial():
+    """update.sh を途中（③の取込・④の分野タグ）で止めた後に流し直すと、残りから続ける（2026-10-30・導入団体の初めての増分取込
+    ＝③が OPENAI_API_KEY の未設定で止まった。②の収集が catalog に新しい行を書いた後なので、流し直すと①の新着チェックが 0 件＝
+    「新着なし」で終わり、取り込まれないままになる）。また、鍵（③＝OpenAI・④＝Anthropic）が無ければ②の前に止まる＝半端を作らない。
+    python・curl・git は偽物（通信しない）＝台本の分かれ道だけを見る。"""
+    import json
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    t = d / "repo"
+    (t / "deploy/scripts").mkdir(parents=True)
+    shutil.copy(root / "deploy/scripts/update.sh", t / "deploy/scripts/update.sh")
+    (t / "recommendations/data/cache").mkdir(parents=True)
+    uc = t / "recommendations/data/cache/update_check.json"
+    log = d / "python.log"
+    fake_py = f'''echo "$*" >> "{log}"
+case "$*" in
+  "-m recommendations.ingest.check_new"*) printf '%s' "$FAKE_UC" > "{uc}" ;;
+  *"qdrant_ingest ingest --count"*) echo "$FAKE_PENDING" ;;
+  *"policy_tagger --count"*) echo "$FAKE_UNTAGGED" ;;
+  "-") cat >/dev/null; [[ "$FAKE_KEYS" == ok ]] || {{ echo "鍵が無い" >&2; exit 1; }} ;;
+esac
+exit 0
+'''
+    path = _fake_bin(d, {"python": fake_py, "curl": "exit 0\n", "git": "exit 0\n"})
+
+    def run(new, pending, untagged, keys="ok"):
+        if log.exists():
+            log.unlink()
+        env = dict(os.environ, PATH=path, FAKE_PENDING=str(pending), FAKE_UNTAGGED=str(untagged), FAKE_KEYS=keys,
+                   FAKE_UC=json.dumps({"orgs": {"keidanren": {"new": new, "error": None}}}))
+        r = subprocess.run(["bash", str(t / "deploy/scripts/update.sh"), "staging", "--no-release"],
+                           env=env, capture_output=True, text=True)
+        lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        did = {"collect": any("ingest.collect" in x for x in lines),
+               "ingest": any("qdrant_ingest ingest" in x and "--count" not in x for x in lines),
+               "tag": any("policy_tagger" in x and "--count" not in x and "--dry-run" not in x for x in lines)}
+        return r, did
+
+    r, did = run(new=0, pending=3, untagged=0)                  # ③で止まった後＝取込の残り 3
+    assert r.returncode == 0 and did == {"collect": False, "ingest": True, "tag": True}, (did, r.stdout, r.stderr)
+    r, did = run(new=0, pending=0, untagged=2)                  # ④で止まった後＝未判定 2
+    assert r.returncode == 0 and did["ingest"] and did["tag"] and not did["collect"], (did, r.stdout, r.stderr)
+    r, did = run(new=0, pending=0, untagged=0)                  # 本当に何もない
+    assert r.returncode == 0 and not any(did.values()), (did, r.stdout, r.stderr)
+    r, did = run(new=1, pending=0, untagged=0, keys="missing")  # 鍵が無い＝②の前に止まる
+    assert r.returncode != 0 and not any(did.values()), (did, r.stdout, r.stderr)
+    r2, did2 = run(new=0, pending=3, untagged=0, keys="missing")  # 続きでも鍵が無ければ③の前に止まる
+    assert r2.returncode != 0 and not any(did2.values()), (did2, r2.stdout, r2.stderr)
+    r, did = run(new=1, pending=0, untagged=0)                  # 普段の形＝②③④
+    assert r.returncode == 0 and all(did.values()), (did, r.stdout, r.stderr)
 
 
 def test_s3_buckets_deny_insecure_transport():
