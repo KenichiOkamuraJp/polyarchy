@@ -2778,6 +2778,126 @@ def test_box_lock_has_no_genai_clients():
     assert set(extra) == set(have) - set(keep) - cl.KEEP
 
 
+def test_box_entrypoints_import_from_box_lock():
+    """箱で動く Python の入口から辿れる import が、箱のロック（lock-recommendations-stats.txt）だけで揃う（B48・2026-10-30）。
+    B46 (b) で beautifulsoup4 を作業用 PC だけの extras に移し、箱の更新チェックの新着チェック（check_new → collect）が import で
+    止まっていた（best-effort で続行＝配布もゲートも通り、ダッシュボードの欄が黙って古くなった）。入口＝systemd のユニットと
+    deploy/bootstrap/*.sh が `-m` で呼ぶモジュールと、そこが呼ぶ deploy/ の .py。リポジトリのモジュールを関数の中の import も
+    含めて辿る（呼ばれる枝かどうかは見ない＝try/except ImportError の中も数える＝check_new はそこで落ちた）。"""
+    import ast
+    import re
+    import sys
+    from importlib import metadata
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    tops = {p.name for p in root.iterdir() if p.is_dir() and (p / "__init__.py").exists()}
+    entries, scripts = set(), set()
+    for f in sorted((root / "deploy/bootstrap").glob("*.sh")) + sorted((root / "deploy/systemd").glob("*.service")):
+        text = "\n".join(ln for ln in f.read_text(encoding="utf-8").splitlines() if not ln.lstrip().startswith("#"))
+        entries |= set(re.findall(r"-m ((?:%s)(?:\.\w+)+)" % "|".join(sorted(tops)), text))
+        scripts |= set(re.findall(r"\$REPO_DIR/(deploy/[\w/]+\.py)", text))
+    for must in ("recommendations.ingest.check_new", "stats.ops.freshness", "recommendations.serving.mcp_server",
+                 "stats.serving.mcp_server", "companies.serving.mcp_server", "deliberations.serving.mcp_server"):
+        assert must in entries, f"入口の読み取りが壊れている（{must} が無い）"
+
+    def modfile(mod):
+        p = root.joinpath(*mod.split("."))
+        return p / "__init__.py" if (p / "__init__.py").exists() else (p.with_suffix(".py") if p.with_suffix(".py").exists() else None)
+
+    ext, seen = {}, set()
+    todo = [(m, modfile(m)) for m in entries] + [("", root / s) for s in scripts]
+    while todo:
+        mod, f = todo.pop()
+        if f is None or f in seen:
+            continue
+        seen.add(f)
+        pkg = mod if f.name == "__init__.py" else mod.rpartition(".")[0]
+        for n in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if isinstance(n, ast.Import):
+                names = [a.name for a in n.names]
+            elif isinstance(n, ast.ImportFrom):
+                base = n.module or ""
+                if n.level:
+                    parts = pkg.split(".")
+                    base = ".".join(parts[:len(parts) - n.level + 1] + ([n.module] if n.module else []))
+                names = [base] + [f"{base}.{a.name}" for a in n.names]
+            else:
+                continue
+            for nm in names:
+                top = nm.split(".")[0]
+                if top in tops:
+                    parts = nm.split(".")
+                    todo += [(".".join(parts[:i]), modfile(".".join(parts[:i]))) for i in range(1, len(parts) + 1)]
+                elif top and top not in sys.stdlib_module_names and top != "__future__":
+                    ext.setdefault(nm, set()).add(str(f.relative_to(root)))
+    assert any("check_new.py" in str(f) for f in seen) and any(f.name == "collect.py" for f in seen), "関数の中の import を辿れていない"
+
+    norm = lambda s: re.sub(r"[-_.]+", "-", s).lower()   # noqa: E731
+    lock = {norm(m.group(1)) for m in re.finditer(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==",
+                                                  (root / "deploy/requirements/lock-recommendations-stats.txt").read_text(encoding="utf-8"), re.M)}
+    pd = metadata.packages_distributions()
+    other_name = {"bs4": "beautifulsoup4", "fitz": "pymupdf", "jwt": "pyjwt", "dotenv": "python-dotenv", "yaml": "pyyaml"}
+
+    def dists(nm):
+        parts = nm.split(".")
+        if parts[0] == "llama_index":   # 名前空間パッケージ＝下の 2 段で配布が分かれる（llms.anthropic は箱に入れない）
+            if len(parts) < 2:
+                return None
+            return ["llama-index-core"] if parts[1] == "core" else ([f"llama-index-{parts[1]}-{parts[2]}"] if len(parts) > 2 else None)
+        return pd.get(parts[0]) or [other_name.get(parts[0], parts[0])]
+    # 例外＝箱では呼ばれないと分かっている選択肢だけ（配布名・ファイルの組で。ほかのファイルが使い始めたら落ちる）。
+    #   embeddings.py の openai_*＝取込・比較の埋め込みの選択肢（呼んだときだけ作る）。箱の本番は ruri＝B46 (b) で意図して外した。
+    allowed = {("llama-index-embeddings-openai", "recommendations/core/embeddings.py")}
+    from recommendations.core.config import PRODUCTION_EMBEDDING
+    assert not PRODUCTION_EMBEDDING.startswith("openai"), "本番の埋め込みが API 側＝箱で動かない（例外の前提が崩れた）"
+    missing = {}
+    for nm, files in ext.items():
+        ds = dists(nm)
+        if ds is not None and not any(norm(d) in lock for d in ds):
+            key = ", ".join(sorted({norm(d) for d in ds}))
+            rest = {f for f in files if (key, f) not in allowed}
+            if rest:
+                missing.setdefault(key, set()).update(rest)
+    assert not missing, {k: sorted(v) for k, v in missing.items()}
+
+
+def test_check_new_import_failure_is_visible():
+    """新着チェックの目次の取得（collect）が import で落ちたら、全団体を「チェック失敗」として結果に書き、終了コード 1（B48）。
+    前は結果のファイルを書かずに落ち、ダッシュボードが前の「最終チェック」を出し続けた（更新チェックは best-effort で続行）。"""
+    import json
+    import os
+    import re
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    d = Path(tempfile.mkdtemp())
+    (d / "catalog.csv").write_text("doc_id\n", encoding="utf-8")
+    code = ("import sys; sys.modules['bs4'] = None\n"            # bs4 の無い箱と同じ＝import が落ちる（取得は走らない）
+            "from pathlib import Path\n"
+            "from recommendations.ingest import check_new as c\n"
+            "c.CATALOG = Path(sys.argv[1]) / 'catalog.csv'; c.OUT_PATH = Path(sys.argv[1]) / 'update_check.json'\n"
+            "raise SystemExit(c.main([]))\n")
+    r = subprocess.run([sys.executable, "-c", code, str(d)], cwd=root, capture_output=True, text=True,
+                       env={**os.environ, "PYTHONPATH": str(root)})
+    assert r.returncode == 1, (r.returncode, r.stderr[-800:])
+    out = json.loads((d / "update_check.json").read_text(encoding="utf-8"))
+    assert "bs4" in out["import_error"], out
+    src = (root / "recommendations/ingest/check_new.py").read_text(encoding="utf-8")
+    plans = re.findall(r'^        "(\w+)": lambda', src, re.M)
+    from recommendations.ingest.check_new import ORGS
+    assert tuple(plans) == ORGS and sorted(out["orgs"]) == sorted(ORGS), (plans, ORGS)
+    assert all("bs4" in o["error"] for o in out["orgs"].values()), out
+    from polyarchy_common import ops_dashboard as od                       # ダッシュボードの欄に「チェック失敗」が出る
+    keep = od.UPDATE_CHECK_PATH
+    try:
+        od.UPDATE_CHECK_PATH = d / "update_check.json"
+        assert sorted(od.update_check_summary()["errors"]) == sorted(ORGS)
+    finally:
+        od.UPDATE_CHECK_PATH = keep
+
+
 def test_bootstrap_uninstall_zero_and_some():
     """bootstrap ③ の「ロックに無いものを外す」を、外すものが 0 件のときも動かす（2026-10-20・9a4b864 の配布で切り戻し）。依存が
     変わらない配布で check_lock.py --not-in-lock が空の行を 1 行出し、mapfile がそれを 1 件と数えて `pip uninstall ''` で止まった

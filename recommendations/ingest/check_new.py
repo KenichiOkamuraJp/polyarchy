@@ -44,13 +44,25 @@ def _known(ids: set[str], bases: list[str]) -> bool:
     return False
 
 
+ORGS = ("keidanren", "rengo", "nissho", "doyukai", "gov")
+
+
 def check() -> dict:
     ids = catalog_ids()
     result = {"checked_at": datetime.now().isoformat(timespec="seconds"), "orgs": {}}
+    # 目次の取得と解析は collect（requests・bs4）。import が落ちたら全団体を「チェック失敗」として書く（B48・2026-10-30＝箱の
+    # ロックから bs4 が外れて落ちたとき、結果のファイルが前のまま残り、ダッシュボードが古い「最終チェック」を出し続けた）。
+    try:
+        from recommendations.ingest.collect import (GOV_SOURCES, doyukai_index,
+                                                    keidanren_index, nissho_index,
+                                                    rengo_teigen_index)
+    except ImportError as e:
+        msg = f"import 失敗: {e}"[:200]
+        log.warning("新着チェック失敗（全団体）: %s", msg)
+        result["import_error"] = msg
+        result["orgs"] = {org: {"total_index": 0, "new": 0, "new_samples": [], "error": msg} for org in ORGS}
+        return result
     # 団体ごとに独立に走らせ、1 団体の失敗（サイト改修等）が他を止めないようにする。
-    from recommendations.ingest.collect import (GOV_SOURCES, doyukai_index,
-                                                keidanren_index, nissho_index,
-                                                rengo_teigen_index)
     y = date.today().year
     plans = {
         "keidanren": lambda: [([f"keidanren_{yr}_{e['num']}"], e["title"])
@@ -91,11 +103,11 @@ def main(argv=None) -> int:
     total_new = sum(o["new"] for o in result["orgs"].values())
     errs = [k for k, o in result["orgs"].items() if o["error"]]
     print(f"新着チェック: 合計 新着 {total_new} 件"
-          + (f"・チェック失敗 {','.join(errs)}" if errs else "") + f" → {OUT_PATH.relative_to(ROOT)}",
+          + (f"・チェック失敗 {','.join(errs)}" if errs else "") + f" → {OUT_PATH}",
           file=sys.stderr)
     if a.json:
         print(json.dumps(result, ensure_ascii=False, indent=1))
-    return 0
+    return 1 if result.get("import_error") else 0   # 1 団体のサイトの失敗は 0（best-effort）・import の失敗は 1（更新チェックが ⚠ を出す）
 
 
 if __name__ == "__main__":

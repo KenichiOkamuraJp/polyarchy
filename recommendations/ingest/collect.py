@@ -12,6 +12,7 @@ data/pdfs/<org>/ に規則名で保存し、data/catalog.csv にメタデータ�
     python -m recommendations.ingest.collect keidanren_legacy                      # 旧サイト 全量（B19 遡及拡充）
     python -m recommendations.ingest.collect rengo                                 # 連合 teigen 全収集（年指定不要）
     python -m recommendations.ingest.collect nissho                                # 日商 政策提言アーカイブ全収集（年指定不要）
+    python -m recommendations.ingest.collect --check-ua                            # 取得の UA を表示するだけ（取得しない・連絡先が無ければ 1）
 
 方針:
   - 直PDF（index が *.pdf）→ そのまま取得。
@@ -1266,18 +1267,26 @@ def write_catalog(rows: list[dict]) -> None:
     print(f"\nカタログ更新: {CATALOG}（全 {len(existing)} 行）")
 
 
-def main() -> None:
+def main(argv=None) -> int:
+    # 警告は引数の検査より前に出す（引数なしの実行でも連絡先の有無が分かる・B48）。
+    if not crawler_contact():
+        print("⚠ CRAWLER_CONTACT 未設定＝取得の UA に連絡先が載らない（recommendations/.env に書く）", file=sys.stderr)
     ap = argparse.ArgumentParser()
-    ap.add_argument("org", choices=list(ADAPTERS))
+    ap.add_argument("org", nargs="?", choices=list(ADAPTERS))
+    ap.add_argument("--check-ua", action="store_true",
+                    help="取得の UA を表示して終わる（取得しない）。連絡先が無ければ終了コード 1")
     ap.add_argument("--years", type=int, nargs="+", default=None,
                     help="対象年（経団連は必須。連合は年インデックス無しのため未使用）")
     ap.add_argument("--limit", type=int, default=None, help="取得PDF数の上限（スパイク用）")
     ap.add_argument("--skip-existing", action="store_true", help="既存ファイルは再取得しない")
     ap.add_argument("--source", choices=list(GOV_SOURCES), default=None,
                     help="政府のサブ系統を1つに限定（cefp/kisei/zaiseishin/dgk/aiplan/dsgl/juten/seicho/aigl）")
-    args = ap.parse_args()
-    if not crawler_contact():
-        print("⚠ CRAWLER_CONTACT 未設定＝取得の UA に連絡先が載らない（recommendations/.env に書く）", file=sys.stderr)
+    args = ap.parse_args(argv)
+    if args.check_ua:
+        print(UA["User-Agent"])
+        return 0 if crawler_contact() else 1
+    if args.org is None:
+        ap.error("org を指定する（取得せずに UA だけ確かめるなら --check-ua）")
 
     print(f"収集: {args.org}  years={args.years}  limit={args.limit}  "
           f"source={args.source}  skip_existing={args.skip_existing}")
@@ -1287,7 +1296,8 @@ def main() -> None:
     from collections import Counter
     tally = Counter(r["status"] for r in rows)
     print(f"結果: {dict(tally)}  総エントリ={len(rows)}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -238,6 +238,8 @@ curl -sI https://recommendations.<domain>/healthz | head -1   # staging は reco
 
 **封じ込め（2026-10-19・B46 (a)）**＝上の qdrant・polyarchy-mcp・polyarchy-stats・polyarchy-companies・qdrant-deliberations・polyarchy-deliberations は、コード・Python 環境・設定・モデルを読むだけで、書けるのは unit の `ReadWritePaths`（捕捉ログのフォルダ・Qdrant の索引と写し）だけ（`ProtectSystem=strict`・`NoNewPrivileges`・`PrivateTmp`＝/tmp はユニット専用・`ProtectHome`）。症状と見分け＝unit が起動しない（`journalctl -u <unit>` に `Read-only file system`・`Failed to set up mount namespacing`＝`ReadWritePaths` のフォルダが無い）・捕捉ログが増えない（`クエリ捕捉に失敗`）。自動適用の切り戻しは unit も旧版に戻す（`apply_data_update.sh` の `units_restore`）。箱で unit を手で書き換えない＝直すのはリポジトリの `deploy/systemd/`。
 
+**更新チェックの出力を読む（2026-10-30・B48）**＝`polyarchy-updatecheck` の出力は journal だけ（CW Logs へは送らない）。①stats freshness・②提言の新着チェックの失敗は best-effort で続行する＝unit は失敗にならず unit-failed も鳴らない。見るところ＝ダッシュボードの「提言の新着チェック」の「チェック失敗：」（目次の取得の import が落ちたときは全団体が並ぶ）と「最終チェック」の時刻（毎日 06:10 JST より古ければ止まっている）。中身を読むなら SSM ドキュメント `check-updates`（この実行の分を全部出す）か、読み取りだけの Run Command で `journalctl -u polyarchy-updatecheck --since "<時刻>" --no-pager`。★`-n 20` などの末尾だけでは冒頭の警告（`⚠ ESTAT_APP_ID なし`・`⚠ CRAWLER_CONTACT なし`）が入らない＝「出ていない」と読まない。
+
 ## 3. データ復元（S3 が原本）
 
 ```bash
@@ -459,6 +461,7 @@ bash deploy/scripts/update.sh staging      # 新着検出→収集→追い判�
 
 ```bash
 # ①収集：5 団体アダプタで PDF 取得＋catalog.csv 登録（org= keidanren|doyukai|nissho|rengo|gov）
+python -m recommendations.ingest.collect --check-ua              # 取得の UA だけ表示（取得しない・CRAWLER_CONTACT が無ければ ⚠ と終了コード 1）
 python -m recommendations.ingest.collect <org> --skip-existing   # gov は --source で審議会を指定
 # ②取込（v7/Qdrant 本線・doc 単位増分・冪等。ローカル qdrant-dev を起動しておく）
 COLLECTION_NAME=policy_claims_v7 python -m recommendations.ingest.qdrant_ingest ingest
