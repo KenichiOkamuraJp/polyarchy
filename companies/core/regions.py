@@ -133,9 +133,12 @@ def lookup_regions(company: str, period: str | None = None, *, basis: str | None
 
 
 def _one(company: str, period: str, *, basis: str | None = None, doc_id: str | None = None) -> dict:
-    from companies.core.lookup import BASES, NO_CONSOLIDATED_HINT, PERIOD, _miss, consolidated_at, find_company  # 発見層と理由コードは第 1 便と共通
+    from companies.core.lookup import (BASES, NO_CONSOLIDATED_HINT, NO_PERIOD_HINT, PERIOD, _miss,  # 発見層と理由コードは第 1 便と共通
+                                       consolidated_at, find_company)
     if basis is not None and basis not in BASES:
         return _miss("bad_request", hint=f"basis は {BASES} のいずれか（省くと、その決算期に連結の値があれば連結・無ければ単体＝連結の有無は決算期ごと）")
+    if period is None:
+        return _miss("bad_period", hint=NO_PERIOD_HINT)
     if not PERIOD.fullmatch(period or ""):
         return _miss("bad_period", hint="period は決算期末の YYYY-MM（例＝2025-03）。年度表記は読み替えない")
     found = find_company(company)

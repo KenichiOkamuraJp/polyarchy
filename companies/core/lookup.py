@@ -62,6 +62,12 @@ NO_CONSOLIDATED_HINT = ("この決算期に連結の値が無い＝連結財務�
                         "単体の値を連結として返さない")
 
 
+# 期を省いたとき（lookup_segments・lookup_regions は引数の定義では period を省けるように見える＝B40 の併せての気づき・2026-10-31）
+NO_PERIOD_HINT = ("period（決算期末の YYYY-MM）か、期間の period_from／period_to を指定する。"
+                  "直近の決算期末は find_company の company.fiscal_year_end（例 2026-03-31 → period=2026-03）。"
+                  "直近 2 期なら period_from に 1 年前の決算期末を入れる（例 period_from=2025-03）")
+
+
 def consolidated_at(co: dict, period: str, doc_id: str | None = None) -> bool:
     """その決算期に連結の値があるか＝連結の有無は決算期ごと（2026-09-28）。
 

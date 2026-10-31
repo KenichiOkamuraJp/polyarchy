@@ -171,6 +171,15 @@ async def main() -> int:
             r = _payload(await session.call_tool("list_datasets", {}))
             print(f"[4b] list_datasets: {r.get('count')} datasets（値を含まない: {all('value' not in d for d in r.get('datasets') or [])}）")
             ok &= isinstance(r.get("datasets"), list) and (r.get("count") == 0 or all("value" not in d for d in r["datasets"]))
+            # 2026-10-31（捕捉ログの点検）：目録の sector が語彙外（「物価」）だと黙って 0 件だった＝find_statistics（M4）と同じく入口で有効値を返す。
+            # 読み替えはしない（「物価」→「物価・金融」を自動で当てない＝0 件と案内を返す）
+            r = _payload(await session.call_tool("list_datasets", {"sector": "物価"}))
+            r2 = _payload(await session.call_tool("list_datasets", {"sector": "物価・金融"}))
+            r3 = _payload(await session.call_tool("list_datasets", {"scope": "japan"}))
+            print(f"[4c] list_datasets 語彙外: sector=物価 count={r.get('count')} hint={str(r.get('hint'))[:30]}"
+                  f"／物価・金融 count={r2.get('count')}／scope=japan hint={str(r3.get('hint'))[:20]}")
+            ok &= (r.get("count") == 0 and "物価・金融" in (r.get("hint") or "") and (r2.get("count") or 0) > 0
+                   and r3.get("count") == 0 and "intl" in (r3.get("hint") or ""))
 
     rows = [json.loads(l) for l in tmp_log.read_text(encoding="utf-8").splitlines() if l.strip()] if tmp_log.exists() else []
     print(f"[5] 捕捉ログ: {len(rows)} 行（found=false の記録: {sum(1 for x in rows if x.get('found') is False)}）")

@@ -115,6 +115,16 @@ async def run() -> list[str]:
                 errs.append(f"[26] {name} に期間（period_from／period_to）の引数が無い")
         if "elements" not in ((tools["lookup_segments"].input_schema.get("properties") or {}) if "lookup_segments" in tools else {}):
             errs.append("[27] lookup_segments に要素で絞る引数（elements）が無い（11 年で約 99KB）")
+        # B40（2026-10-12 起票・2026-10-31 手当て）：単一セグメントの会社でセグメント別が空のとき、地域別のツールを案内しないと
+        # ChatGPT が Web 検索へ移った（任天堂）＝返り値の hint で lookup_regions を案内する（ツールの説明は変えない）
+        n1 = await call("lookup_segments", company="7974", period="2026-03")
+        if n1.get("reason") != "no_segment_figures" or "lookup_regions" not in (n1.get("hint") or ""):
+            errs.append(f"[38] 単一セグメントの会社で地域別（lookup_regions）を案内しない: {n1.get('reason')} {str(n1.get('hint'))[:60]}")
+        # 期を省くと bad_period（引数の定義では省けるように見える）＝決算期末の引き方を案内する
+        for name in ("lookup_segments", "lookup_regions"):
+            n2 = await call(name, company="7974")
+            if n2.get("reason") != "bad_period" or "fiscal_year_end" not in (n2.get("hint") or "") or "period_from" not in (n2.get("hint") or ""):
+                errs.append(f"[39] {name}：期を省いたとき決算期末の引き方を案内しない: {n2.get('reason')} {str(n2.get('hint'))[:60]}")
         t1 = await call("screen_trend", conditions=[{"metric": "top_line", "aggregate": "median"}])
         if t1.get("found") or t1.get("reason") != "unknown_aggregate":
             errs.append(f"[28] 語彙に無い集約を弾かない: {t1.get('reason')}")

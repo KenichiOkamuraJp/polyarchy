@@ -389,6 +389,15 @@ def main() -> int:
     leaked = sorted({k for d in (r.get("excluded") or {}).values() for k in d if k == "regions_not_in_document"})
     if leaked:
         fails.append(("order", f"時系列の後の横断検索に時系列の除外の理由が紛れた: {leaked}"))
+    # 項目の索引の置き場が 1 つの問の項目より少ないと、問のたびに全部を読み直す（2026-10-31＝1 株当たりの時系列は 12 項目・置き場 8 で毎回 3.3 秒）
+    # ＝同じ問の 2 回目に読み直しが 0 であること（時間ではなく読み込みの回数で見る＝機械の速さに依らない）
+    from companies.core.screen import _column
+    q = dict(conditions=[{"metric": "eps_basic", "aggregate": "cagr"}], period_from="2021-03", period_to="2025-12", limit=3)
+    screen_trend(**q)
+    before = _column.cache_info().misses
+    screen_trend(**q)
+    if _column.cache_info().misses != before:
+        fails.append(("cache", f"1 株当たりの時系列の 2 回目に項目の索引を読み直した（{_column.cache_info().misses - before} 項目・置き場 {_column.cache_info().maxsize}）"))
     for i, err in fails[:40]:
         print(f"  FAIL {i}: {err}")
     print(f"{'PASS' if not fails else 'FAIL'}: 時系列の横断検索 正例 {len(pos)}・負例 {len(neg)}・横断の問 {len(qs)}・区分と地域別の年ごと {len(lk)}・失敗 {len(fails)}")

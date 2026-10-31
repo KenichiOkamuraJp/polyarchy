@@ -38,6 +38,12 @@ configure_quiet_logging()
 SERVER_NAME = "polyarchy-stats"
 TOOLS_DESC = "公開ツール=[list_datasets, find_statistics, lookup_statistic, lookup_panel, list_sources] 層=公開固定 fail-closed"
 
+# 語彙外の sector・scope への案内（find_statistics と list_datasets で共通＝語彙外は決定的に 0 件なので入口で返す）
+SECTOR_HINT = ("sector は次のいずれか（完全一致）＝" + "／".join(SECTORS)
+               + "。「家計・労働」「物価・金融」「対外・国際」は中黒込みで 1 部門"
+               + "（例：「労働」→「家計・労働」・「物価」→「物価・金融」）。")
+SCOPE_HINT = "scope は jp（日本の統計）か intl（国際比較・国別）"
+
 # 参照層の範囲指定（"開始..終了"）：1 応答の値数上限。超えたら found=false reason=range_too_wide（黙って切らない）。
 RANGE_LIMIT = int(os.environ.get("STATS_RANGE_LIMIT", "100"))
 PANEL_LIMIT = int(os.environ.get("STATS_PANEL_LIMIT", "2500"))      # lookup_panel の 1 応答の値数上限
@@ -112,14 +118,12 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
         limit = max(1, min(int(limit or 20), 50))
         if scope and scope not in ("jp", "intl"):
             return {"count": 0, "total": 0, "truncated": False, "layer": "公開（固定）", "series": [],
-                    "hint": "scope は jp（日本の統計）か intl（国際比較・国別）"}
+                    "hint": SCOPE_HINT}
         # sector は完全一致の語彙（registry 検証で語彙外は系列側に存在し得ない）＝語彙外指定は決定的に 0 件。
         # フィルタとして回さず入口で有効値一覧を返す（M4：実利用で「労働」「物価」の空振りが 2 モデル 3 実測）。
         if sector and sector not in SECTORS:
             return {"count": 0, "total": 0, "truncated": False, "layer": "公開（固定）", "series": [],
-                    "hint": ("sector は次のいずれか（完全一致）＝" + "／".join(SECTORS)
-                             + "。「家計・労働」「物価・金融」「対外・国際」は中黒込みで 1 部門"
-                             + "（例：「労働」→「家計・労働」・「物価」→「物価・金融」）。")}
+                    "hint": SECTOR_HINT}
         # dataset も完全一致の語彙（第 11 弾 第 5 便・2026-09-15：実利用ログで `mof.hojin`×3・`法人企業統計`×2・`国民経済計算`×3 が無言の 0 件）
         # ＝sector（M4）と同型で、語彙外は入口で有効値一覧を返す。
         if dataset and dataset not in registry.dataset_ids():
@@ -647,6 +651,14 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
         次の一手：気になる dataset を find_statistics(dataset=…) で掘り、series_id を確定して lookup_statistic で値を引く。
         値は返さない。planned は未収録（取得元は特定済み・値なし・取込時期未定）＝lookup は found=false。層は公開固定。
         """
+        # sector・scope の語彙外は入口で有効値を返す（find_statistics と同じ・2026-10-31 の捕捉ログの点検で「物価」が黙って 0 件×2）。
+        # 読み替えはしない。捕捉ログには残す（空振りの手がかり）
+        bad = SECTOR_HINT if sector and sector not in SECTORS else SCOPE_HINT if scope and scope not in ("jp", "intl") else None
+        if bad:
+            _capture({"tool": "list_datasets", "sector": sector, "org": org, "scope": scope, "result_count": 0,
+                      "reason": "bad_argument", "source": "mcp"})
+            return {"count": 0, "datasets": [], "hint": bad, "sectors": list(SECTORS),
+                    "scopes": {"jp": "日本の統計（全国・都道府県）", "intl": "国際比較（国別 ISO3・IMF/OECD/世銀）"}}
         rows = []
         for d in registry.catalog():
             if sector and sector not in d["sector"]:

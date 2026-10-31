@@ -321,7 +321,10 @@ def _rows(rows: list) -> tuple:
     return tuple(tuple(x if i == 2 or x is None else I(x) for i, x in enumerate(r)) for r in rows)
 
 
-@lru_cache(maxsize=8)
+# 置く数は 1 つの問が使う項目の数より多く（2026-10-31）＝1 株当たりの項目の時系列は株式分割の判定で 12 項目を使う。8 だと
+# 問のたびに全部を読み直していた（毎回 3.3 秒→ 16 で 2 回目から 0.44 秒・結果は同じ・問の間の最大メモリは同じ＝その問は 12 項目を手元に持つ）。
+# 全 50 項目を置くとメモリが 1 プロセス 0.9 → 2.1 GB（2026-10-14）＝全部は置かない
+@lru_cache(maxsize=16)
 def _column(key: str) -> dict:
     """1 項目の索引＝{EDINET コード: {(書類, basis, 決算期): ((基準, 要素, 値, 単位, context, ラベル, decimals), …)}}。
     値の文字列以外（書類・期・要素・単位・context・ラベル）は共有の文字列にする＝全量（約 4 万書類）で 1 項目 数十 MB に収める。"""
