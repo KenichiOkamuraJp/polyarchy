@@ -3063,6 +3063,25 @@ def test_bundle_export_skips_unchanged():
     assert "bundle export --force" in rb, "RUNBOOK §5 に作り直しの引数（--force）が書かれていない"
 
 
+def test_preflight_direct_run_is_not_silent():
+    """配る前の確認（release_preflight.sh）を直に流しても、黙って 0 で終わらない（2026-11-01・運用側の気づき）。
+    release.sh は source して `preflight` を呼ぶ作り＝直に `bash release_preflight.sh staging` と流すと関数を定義する
+    だけで何も出さず 0 で終わり、「通った」と読める。→ 直に流したら環境名の env を読んで確認を回す・環境名が無い／
+    env ファイルが無いときは使い方を出して非 0。source したときは今までどおり何もしない（release.sh の動きを変えない）。"""
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    pf = root / "deploy/scripts/release_preflight.sh"
+    r = subprocess.run(["bash", str(pf)], capture_output=True, text=True)
+    assert r.returncode != 0 and "使い方" in r.stderr and "<env>" in r.stderr, (r.returncode, r.stdout, r.stderr)
+    r = subprocess.run(["bash", str(pf), "no_such_env_for_test"], capture_output=True, text=True)
+    assert r.returncode != 0 and "no_such_env_for_test.env" in r.stderr, (r.returncode, r.stdout, r.stderr)
+    r = subprocess.run(["bash", "-c", f'source "{pf}"; declare -F preflight'], capture_output=True, text=True)
+    assert r.returncode == 0 and r.stdout.strip() == "preflight" and r.stderr == "", (r.returncode, r.stdout, r.stderr)
+    rb = (root / "deploy/RUNBOOK_OPS.md").read_text(encoding="utf-8")
+    assert "bash deploy/scripts/release_preflight.sh <env>" in rb, "RUNBOOK §5 の単体の回し方が古い"
+
+
 def test_box_born_not_tracked():
     """箱で生まれるもの（<svc>/data/cache/・query_log/）を git で追跡しない（2026-10-30＝政策主張DB の新着チェックの結果
     update_check.json が公開の最初のコミットから追跡されていた＝手元で流すたびに差分になり、公開リポに 09-03 の結果が残っていた。

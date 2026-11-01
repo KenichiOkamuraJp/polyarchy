@@ -424,8 +424,8 @@ bash deploy/scripts/release.sh staging                     # 配る前の確認�
 - コードの範囲（`*/data/` の外）に未コミットの差分が無い（tar は HEAD から作る）
 - 上る元（`upload_to_s3.sh` の同期の一覧と同じ除き方）が全部読める（`upload_to_s3.sh --check-readable`＝ゲートの後の upload でも S3 に何か書く前にもう一度見る・2026-10-30）
 
-この確認は**単体で先に回してよい**（読み取りだけ・何も配らない・`qdrant-dev` も止めない）＝配布用のクローンの root で
-`bash -c 'source deploy/env/<env>.env; REPO_DIR=$PWD; source deploy/scripts/release_preflight.sh; preflight'`。
+この確認は**単体で先に回してよい**（読み取りだけ・何も配らない・`qdrant-dev` も止めない）＝配布用のクローンで
+`bash deploy/scripts/release_preflight.sh <env>`（2026-11-01〜。`deploy/env/<env>.env` を読み、このクローンの root で回す。環境名が無い・env ファイルが無いときは使い方を出して非 0。以前の `bash -c 'source deploy/env/<env>.env; REPO_DIR=$PWD; source deploy/scripts/release_preflight.sh; preflight'` も同じ）。
 env ファイルを読ませるのは `release.sh` と同じ変数で走らせるため（変数を手で渡すと `ENABLE_DELIBERATIONS_APP` の書き忘れで `qdrant-delib` の確認が黙って抜ける）。
 `release.sh` と同じ ✓ の行が出て終了コード 0 なら、本番の ⓪ では止まらない＝索引の作り直し・ログインのし直し・`check_lock` の不一致を、ゲート（十数分）の前に片づけられる（2026-10-09 staging で運用側が実施）。
 

@@ -5,7 +5,8 @@
 #
 #   release.sh が source して `preflight` を呼ぶ（COLLECTION_NAME の export を release.sh のシェルに効かせるため
 #   別プロセスにしない）。単体で先に回す（読み取りだけ・何も配らない＝RUNBOOK §5）＝リポジトリ root で
-#   `bash -c 'source deploy/env/<env>.env; REPO_DIR=$PWD; source deploy/scripts/release_preflight.sh; preflight'`
+#   `bash deploy/scripts/release_preflight.sh <env>`（直に流すと末尾が env を読んで preflight を呼ぶ・2026-11-01）
+#   ＝`bash -c 'source deploy/env/<env>.env; REPO_DIR=$PWD; source deploy/scripts/release_preflight.sh; preflight'` と同じ
 #   ＝env ファイルを読ませて release.sh と同じ変数で走らせる（`set -a` は要らない＝release.sh も export せず、子プロセス
 #   〔aws・check_lock.py・python〕には値を引数で渡す。付けると release.sh と違う環境で回すことになる）。前提の変数（REPO_DIR・AWS_PROFILE・ENABLE_DELIBERATIONS_APP・
 #   RECOMMENDATIONS_COLLECTION_NAME・DELIB_QDRANT_URL〔任意〕）を手で渡すと、ENABLE_DELIBERATIONS_APP の書き忘れで
@@ -170,3 +171,22 @@ $dirty"
   fi
   echo "  ✓ コードの範囲に未コミットの差分なし（tar＝HEAD）"
 }
+
+# 直に流したとき（`bash deploy/scripts/release_preflight.sh <env>`・2026-11-01）＝release.sh と同じ env ファイルを読んで確認を回す。
+#   以前は関数を定義するだけで何も出さずに 0 で終わり、「通った」と読めた（運用側の気づき）。source したとき（release.sh）は何もしない。
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  if [[ $# -ne 1 ]]; then
+    echo "使い方: bash deploy/scripts/release_preflight.sh <env>（例 staging＝deploy/env/<env>.env を読んで配る前の確認だけを回す・何も配らない）" >&2
+    exit 2
+  fi
+  REPO_DIR="$(cd "$PF_DIR/../.." && pwd)"
+  if [[ ! -f "$REPO_DIR/deploy/env/$1.env" ]]; then
+    echo "[preflight] env ファイルが無い: deploy/env/$1.env" >&2
+    exit 2
+  fi
+  cd "$REPO_DIR" || exit 2
+  # shellcheck source=/dev/null
+  source "deploy/env/$1.env"
+  preflight
+  exit $?
+fi
