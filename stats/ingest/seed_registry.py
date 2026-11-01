@@ -128,7 +128,7 @@ PL_RATIO_MEASURES = {"sales", "cogs", "sga", "operating_profit", "ordinary_profi
 ACCOUNTING_AFFECTED = {"sales", "cogs", "sga"}
 VA_MEASURES = {"value_added", "operating_surplus", "interest_paid", "rent_paid", "taxes_dues", "depreciation",
                "employee_wages", "employee_bonus", "officer_compensation", "officer_bonus", "welfare_costs", "personnel_costs", "labour_share"}
-STOCK_MEASURES = {"tangible_fixed_assets", "intangible_fixed_assets", "land", "fixed_assets", "total_assets", "investments_other", "stocks_fixed"}
+STOCK_MEASURES = {"tangible_fixed_assets", "intangible_fixed_assets", "land", "construction_in_progress", "fixed_assets", "total_assets", "investments_other", "stocks_fixed"}
 HOLDING_PARENTS = {"pure_holding", "professional", "services", "nonmfg", "allexfin"}
 
 
@@ -282,6 +282,9 @@ HOJIN_TIER3 = [
     ("capex_ex_software", "086", "設備投資（ソフトウェアを除く）", "百万円", (TAG_CORP, TAG_IND), "FY1961"),
     # 第 7 弾 B-1/B-2（2026-08-22・要件源＝利用側プロジェクト D-3）：資本装備率の分解に土地（控除）と BS の骨格を全セルへ
     ("land", "012", "土地（固定資産）", "百万円", (TAG_CORP, TAG_FIN), "FY1960"),
+    # B5（2026-10-31 の捕捉ログ＝「建設仮勘定」0 件・労働装備率の分子）：当期末・cat01=013 を全セルへ。
+    # 同じ表で 土地(012)＋建設仮勘定(013)＋その他の有形固定資産(014)＝有形固定資産(148)（FY1960・FY2010・FY2024 で一致を確認）
+    ("construction_in_progress", "013", "建設仮勘定（固定資産）", "百万円", (TAG_CORP, TAG_FIN), "FY1960"),
     ("fixed_assets", "147", "固定資産", "百万円", (TAG_CORP, TAG_FIN), "FY1960"),
     ("total_assets", "022", "資産合計", "百万円", (TAG_CORP, TAG_FIN), "FY1960"),
     ("net_assets", "157", "純資産", "百万円", (TAG_CORP, TAG_FIN), "FY1960"),
@@ -294,7 +297,7 @@ HOJIN_SAMPLE = [("population_count", "001", "母集団法人数", "社", (TAG_CO
 
 # 全体系列（全産業〔除く金融保険〕×全規模）だけに付ける注記（古い層から引き継ぐ）
 HOJIN_TOTAL_NOTES = {
-    **{m: "貸借対照表（当期末）。" for m in ("total_assets", "fixed_assets", "tangible_fixed_assets", "land", "net_assets")},
+    **{m: "貸借対照表（当期末）。" for m in ("total_assets", "fixed_assets", "tangible_fixed_assets", "land", "construction_in_progress", "net_assets")},
     "capex_ex_software": "資金需給欄。ソフトウェアを含む設備投資は表の年により無い＝別途。",
 }
 
@@ -361,6 +364,18 @@ def hojin_derived() -> list[Series]:
                                           f"mof.hojin.operating_surplus.{dims}.fy"),
                       notes="労働分配率＝人件費／付加価値。定義が複数あり（分母を営業純益ベースにする流儀もある）派生値は計算しない。"
                             "付加価値＝人件費＋支払利息等＋動産・不動産賃借料＋租税公課＋営業純益（法人企業統計の定義）。" + HOJIN_SIZE_NOTE,
+                      **base))
+        # B5（2026-10-31 の捕捉ログ＝「労働装備率」0 件）。式は財務省「法人企業統計調査から見た財務指標」の労働装備率の頁のとおり。
+        out.append(_s(series_id=f"mof.hojin.labour_equipment_ratio.{dims}.fy", measure="labour_equipment_ratio",
+                      title=f"法人企業統計 労働装備率（有形固定資産〔建設仮勘定を除く〕／従業員数）（全産業（除く金融保険業）・{sname}・年度）＝派生・構成系列を参照",
+                      policy_tags=(TAG_LABOR, TAG_CORP, TAG_IND),
+                      components=(f"mof.hojin.tangible_fixed_assets.{dims}.fy", f"mof.hojin.construction_in_progress.{dims}.fy",
+                                  f"mof.hojin.employees_avg.{dims}.fy"),
+                      notes="財務省の算式＝有形固定資産（建設仮勘定を除く）の期首・期末平均 ÷ 従業員数（円）。"
+                            "有形固定資産（建設仮勘定を除く）＝土地＋その他の有形固定資産＝有形固定資産 − 建設仮勘定（同じ表で一致）。"
+                            "構成系列は当期末の残高と期中平均従業員数。前期末の残高（同じ表の前期末の項目）は未収録＝期首・期末平均は作れない"
+                            "（前年度の当期末とは標本が違い一致しない＝全産業・全規模の有形固定資産 FY2024 の前期末 537,895,071 と FY2023 の当期末 532,174,460 百万円）。"
+                            "分母の「従業員数」は財務省の資料の表記のまま（期中平均かは資料に書かれていない）。派生値は計算しない。" + HOJIN_SIZE_NOTE,
                       **base))
     return out
 
@@ -2677,7 +2692,22 @@ def boj_flat_series() -> list[Series]:
                       accessor={"type": "boj_flat", "zip": "bp_m_en.zip", "file": "bp_m_en.csv", "layout": "wide", "code": code, "period_kind": "yyyymm"},
                       citation_template="日本銀行 時系列統計データ「国際収支統計（BPM6）」系列コード " + code + "（{item}／{period}）取得 {retrieved_at}",
                       notes=bp_note, status="registered"))
-    for meas, code, ttl in [("assets", "BPBP6KA", "対外資産残高"), ("liabilities", "BPBP6KL", "対外負債残高"), ("net_assets", "BPBP6KN", "対外純資産残高")]:
+    # B5（2026-10-22 の捕捉ログ＝「対内直接投資」0 件）：金融収支の直接投資（資産＝対外・負債＝対内）。同じファイルの別コード。
+    di_note = ("金融収支の直接投資（BPM6 の資産・負債の表示）：資産＝対外直接投資（居住者の海外への投資）の純増、負債＝対内直接投資（非居住者の本邦への投資）の純増。"
+               "正の値は資産・負債の増加（資金の流れの向きの表示ではない）。実行・回収の内訳は 2014年1月〜で未収録・地域別・業種別も未収録。"
+               "残高は本邦対外資産負債残高の直接投資（boj.iip.fdi_assets.a／boj.iip.fdi_liabilities.a）＝別系列。")
+    for meas, code, ttl in [("fdi_assets_net", "BPBP6JYNFA13", "金融収支 直接投資 資産（対外直接投資・ネット）"),
+                            ("fdi_liabilities_net", "BPBP6JYNFL13", "金融収支 直接投資 負債（対内直接投資・ネット）")]:
+        out.append(_s(series_id=f"boj.bop.{meas}.m", title=f"国際収支統計 {ttl}（月次・億円・原数値）", org="boj", org_name="日本銀行", source_url=site,
+                      sector="対外・国際", unit="億円", granularity="月次", freq="m", dataset="bop", measure=meas, stat_name="国際収支統計（BPM6）",
+                      table_id=code, table_title=f"Balance of Payments (BPM6) {ttl}", policy_tags=(TAG_TRADE, TAG_FIN), first_period="1996-01",
+                      accessor={"type": "boj_flat", "zip": "bp_m_en.zip", "file": "bp_m_en.csv", "layout": "wide", "code": code, "period_kind": "yyyymm"},
+                      citation_template="日本銀行 時系列統計データ「国際収支統計（BPM6）」系列コード " + code + "（{item}／{period}）取得 {retrieved_at}",
+                      notes=bp_note + di_note, status="registered"))
+    for meas, code, ttl in [("assets", "BPBP6KA", "対外資産残高"), ("liabilities", "BPBP6KL", "対外負債残高"), ("net_assets", "BPBP6KN", "対外純資産残高"),
+                            # B5（2026-10-22）：直接投資の残高（資産＝対外直接投資残高・負債＝対内直接投資残高）
+                            ("fdi_assets", "BPBP6KA1", "直接投資 資産残高（対外直接投資残高）"),
+                            ("fdi_liabilities", "BPBP6KL1", "直接投資 負債残高（対内直接投資残高）")]:
         out.append(_s(series_id=f"boj.iip.{meas}.a", title=f"本邦対外資産負債残高 {ttl}（暦年末・10億円）", org="boj", org_name="日本銀行", source_url=site,
                       sector="対外・国際", unit="10億円", granularity="暦年", freq="a", dataset="iip", measure=meas, stat_name="本邦対外資産負債残高（BPM6・暦年末）",
                       table_id=code, table_title=f"International Investment Position {ttl}", policy_tags=(TAG_TRADE, TAG_FIN), first_period="1996",

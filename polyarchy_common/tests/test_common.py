@@ -2970,6 +2970,99 @@ def test_collect_keeps_existing_rows():
     assert (rows["n.pdf"]["date"], rows["n.pdf"]["retrieved_at"]) == ("2026-10-13", "2026-10-30"), rows["n.pdf"]
 
 
+def test_bundle_export_skips_unchanged():
+    """審議会DB の束は、索引・語彙・目録・解析結果が前回の束と同じなら書き出し直さない（2026-11-01・B39）。
+    スナップショットは中身が同じでもバイトが毎回変わる＝束の目印（bundle.json）の sha256 が毎回変わり、配布のたびに
+    上り約 187 MiB と箱の復元が走っていた（点の数が同じ適用 10 回がすべて復元）。目印には索引の中身の指紋
+    （設定・全点の id・payload・ベクトル）を入れ、同じなら束に手を触れない。点の数が同じで中身だけ変わる取り込み
+    （ベクトルのやり直し）・解析結果の変更・指紋の無い古い束・壊れた束・--force は作り直す。Qdrant には繋がない（偽の client）。"""
+    import io
+    import tempfile
+    import urllib.request
+    from pathlib import Path
+    from types import SimpleNamespace as NS
+    from deliberations.ops import bundle as bd
+
+    class Sparse:
+        def __init__(self, i, v):
+            self.indices, self.values = i, v
+
+    pts = [NS(id=i, payload={"doc": f"d{i}", "text": f"本文{i}"}, vector={"dense": [0.1 * i, 0.2], "bm25": Sparse([i], [1.0])})
+           for i in range(1, 6)]
+    snaps = []
+
+    class FakeQC:
+        def __init__(self, url=None, timeout=None):
+            pass
+
+        def count(self, name, exact=True):
+            return NS(count=len(pts))
+
+        def scroll(self, name, limit=1000, offset=None, with_payload=True, with_vectors=True):
+            s = offset or 0
+            return pts[s:s + 2], (s + 2 if s + 2 < len(pts) else None)
+
+        def get_collection(self, name):
+            return NS(config=NS(params={"vectors": {"dense": {"size": 2, "distance": "Cosine"}}, "sparse_vectors": {"bm25": {}}}),
+                      payload_schema={"doc": {"data_type": "keyword", "points": len(pts)}})
+
+        def create_snapshot(self, name, wait=True):
+            snaps.append(name)
+            return NS(name=f"s{len(snaps)}")
+
+        def delete_snapshot(self, name, snap, wait=True):
+            pass
+
+    def fake_retrieve(url, dest):
+        Path(dest).write_bytes(b"snapshot-" + str(len(snaps)).encode())  # 同じ中身でも毎回違うバイト（本物と同じ）
+
+    d = Path(tempfile.mkdtemp())
+    vocab_dir = d / "vocab"
+    vocab_dir.mkdir()
+    import gzip
+    with gzip.open(vocab_dir / "c_vocab.json.gz", "wt", encoding="utf-8") as f:
+        json.dump({"params": {"n_docs": len(pts)}}, f)
+    (d / "manifest.jsonl").write_text('{"m": 1}\n', encoding="utf-8")
+    (d / "documents.jsonl").write_text('{"d": 1}\n', encoding="utf-8")
+    keep = (bd.QdrantClient, bd.BUNDLE_DIR, bd.MANIFEST, bd.DOCUMENTS, bd.config.VOCAB_DIR, urllib.request.urlretrieve, urllib.request.urlopen)
+    try:
+        bd.QdrantClient, bd.BUNDLE_DIR, bd.MANIFEST, bd.DOCUMENTS, bd.config.VOCAB_DIR = \
+            FakeQC, d / "bundle", d / "manifest.jsonl", d / "documents.jsonl", vocab_dir
+        urllib.request.urlretrieve = fake_retrieve
+        urllib.request.urlopen = lambda u, *a, **k: io.BytesIO(b'{"version": "1.19.0"}')
+        out = bd.export("c", "http://fake")
+        meta = json.loads((out / "bundle.json").read_text(encoding="utf-8"))
+        assert len(snaps) == 1 and meta.get("content_sha256"), meta
+        stamp = {p.name: p.stat().st_mtime_ns for p in out.iterdir()}
+        raw = (out / "bundle.json").read_bytes()
+        bd.export("c", "http://fake")                                                         # 何も変わっていない
+        assert len(snaps) == 1, "中身が同じなのにスナップショットを取り直した"
+        assert (out / "bundle.json").read_bytes() == raw and {p.name: p.stat().st_mtime_ns for p in out.iterdir()} == stamp, \
+            "中身が同じなのに束のファイルを書き換えた（上りと箱の復元が走る）"
+        pts[2].vector["dense"] = [9.9, 0.2]                                                   # 点の数は同じ・ベクトルだけ違う
+        bd.export("c", "http://fake")
+        meta2 = json.loads((out / "bundle.json").read_text(encoding="utf-8"))
+        assert len(snaps) == 2 and meta2["content_sha256"] != meta["content_sha256"], "ベクトルだけの変更を取りこぼした"
+        (d / "documents.jsonl").write_text('{"d": 2}\n', encoding="utf-8")                   # 解析結果だけ違う
+        bd.export("c", "http://fake")
+        assert len(snaps) == 3, "解析結果の変更を取りこぼした"
+        bd.export("c", "http://fake", force=True)
+        assert len(snaps) == 4, "--force で作り直さない"
+        m = json.loads((out / "bundle.json").read_text(encoding="utf-8"))
+        m.pop("content_sha256")
+        (out / "bundle.json").write_text(json.dumps(m), encoding="utf-8")                    # 指紋の無い古い束
+        bd.export("c", "http://fake")
+        assert len(snaps) == 5, "指紋の無い古い束を作り直さない"
+        (out / "collection.snapshot").write_bytes(b"broken")                                  # 壊れた束
+        bd.export("c", "http://fake")
+        assert len(snaps) == 6, "壊れた束をそのまま残した"
+    finally:
+        (bd.QdrantClient, bd.BUNDLE_DIR, bd.MANIFEST, bd.DOCUMENTS, bd.config.VOCAB_DIR,
+         urllib.request.urlretrieve, urllib.request.urlopen) = keep
+    rb = (Path(__file__).resolve().parents[2] / "deploy/RUNBOOK_OPS.md").read_text(encoding="utf-8")
+    assert "bundle export --force" in rb, "RUNBOOK §5 に作り直しの引数（--force）が書かれていない"
+
+
 def test_box_born_not_tracked():
     """箱で生まれるもの（<svc>/data/cache/・query_log/）を git で追跡しない（2026-10-30＝政策主張DB の新着チェックの結果
     update_check.json が公開の最初のコミットから追跡されていた＝手元で流すたびに差分になり、公開リポに 09-03 の結果が残っていた。

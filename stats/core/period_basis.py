@@ -27,7 +27,7 @@ _LABEL = {
 # 法人企業統計の貸借対照表の項目（当期末）＝決算期末の残高。ほかの項目（損益・人件費・設備投資・期中平均従業員数・比率）は期中
 _HOJIN_BS = {
     "cash_deposits", "retained_earnings", "total_assets", "current_assets", "inventories", "fixed_assets", "tangible_fixed_assets",
-    "intangible_fixed_assets", "land", "investments_other", "investment_securities", "stocks_fixed", "liabilities", "current_liabilities",
+    "intangible_fixed_assets", "land", "construction_in_progress", "investments_other", "investment_securities", "stocks_fixed", "liabilities", "current_liabilities",
     "short_term_borrowings", "fixed_liabilities", "long_term_borrowings", "bonds", "net_assets", "capital_stock", "shareholders_equity",
 }
 
