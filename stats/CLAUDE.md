@@ -67,6 +67,7 @@ python -m polyarchy_common.tests.test_common  # 共通契約の単体テスト
 
 ## 配線の規則（2026-10-09＝複雑性の点検で、写しの漏れが黙って効いていたもの）
 
+- ★ **登録簿は `series.jsonl` と `series_shared.json` の組**（B23・2026-11-01＝43 MB で GitHub の警告 50 MB の手前だった）：断層・注記・ライセンス・引用のひな型・表題・統計名・取得元 URL は共有の表に 1 回だけ置き、行には `"<欄>@": 番号`。**片方だけ手で直さない**＝必ず `python -m stats.ingest.seed_registry` で両方を作り直す（組の取り違えは登録簿の先頭の行の sha256 で読み込みが止まる・test_core が「git の登録簿＝seed_registry の出力」を検査）。注記や断層の文は登録簿の行を grep しても出ない＝`Registry.load()` で引くか共有の表を見る（系列 ID と accessor は行にある）。
 - ★ **取得元の型（accessor.type）を足したら**、`stats/ops/refresh.py` の `TYPE_TO_MODULE` と `stats/ops/freshness.py` の `build_probes` の両方に配線するか、`freshness.EXCLUDED_TYPES` に理由つきで載せる（test_core が「registered の全 type がどちらかにある」「probe が unsupported を出さない」を検査する）。漏れると月次の更新で「更新したつもりで古いまま」になる（`esri_xlsx_yearsheets` の 439 系列が漏れていた）。
 - ★ **test_core の値ストアに依存する検査は `need(<代表系列>)` で囲む**（`has_data` で黙って飛ばさない）。release.sh は `STATS_TEST_STRICT=1` で呼ぶ＝スキップが 1 つでもあれば FAIL。
 - ★ **法人企業統計の業種×規模のセルの定義は `hojin_industry_panel` が正**（古い層〔第2弾の PL・KEY10・第5弾の HOJIN_VA〕と同じ series_id は build() が位置を保って置き換える）。属性（提供開始・注記・分野）はパネルの側で直す。

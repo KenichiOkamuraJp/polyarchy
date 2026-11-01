@@ -30,6 +30,57 @@ def main() -> int:
     reg = default_registry()
     chk(len(reg.series) >= 500, f"既定レジストリ読込 {len(reg.series)} 系列（2026-08 時点 528・大量欠落を検知するため下限 500）")
     chk(all(not s.violations() for s in reg.series.values()), "全系列が契約検証を通る")
+    # B23（2026-11-01）：登録簿は重複の多い欄を共有の表（series_shared.json）に寄せ、読むときに展開する＝系列の定義は不変
+    import shutil
+    import tempfile
+    from pathlib import Path as _P
+    from stats.core.paths import REGISTRY_PATH
+    from stats.core.registry import shared_path
+    from stats.ingest import seed_registry as _seed
+    _tmp = _P(tempfile.mkdtemp())
+    try:
+        import contextlib
+        import io as _io
+        with contextlib.redirect_stdout(_io.StringIO()):
+            built = _seed.main(_tmp / "series.jsonl")
+        back = Registry.load(_tmp / "series.jsonl")
+        chk(isinstance(built, list) and [s.series_id for s in built] == list(back.series)
+            and all(back.series[s.series_id] == s for s in built),
+            f"B23 書き出して読み戻した全系列が書き出す前と同じ（{len(back.series)} 系列・順序も）")
+        chk(isinstance(built, list) and list(reg.series) == [s.series_id for s in built] and all(reg.series[s.series_id] == s for s in built),
+            "B23 git の登録簿が seed_registry の出力と同じ（定義を変えたのに作り直していない、を検知）")
+        mb = REGISTRY_PATH.stat().st_size / 1e6
+        chk(mb < 25 and shared_path(REGISTRY_PATH).exists(), f"B23 登録簿 {mb:.1f} MB＜25 MB（GitHub の警告 50 MB）・共有の表がある")
+
+        def _fails(mut) -> bool:
+            d = _P(tempfile.mkdtemp())
+            try:
+                shutil.copy2(_tmp / "series.jsonl", d / "series.jsonl")
+                shutil.copy2(shared_path(_tmp / "series.jsonl"), shared_path(d / "series.jsonl"))
+                mut(d)
+                try:
+                    Registry.load(d / "series.jsonl")
+                except ValueError:
+                    return True
+                return False
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
+
+        def _bump(d):  # 共有の表を 1 字変える＝登録簿の行と組が食い違う
+            p = shared_path(d / "series.jsonl")
+            p.write_text(p.read_text(encoding="utf-8").replace("。", "．", 1), encoding="utf-8")
+
+        def _oob(d):   # 番号が表の外
+            p = d / "series.jsonl"
+            lines = p.read_text(encoding="utf-8").splitlines(True)
+            i = next(k for k, ln in enumerate(lines) if '"notes@"' in ln)
+            import json as _json
+            row = _json.loads(lines[i]); row["notes@"] = 10 ** 6; lines[i] = _json.dumps(row, ensure_ascii=False) + "\n"
+            p.write_text("".join(lines), encoding="utf-8")
+        chk(_fails(lambda d: shared_path(d / "series.jsonl").unlink()) and _fails(_bump) and _fails(_oob),
+            "B23 共有の表が無い・組が食い違う・番号が表の外＝黙って読まずにエラー")
+    finally:
+        shutil.rmtree(_tmp, ignore_errors=True)
     bad = Series(series_id="Mof.hojin.x.fy", title="t", org="mof", source_url="https://x", accessor={"type": "estat"}, freq="fy")
     chk(any("命名規則" in e for e in bad.violations()), "命名規則違反を検出")
     bad2 = Series(series_id="ipss.pop.x.a", title="t", org="ipss", source_url="https://x", accessor={"type": "ipss_xlsx"}, freq="a", kind="projection")

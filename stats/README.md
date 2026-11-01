@@ -13,7 +13,7 @@
 ## 状態（2026-09-03 更新・稼働中）
 
 - **配信**：`stats.polyarchy.net`（個人認証 案 B・ログイン必須）で 2026-08-28 から箱（EC2）で稼働。箱への反映は `deploy/scripts/release.sh`（ゲート全 PASS → S3 → 自動適用・失敗時は自動切り戻し＝`deploy/RUNBOOK_OPS.md` §5）。
-- **収録**：レジストリ `data/registry/series.jsonl`（系列数・目録数は `list_datasets`／`list_sources` の返り値と週次ダッシュボードが正＝本書には写さない）。第 6〜11 弾までの拡充の経緯は [docs/データ拡充計画.md](docs/データ拡充計画.md)・[docs/記録/開発経緯と設計判断_2026-08-25.md](docs/記録/開発経緯と設計判断_2026-08-25.md)。
+- **収録**：レジストリ `data/registry/series.jsonl`＋共有の表 `series_shared.json`（組で `seed_registry` が作る・B23＝断層・注記・ライセンス等は表に 1 回だけ）（系列数・目録数は `list_datasets`／`list_sources` の返り値と週次ダッシュボードが正＝本書には写さない）。第 6〜11 弾までの拡充の経緯は [docs/データ拡充計画.md](docs/データ拡充計画.md)・[docs/記録/開発経緯と設計判断_2026-08-25.md](docs/記録/開発経緯と設計判断_2026-08-25.md)。
 - **MCP ツール 5 本**（`serving/mcp_server.py`）：`list_datasets`／`find_statistics`／`lookup_statistic`／`lookup_panel`／`list_sources`（契約＝[docs/共通契約.md](docs/共通契約.md)）。
 - **ゲート 4 本**：`stats.eval.mcp_smoke`・`exact_match`・`test_core`・`find_quality`（合格基準と現在値の正典＝ルート README「品質の担保」）。
 - **運用**：更新チェック（毎日・箱）→ `stats.ops.refresh`／`qe_update`（更新）→ `release.sh`。燃料（捕捉ログ）→ `stats.ops.quality_candidates`（週次 `deploy/scripts/triage.sh`）→ `--accept`。

@@ -10,6 +10,7 @@ S 系列（docs/指標棚卸し.md §5・データソース選定.md §2）を�
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from polyarchy_common.taxonomy import TAGS
 
 from stats.core.licenses import license_for
 from stats.core.paths import REGISTRY_PATH
-from stats.core.registry import Registry, Series
+from stats.core.registry import SHARED_FIELDS, SHARED_HEADER, Registry, Series, shared_path
 from stats.core.hojin_vocab import HOJIN_INDUSTRIES, BY_SLUG as HOJIN_IND_INFO, HOJIN_SIZE, HOJIN_SIZE_NOTE, SIZE_FIRST, industry_note
 
 # 分野タグは polyarchy_common.taxonomy.TAGS（英字キー→表示語・21 分類）を**キーで参照**（文字列の複製を作らない＝taxonomy の規約）。
@@ -3145,7 +3146,7 @@ DISCOVERY_ALIASES: tuple[tuple[tuple[str, ...], str], ...] = (
 )
 
 
-def main(path: Path = REGISTRY_PATH) -> None:
+def main(path: Path = REGISTRY_PATH) -> list[Series]:
     import dataclasses
     series = [dataclasses.replace(x, license=license_for(x)) if not x.license else x for x in build()]
     # 発見層の別名（俗称・話し言葉・官庁呼称差）＝ notes に語を足すだけ（値・定義・表題は不変。find の strength1 で当たる）。
@@ -3167,17 +3168,39 @@ def main(path: Path = REGISTRY_PATH) -> None:
     for s in series:
         reg.register(s)  # 検証（違反があれば例外）
     path.parent.mkdir(parents=True, exist_ok=True)
+    # B23（2026-11-01）：重複の多い欄（SHARED_FIELDS）は共有の表に 1 回だけ置き、行には番号を残す（空の値は行にそのまま）。
+    tables: dict[str, list] = {k: [] for k in SHARED_FIELDS}
+    index: dict[str, dict[str, int]] = {k: {} for k in SHARED_FIELDS}
+    rows = []
+    for s in series:
+        d = s.payload()
+        for k in ("corpus", "layer", "date_int", "scope"):  # scope は region_level から導出（保存しない）
+            d.pop(k, None)
+        row = {}
+        for k, v in d.items():
+            if k in SHARED_FIELDS and v not in ("", {}, [], ()):
+                key = json.dumps(v, ensure_ascii=False, sort_keys=True)
+                if key not in index[k]:
+                    index[k][key] = len(tables[k])
+                    tables[k].append(v)
+                row[k + "@"] = index[k][key]
+            else:
+                row[k] = v
+        rows.append(row)
+    shared_text = json.dumps({"generated_by": "python -m stats.ingest.seed_registry（series.jsonl と組で作る・片方だけ直さない）",
+                              "fields": tables}, ensure_ascii=False, indent=1) + "\n"
+    shared_path(path).write_text(shared_text, encoding="utf-8")
+    sha = hashlib.sha256(shared_text.encode("utf-8")).hexdigest()
     with path.open("w", encoding="utf-8") as f:
         f.write("# 生成物: python -m stats.ingest.seed_registry（定義は stats/ingest/seed_registry.py が正）\n")
-        for s in series:
-            d = s.payload()
-            for k in ("corpus", "layer", "date_int", "scope"):  # scope は region_level から導出（保存しない）
-                d.pop(k, None)
-            f.write(json.dumps(d, ensure_ascii=False) + "\n")
+        f.write(f"{SHARED_HEADER} {sha}（{shared_path(path).name}＝断層・注記・ライセンスなどの共有の表・行の \"<欄>@\" は表の番号）\n")
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
     n_reg = sum(1 for s in series if s.status == "registered")
     n_pl = sum(1 for s in series if s.status == "planned")
     n_gd = sum(1 for s in series if s.status == "guide")
     print(f"レジストリ書き出し: {path} 系列 {len(series)}（取込対象 {n_reg}・planned {n_pl}・guide {n_gd}）")
+    return series
 
 
 if __name__ == "__main__":

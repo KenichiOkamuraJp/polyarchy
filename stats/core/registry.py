@@ -5,12 +5,14 @@
 - 分野タグは polyarchy_common.taxonomy.POLICY_TAGS の語彙のみ。
 - series_id は `<org>.<dataset>.<measure>[.<dims>].<freq>[.<region_level>]`（§1）。
 - 値そのものは持たない（`core.values` の値ストア）。派生（仮想）エントリは `components` を持ち値を持たない。
-- 既定レジストリは `stats/data/registry/series.jsonl`（1行=1系列）から読む。
+- 既定レジストリは `stats/data/registry/series.jsonl`（1行=1系列）から読む。重複の多い欄（断層・注記・ライセンス等）は
+  同じフォルダの `series_shared.json` に 1 回だけ置き、行は番号で参照する（B23・2026-11-01＝読むときに展開・組は sha256 で照合）。
 """
 from __future__ import annotations
 
 import json
 import re
+import hashlib
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
@@ -160,6 +162,45 @@ class Series:
             if not _ID_RE.match(c):
                 errs.append(f"components: 命名規則違反 {c!r}")
         return errs
+
+
+# B23（2026-11-01）：登録簿の重複の多い欄は共有の表（series_shared.json）に 1 回だけ置き、行には番号（"<欄>@": i）を残す。
+#   断層・注記・ライセンスなどが系列ごとに書き写されて 43 MB（GitHub の警告 50 MB の手前）になっていた。読むときに展開する
+#   ＝Series は以前と同じ（共有の値は同じオブジェクトを指す＝書き換えない前提・登録簿の値をその場で変えるコードは無い）。
+#   組の取り違え（片方だけ作り直す等）は、登録簿の先頭のコメント行に書いた共有の表の sha256 で止める（黙って読まない）。
+SHARED_FIELDS = ("breaks", "notes", "license", "citation_template", "table_title", "stat_name", "source_url")
+SHARED_HEADER = "# shared-sha256:"
+
+
+def shared_path(path: Path) -> Path:
+    """登録簿に対応する共有の表のパス（同じフォルダの <名前>_shared.json）。"""
+    return path.with_name(path.stem + "_shared.json")
+
+
+def _load_shared(path: Path, want_sha: str) -> dict:
+    sp = shared_path(path)
+    if not sp.exists():
+        raise ValueError(f"共有の表が無い: {sp.name}（登録簿の行が番号で参照している）")
+    raw = sp.read_bytes()
+    got = hashlib.sha256(raw).hexdigest()
+    if not want_sha or got != want_sha:
+        raise ValueError(f"共有の表 {sp.name} の sha256 が登録簿の先頭の行と違う（{got[:12]} ≠ {want_sha[:12] or '記載なし'}）"
+                         "＝片方だけ作り直した？ python -m stats.ingest.seed_registry で両方を作り直す")
+    return json.loads(raw.decode("utf-8"))["fields"]
+
+
+def _expand(d: dict, shared: dict) -> dict:
+    out = {}
+    for k, v in d.items():
+        if k.endswith("@"):
+            f = k[:-1]
+            table = shared.get(f)
+            if f not in SHARED_FIELDS or table is None or not isinstance(v, int) or not 0 <= v < len(table):
+                raise ValueError(f"共有の表の参照が不正: {k}={v!r}")
+            out[f] = table[v]
+        else:
+            out[k] = v
+    return out
 
 
 def _from_dict(d: dict) -> Series:
@@ -556,13 +597,23 @@ class Registry:
         reg = cls()
         if not path.exists():
             return reg
+        shared: Optional[dict] = None
+        want_sha = ""
         with path.open(encoding="utf-8") as f:
             for ln, line in enumerate(f, 1):
                 line = line.strip()
+                if line.startswith(SHARED_HEADER):
+                    m = re.search(r"[0-9a-f]{64}", line)
+                    want_sha = m.group(0) if m else ""
                 if not line or line.startswith("#"):
                     continue
                 try:
-                    reg.register(_from_dict(json.loads(line)))
+                    d = json.loads(line)
+                    if any(k.endswith("@") for k in d):
+                        if shared is None:
+                            shared = _load_shared(path, want_sha)
+                        d = _expand(d, shared)
+                    reg.register(_from_dict(d))
                 except Exception as e:  # noqa: BLE001
                     raise ValueError(f"{path}:{ln}: {e}") from e
         return reg
