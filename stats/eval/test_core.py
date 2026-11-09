@@ -710,6 +710,39 @@ def main() -> int:
     chk(not mis, f"refresh の配線先の ingest が その type を扱う（食い違い {mis or 'なし'}）")
     unsup = sorted(k for k, pr in build_probes(reg).items() if pr["kind"] == "unsupported")
     chk(not unsup, f"freshness の probe の網羅：unsupported を出さない（{unsup or 'なし'}）")
+    # 原典の確認先（2026-11-09）：registered の全 accessor.type が「原票の URL を組み立てる」か「理由つきで出さない」の
+    # どちらか一方に載り（取得元を足して配線を忘れると、その系列だけ黙ってリンクが出ない）、組み立てに使う取込の URL の写しが
+    # 取込のモジュールの定数と同じ（サーバは取込を import しない＝写しを持つ）。規則の単体：欄が欠ければ出さない（推測しない）。
+    from stats.core import source_file as sf
+    both = sorted(sf.LINKED_TYPES & set(sf.UNLINKED_TYPES))
+    unlinked = sorted(reg_types - sf.LINKED_TYPES - set(sf.UNLINKED_TYPES))
+    chk(not unlinked and not both, f"原票のリンクの網羅：registered の type は組み立てか除外のどちらか一方（未配線 {unlinked or 'なし'}・両方 {both or 'なし'}）")
+    drift = sorted(f"{m}.{attr}" for (m, attr), mine in sf.COPIED_FROM_INGEST.items()
+                   if getattr(importlib.import_module(f"stats.ingest.{m}"), attr, None) != mine)
+    chk(not drift, f"原票のリンク：取込の URL の写しが取込の定数と同じ（食い違い {drift or 'なし'}）")
+    f = sf.source_file_url
+    chk(f({"type": "estat", "statsDataId": "0003060791", "cdTab": "1"}) == "https://www.e-stat.go.jp/dbview?sid=0003060791"
+        and f({"type": "estat"}) is None
+        and f({"type": "maikin_csv", "statInfId": "000032189776"}) == importlib.import_module("stats.ingest.maikin").url_of("000032189776")
+        and f({"type": "esri_xlsx", "file": "kakuhou/files/2024/tables/2024i4_jp.xlsx"})
+        == "https://www.esri.cao.go.jp/jp/sna/data/data_list/kakuhou/files/2024/tables/2024i4_jp.xlsx"
+        and f({"type": "mof_zaimu_xlsx", "file": "fy2020/national/fy2020gassan.xlsx"})
+        == importlib.import_module("stats.ingest.mof_zaimu").url_of("national", 2020)
+        and f({"type": "soumu_hakusho", "edition": "r03(2021)", "file": "s-128-4.csv"})
+        == "https://www.soumu.go.jp/menu_seisaku/hakusyo/chihou/r03data/2021data/csv/s-128-4.csv"
+        and f({"type": "cao_mitoshi_pdf", "file": "r080123mitoshi.pdf", "page": 5})
+        == "https://www5.cao.go.jp/keizai1/mitoshi/r080123mitoshi.pdf#page=5"
+        and f({"type": "pdf_hakusho_sme", "url": "https://example.go.jp/a.pdf", "page": 28}) == "https://example.go.jp/a.pdf#page=28"
+        and f({"type": "mof_csv", "file": "jgbcm.csv"}) == importlib.import_module("stats.ingest.mof").JGB_CUR,
+        "原票のリンク：型ごとの組み立て（e-Stat の API の表は表の画面・PDF は値の載った頁）")
+    chk(f(None) is None and f({}) is None and f({"type": "esri_xlsx"}) is None
+        and f({"type": "esri_qe_csv", "file": "sokuhou/files/2026/{QDIR}/tables/gaku-mk{Q}.csv"}) is None
+        and f({"type": "soumu_hakusho", "edition": "r03", "file": "s-128-4.csv"}) is None
+        and f({"type": "mof_csv", "file": "other.csv"}) is None
+        and f({"type": "boj_file", "url": "cache/boj/gap.xlsx"}) is None
+        and f({"type": "oecd_sdmx", "dataflow": "x"}) is None and f({"type": "estat_catalog_xlsx", "statInfId": "1"}) is None
+        and f({"type": "no_such_type", "url": "https://example.go.jp/x.xlsx"}) is None,
+        "原票のリンク：欄が欠ける・ひな型のまま・http(s) でない・API・番号が替わる型・知らない型は出さない（推測しない）")
     chk(_jst_date("Fri, 02 Oct 2026 01:37:52 GMT") == "2026-10-02" and _jst_date("Thu, 01 Oct 2026 16:00:00 GMT") == "2026-10-02"
         and _jst_date("") == "", "取込待ち：検知の日は Last-Modified の JST の日付（retrieved_at と同じ物差し）")
     # ③ 時間で壊れない評価問：負例の未来の期は収録の最終期からの相対（@last+N）で書く

@@ -164,6 +164,41 @@ async def main() -> int:
             bad = [d["slug"] for d in (fam or {}).get("dims", {}).get("industry", []) if d["slug"] == d["label"]]
             print(f"[3j] sna_activity の families 表示名: スラグのまま={len(bad)}")
             ok &= fam is not None and not bad
+            # [3r] 原典の確認先（2026-11-09・導入団体の利用者の要望＝値を取った原票へ 1 クリックで行きたい）：
+            # 出典の url は目次・案内のページが多い（SNA は版の目次）→ source.file_url＝値を取ったファイルそのもの。
+            # 期によってファイルが違う（年版ごとの財務書類）なら file_urls＝[{url, periods}]。e-Stat の API の表は表の画面（＝url と同じ）。
+            # API で取る国際系列は出さない（開いて読める原票が無い）。パネルは表の中で一様なら sources の側に 1 回。
+            def _src(x):
+                return x.get("source") or {}
+            sna = "cao.sna_sector.final_consumption.gg.fy"
+            a1 = _payload(await session.call_tool("lookup_statistic", {"series_id": sna, "period": "FY2023"}))
+            a2 = _payload(await session.call_tool("lookup_statistic", {"series_id": sna, "period": "FY2020..FY2023"}))
+            a3 = _payload(await session.call_tool("lookup_statistic", {"series_id": "mof.zaimu_shorui.cash_deposits.national.fy",
+                                                                      "period": "FY2020..FY2022"}))
+            a4 = _payload(await session.call_tool("lookup_statistic", {"series_id": "mof.hojin.sales.mfg-allsize.fy", "period": "FY2024"}))
+            a5 = _payload(await session.call_tool("lookup_statistic", {"series_id": "oecd.pdb.labour_productivity_level.a.cty",
+                                                                      "period": "2020", "region": "USA"}))
+            a6 = _payload(await session.call_tool("lookup_statistic", {"series_id": "cao.mitoshi.cgpi_change.fy", "period": "FY2026"}))
+            a7 = _payload(await session.call_tool("lookup_panel", {"series_ids": [sna, "cao.sna_sector.final_consumption.hh.fy"],
+                                                                   "period": "FY2023"}))
+            u1, u2 = _src(a1).get("file_url", ""), _src(a2).get("file_url", "")
+            per_ed = _src(a3).get("file_urls") or []
+            psrc = a7.get("sources") or {}
+            print(f"[3r] 原票のリンク: SNA={u1.rsplit('/', 1)[-1]}（範囲も同じ={u2 == u1}） "
+                  f"年版ごと={[(x.get('url', '').rsplit('/', 1)[-1], x.get('periods')) for x in per_ed]} "
+                  f"e-Stat={_src(a4).get('file_url')} OECD={'file_url' in _src(a5) or 'file_urls' in _src(a5)} "
+                  f"PDF={_src(a6).get('file_url', '').rsplit('/', 1)[-1]} "
+                  f"パネル={sorted(v.get('file_url', '').rsplit('/', 1)[-1] for v in psrc.values())}")
+            esri = "https://www.esri.cao.go.jp/jp/sna/data/data_list/kakuhou/files/"
+            ok &= u1.startswith(esri) and u1.endswith("_jp.xlsx") and u1 != _src(a1).get("url") and u2 == u1
+            ok &= ([x.get("periods") for x in per_ed] == [["FY2020"], ["FY2021"], ["FY2022"]]
+                   and all(f"fy{x['periods'][0][2:]}" in x.get("url", "") for x in per_ed) and "file_url" not in _src(a3))
+            ok &= (_src(a4).get("file_url") == "https://www.e-stat.go.jp/dbview?sid=0003060791" == _src(a4).get("url"))
+            ok &= bool(a5.get("found")) and bool(_src(a5).get("url")) and "file_url" not in _src(a5) and "file_urls" not in _src(a5)
+            ok &= _src(a6).get("file_url", "").startswith("https://www5.cao.go.jp/keizai1/mitoshi/") and "#page=" in _src(a6).get("file_url", "")
+            ok &= (len(psrc) == 2 and all(v.get("file_url", "").startswith(esri) for v in psrc.values())
+                   and len({v.get("file_url") for v in psrc.values()}) == 2
+                   and all("file_url" not in (m.get("source") or {}) for m in (a7.get("series") or {}).values()))
 
             r = _payload(await session.call_tool("list_sources", {}))
             print(f"[4] list_sources: {len(r.get('sources') or [])} org")

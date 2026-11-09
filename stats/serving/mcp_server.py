@@ -28,6 +28,7 @@ from polyarchy_common.logsetup import configure_quiet_logging, get_logger, guard
 from polyarchy_common.mcp_http import run_session, serve_streamable_http
 
 from stats.core.paths import QUERY_LOG_PATH
+from stats.core.source_file import FILE_FIELDS, file_fields, source_file_url
 from stats.core.period_basis import label_of as _period_basis
 from stats.core.periods import FREQ_EXAMPLE, hint_for, matches_freq, parse
 from stats.core.registry import SECTORS, Registry, default_registry
@@ -337,7 +338,10 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                           available=len(hits), limit=RANGE_LIMIT)
             vals = [store.lookup(series_id, p, region) for p in hits]
             rows, vintages, retrieved, any_proj = [], set(), "", False
+            files: dict[str, list[str]] = {}   # 原票の URL → その URL に載っている期（期の順）
             for v in vals:
+                if (fu := source_file_url(v.accessor)):
+                    files.setdefault(fu, []).append(v.period)
                 k = v.kind or s.kind
                 row = {"period": v.period, "value": v.value}
                 if v.status:
@@ -348,7 +352,7 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                 vintages.add(v.vintage); retrieved = max(retrieved, v.retrieved_at)
             src = {
                 "org": s.org, "org_name": s.org_name, "stat_name": s.stat_name, "table_id": s.table_id,
-                "table_title": s.table_title, "basis": s.basis, "url": s.source_url,
+                "table_title": s.table_title, "basis": s.basis, "url": s.source_url, **file_fields(files),
                 "vintage": "・".join(sorted(v for v in vintages if v)), "retrieved_at": retrieved,
                 "license": s.license,
                 "citation": (s.citation_template or "{org_name}「{stat_name}」{table_title}（{period}）取得 {retrieved_at}")
@@ -385,6 +389,7 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
         src = {
             "org": s.org, "org_name": s.org_name, "stat_name": s.stat_name, "table_id": s.table_id,
             "table_title": s.table_title, "basis": s.basis, "accessor": v.accessor, "url": s.source_url,
+            **file_fields({fu: [v.period]} if (fu := source_file_url(v.accessor)) else {}),
             "published_at": v.published_at, "vintage": v.vintage, "retrieved_at": v.retrieved_at,
             "license": s.license,
             "citation": (s.citation_template or "{org_name}「{stat_name}」{table_title}（{period}）取得 {retrieved_at}")
@@ -475,10 +480,12 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
             reg_s = registry.get(sid)
             tmpl = (reg_s.citation_template if reg_s and reg_s.citation_template else "{org_name}「{stat_name}」{table_title}（{period}）取得 {retrieved_at}")
             tmpl = tmpl.replace("{org_name}", src.get("org_name", "")).replace("{stat_name}", src.get("stat_name", "")).replace("{table_title}", src.get("table_title", ""))
-            sources.setdefault(skey, {k: v for k, v in src.items() if k not in ("citation", "vintage", "retrieved_at", "accessor")})
+            sources.setdefault(skey, {k: v for k, v in src.items()
+                                      if k not in ("citation", "vintage", "retrieved_at", "accessor", *FILE_FIELDS)})
             sources[skey].setdefault("citation_template", tmpl)
             # 系列側は表と異なる要素だけ持つ（A-4・2026-08-22：citation の全文反復が応答の 15% を占めていた）
-            per = {"ref": skey, "vintage": src.get("vintage"), "retrieved_at": src.get("retrieved_at")}
+            per = {"ref": skey, "vintage": src.get("vintage"), "retrieved_at": src.get("retrieved_at"),
+                   **{k: src[k] for k in FILE_FIELDS if k in src}}
             if sources[skey]["citation_template"] != tmpl:
                 per["citation"] = src.get("citation")
             m = {"title": r["title"], "unit": r["unit"], "source": per}
@@ -510,6 +517,15 @@ def build_server(registry: Registry, store: Optional[ValueStore] = None):
                 if len(vals) == 1:
                     sources[skey][k] = vals.pop()
                     for m in members:
+                        m["source"].pop(k, None)
+            # 原票のリンクも表内で全系列が同じなら sources へ 1 回（欄の無い系列が混じれば系列側に残す）
+            files = {json.dumps({k: m["source"].get(k) for k in FILE_FIELDS}, ensure_ascii=False) for m in members}
+            if len(files) == 1 and any(k in members[0]["source"] for k in FILE_FIELDS):
+                for k in FILE_FIELDS:
+                    if k in members[0]["source"]:
+                        sources[skey][k] = members[0]["source"][k]
+                for m in members:
+                    for k in FILE_FIELDS:
                         m["source"].pop(k, None)
         # 品質メタは署名でグループ化（同じ usable_from・breaks・caution の系列は 1 定義）。sample は系列固有なので series 側に残す
         quality_groups: dict[str, dict] = {}
