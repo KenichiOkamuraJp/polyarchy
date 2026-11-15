@@ -3259,6 +3259,55 @@ def test_preflight_direct_run_is_not_silent():
     assert "bash deploy/scripts/release_preflight.sh <env>" in rb, "RUNBOOK §5 の単体の回し方が古い"
 
 
+def test_entrypoints_refuse_help_before_work():
+    """書き込む入口は --help と知らない引数を、処理の前に使い方を出して断る（2026-11-15・運用側の気づき）。
+    審議会DB の qdrant_ingest は引数を sys.argv から拾うだけで、使い方を見るつもりの --help で配布用のコレクションの
+    作り直しが始まった（知らない引数＝既定の動作）。→ 対象＝各サービスの ingest/・ops/ で __main__ を持つモジュール
+    （足せば自動で対象）と BM25 の構築・捕捉ログの削除。評価（eval/）は読むだけ＝対象外。
+    引数の解釈（ArgumentParser・stats の run_cli）が無い入口は流さずに落とす（流すと処理が始まる）。あるものは 1 つの
+    子プロセスで --help（0・使い方）と知らない引数（2・使い方）を渡す。万一処理に進んでも届かない先（Qdrant・捕捉ログ）にしておく。"""
+    import re
+    import subprocess
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    files = sorted(f for svc in ("recommendations", "stats", "companies", "deliberations") for sub in ("ingest", "ops")
+                   for f in (root / svc / sub).glob("*.py") if '__name__ == "__main__"' in f.read_text(encoding="utf-8"))
+    files += [root / "recommendations/core/qdrant_bm25.py", root / "deploy/scripts/prune_query_log.py"]
+    assert len(files) >= 40, len(files)
+    no_parser = [str(f.relative_to(root)) for f in files
+                 if not re.search(r"ArgumentParser\(|run_cli\(", f.read_text(encoding="utf-8"))]
+    assert not no_parser, f"引数を解釈しない入口（--help で処理が始まる）: {no_parser}"
+    child = (
+        "import contextlib, io, json, runpy, sys\n"
+        "out = {}\n"
+        "for f in sys.argv[1:]:\n"
+        "    for arg in ('--help', '--no-such-option-for-test'):\n"
+        "        sys.argv = [f, arg]; buf = io.StringIO()\n"
+        "        try:\n"
+        "            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):\n"
+        "                if f.startswith('deploy/'):\n"
+        "                    runpy.run_path(f, run_name='__main__')\n"
+        "                else:\n"
+        "                    runpy.run_module(f[:-3].replace('/', '.'), run_name='__main__', alter_sys=True)\n"
+        "            code = 'did not exit'\n"
+        "        except SystemExit as e:\n"
+        "            code = e.code\n"
+        "        except Exception as e:\n"
+        "            code = repr(e)[:120]\n"
+        "        out[f + ' ' + arg] = [code, 'usage:' in buf.getvalue()]\n"
+        "print(json.dumps(out))\n")
+    with tempfile.TemporaryDirectory() as d:
+        env = dict(__import__("os").environ, QDRANT_URL="http://127.0.0.1:9", DELIB_COLLECTION="no_such_collection_for_test",
+                   COLLECTION_NAME="no_such_collection_for_test", POLYARCHY_QUERY_LOG=str(Path(d) / "none.jsonl"), DRY_RUN="1")
+        r = subprocess.run([sys.executable, "-c", child, *(str(f.relative_to(root)) for f in files)],
+                           cwd=root, env=env, capture_output=True, text=True, timeout=600)
+    assert r.returncode == 0, r.stderr[-2000:]
+    res = json.loads(r.stdout.strip().splitlines()[-1])
+    bad = {k: v for k, v in res.items() if v != [0 if k.endswith("--help") else 2, True]}
+    assert not bad, f"--help（0）・知らない引数（2）で使い方を出して止まらない: {bad}"
+
+
 def test_box_born_not_tracked():
     """箱で生まれるもの（<svc>/data/cache/・query_log/）を git で追跡しない（2026-10-30＝政策主張DB の新着チェックの結果
     update_check.json が公開の最初のコミットから追跡されていた＝手元で流すたびに差分になり、公開リポに 09-03 の結果が残っていた。

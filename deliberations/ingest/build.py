@@ -7,6 +7,7 @@
 （名前つき要約）・1 箇条（匿名の要約）・書面の発言要旨 1 件・地の文 1 文。上限を超える発言は文の切れ目で分け、
 発言者を引き継ぐ。単位 ID は文書・単位の種類・連番から作る決定的な uuid5（取り込み直しても変わらない）。
 """
+import argparse
 import json
 import re
 import uuid
@@ -166,4 +167,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()  # --help・知らない引数は処理の前に使い方を出して止まる
     main()

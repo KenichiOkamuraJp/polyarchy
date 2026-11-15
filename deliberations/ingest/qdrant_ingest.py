@@ -10,6 +10,7 @@
 だと回次や発言者の語が当たらないため。利用者に返すのは見出しの無い本文（payload の body）。
 単位 ID（build.py の uuid5）をそのまま点の ID にする＝取り込み直しても同じ ID。
 """
+import argparse
 import json
 import sys
 import time
@@ -55,7 +56,7 @@ def _scroll(qc: QdrantClient):
             break
 
 
-def main() -> int:
+def main(payload_only: bool = False) -> int:
     configure_quiet_logging()
     units = [json.loads(l) for l in UNITS.open(encoding="utf-8")]
     keep = [u for u in units if u["chars"] >= config.MIN_UNIT_CHARS or u["unit"] == "page"]
@@ -65,7 +66,7 @@ def main() -> int:
         log.error("共通コアの違反 %d 件: %s", len(errs), errs[:3])
         return 1
     qc = QdrantClient(url=config.QDRANT_URL, timeout=300)
-    if "--payload-only" in sys.argv:
+    if payload_only:
         have = {str(p.id): p.payload.get("text") for p in _scroll(qc)}
         if set(have) != {u["id"] for u in keep}:
             log.error("索引の点と単位の集合が違う（単位が変わった）＝--payload-only ではなく作り直す")
@@ -102,4 +103,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # 引数は処理の前に解釈する＝--help・知らない引数は使い方を出して止まる（2026-11-15：--help を渡して配布用の
+    # コレクションの作り直しが始まった。引数を sys.argv から拾うだけだと、知らない引数は既定の動作＝作り直しになる）
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--payload-only", action="store_true", help="メタデータだけ上書き（本文・単位が同じとき。埋め込みはやり直さない）")
+    sys.exit(main(payload_only=ap.parse_args().payload_only))

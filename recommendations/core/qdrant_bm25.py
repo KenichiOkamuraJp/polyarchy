@@ -10,6 +10,8 @@ BM25 は本質的にコーパス大域統計（idf・avgdl）に依存するた�
     python -m recommendations.core.qdrant_bm25            # 語彙構築→全点に sparse 重みを upsert
 検索は QdrantBM25（hybrid.py が使用）。
 """
+import argparse
+
 from polyarchy_common.logsetup import configure_quiet_logging
 from polyarchy_retrieval.bm25 import QdrantBM25 as _QdrantBM25
 from polyarchy_retrieval.bm25 import build_sparse_bm25 as _build_sparse_bm25
@@ -44,4 +46,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()  # --help・知らない引数は処理の前に使い方を出して止まる
     main()

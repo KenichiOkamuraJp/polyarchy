@@ -20,6 +20,7 @@ EDINET タクソノミのラベルファイルの標準ラベル（role/label）
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 
@@ -80,4 +81,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()  # --help・知らない引数は処理の前に使い方を出して止まる
     sys.exit(main())

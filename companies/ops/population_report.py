@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from collections import Counter, defaultdict
 
@@ -127,4 +128,5 @@ def region_report(reg: dict) -> list[str]:
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()  # --help・知らない引数は処理の前に使い方を出して止まる
     sys.exit(main())

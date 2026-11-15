@@ -17,6 +17,7 @@ systemd タイマー（polyarchy-logprune.timer）から毎日実行される。
   LOG_RETENTION_DAYS    保持日数（既定 30）
   DRY_RUN               "1" なら削除せず件数だけ表示
 """
+import argparse
 import json
 import os
 import sys
@@ -94,4 +95,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()  # --help・知らない引数は処理の前に使い方を出して止まる
     sys.exit(main())
