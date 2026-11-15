@@ -17,11 +17,15 @@ from mcp.types import ToolAnnotations
 
 from polyarchy_common.logsetup import configure_quiet_logging, get_logger, guard_stdout_for_stdio
 
+# 会議体は列挙しない（2026-11-14）＝会議体を足すたびにツールの定義が変わり、ChatGPT のコネクタを作り直していた。
+# 会議体の名前・コード・回・期間は返り値（該当なしの coverage_note・収録に無いコードを渡したときの vocabulary）＝定義の外。
+# mcp_smoke が「説明文にコードが無く、返り値に全コードがある」ことを確かめる。
 INSTRUCTIONS = (
     "Polyarchy 審議会議事録DB(deliberations)。政府の会議体の過程文書＝回ごとの配布資料・議事録・議事要旨を"
-    "横断検索する読み取り専用サービス(公開データのみ)。収録＝デジタル行財政改革会議(本会議)・人工知能戦略本部・"
-    "人工知能戦略専門調査会・AI戦略会議・規制改革推進会議 デジタル・AIワーキング・グループ(企業・団体・府省の"
-    "ヒアリング)・先進的AI利活用アドバイザリーボード(デジタル庁)・日本成長戦略会議・日本成長戦略本部。会議の決定文書(取りまとめ・基本計画など)は政策主張DB"
+    "横断検索する読み取り専用サービス(公開データのみ)。収録＝内閣官房・内閣府・デジタル庁・府省が事務局を務める"
+    "本部・会議・審議会・専門調査会・ワーキング・グループ(企業・団体・府省のヒアリングを含む)。会議体の一覧(名前・"
+    "コード・回・期間)は、該当なしのときの coverage_note と、orgs に収録に無いコードを渡したときの vocabulary で返る。"
+    "会議の決定文書(取りまとめ・基本計画など)は政策主張DB"
     "(search_policy_docs)にあり、ここには入れない＝決まった内容は政策主張DB、決まるまでの議論・資料はこちら。"
     "返す断片には毎回、会議体・回次・開催日・資料番号・提出者または発言者とその区分(政務/事務局/府省・会議体/"
     "構成員(政府外)/外部(ヒアリング)/不明)・出典URLが付く。構成員(政府外)・外部・不明の断片は提出者・発言者の"
@@ -33,17 +37,16 @@ INSTRUCTIONS = (
 SEARCH_DESC = (
     "審議会・会議体の配布資料と議事録・議事要旨を検索する(関連度順の抜粋＋帰属)。"
     "例：「第14回デジタル行財政改革会議で担当大臣の資料は会議の改組について何と書いているか」"
-    "「AI戦略会議で構成員からどんな懸念が出たか」。絞り込み＝orgs(会議体: dgk=デジタル行財政改革会議・"
-    "ai_hq=人工知能戦略本部・ai_senmon=人工知能戦略専門調査会・ai_senryaku=AI戦略会議・"
-    "kisei_ai_wg=規制改革推進会議 デジタル・AIワーキング・グループ・da_ai_board=先進的AI利活用アドバイザリーボード・"
-    "seicho=日本成長戦略会議・seicho_honbu=日本成長戦略本部)・"
+    "「AI戦略会議で構成員からどんな懸念が出たか」。絞り込み＝orgs(会議体のコード＝ヒットの org の値。"
+    "一覧は収録に無いコードを渡すと vocabulary で返る)・"
     "since/until"
     "(YYYYMMDD)・doc_kinds(資料/参考資料/議事録/議事要旨)・roles(政務/事務局/府省・会議体/構成員(政府外)/"
     "外部(ヒアリング)/不明)。top_k は既定 5・上限 20。ある論点が最初に出た回や前後の回を見るときは、"
     "ヒットの会議体と回次で list_meeting を呼ぶ。"
 )
 LIST_DESC = (
-    "1 つの回(会議体のコードと回次)の資料と記録の一覧を返す(検索ではなく決定論の参照)。各資料の資料番号・名前・"
+    "1 つの回(会議体のコードと回次)の資料と記録の一覧を返す(検索ではなく決定論の参照)。回次は検索のヒットの "
+    "session_no の値(回の番号が無い会議体は開催日の YYYYMMDD)。各資料の資料番号・名前・"
     "提出者と区分・出典URL、記録(議事録・議事要旨)の型、非公開で名前だけ載っている資料を含む。回が無ければ found=false。"
 )
 
@@ -89,9 +92,10 @@ def search_deliberations(query: str, orgs: list[str] | None = None, since: int |
     from deliberations.ingest.sources import BY_ORG
     bad = ([o for o in _tuple(orgs) if o not in BY_ORG] + [k for k in _tuple(doc_kinds) if k not in DOC_KINDS]
            + [r for r in _tuple(roles) if r not in ROLES])
-    if bad:
+    if bad:  # 会議体の語彙は収録のある会議体だけ（取得元を定義しただけで原文がまだ無い会議体は出さない）
+        from deliberations.core.search import coverage
         return {"query": query, "results": [], "error": f"語彙に無い値: {bad}",
-                "vocabulary": {"orgs": list(BY_ORG), "doc_kinds": list(DOC_KINDS), "roles": list(ROLES)}}
+                "vocabulary": {"orgs": list(coverage()), "doc_kinds": list(DOC_KINDS), "roles": list(ROLES)}}
     k = max(1, min(int(top_k or config.TOP_K), config.TOP_K_MAX))
     flt = DelibFilter(orgs=_tuple(orgs), date_from=since, date_to=until, doc_kinds=_tuple(doc_kinds), roles=_tuple(roles))
     hits = svc().search(query, flt, top_k=k)

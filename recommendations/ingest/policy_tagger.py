@@ -24,7 +24,7 @@ import requests
 
 from recommendations.core.config import COLLECTION_NAME  # .env 読込の副作用（ANTHROPIC_API_KEY）も兼ねる
 
-from recommendations.ingest.collect import CATALOG, CATALOG_COLUMNS
+from recommendations.ingest.collect import CATALOG, CATALOG_COLUMNS, INDEXED_STATUS
 from polyarchy_common.logsetup import configure_quiet_logging, get_logger
 from recommendations.core.qdrant_store import QDRANT_URL
 from polyarchy_common.taxonomy import POLICY_TAGS
@@ -155,7 +155,10 @@ def main() -> int:
             log.error("catalog に存在しない file_name: %s", sorted(missing))
             return 1
     else:
-        targets = [r for r in rows if not r["policy_tags"] and not r["doc_nature"]]
+        # 既定の対象は索引に入る行（本文のある ok・html_text）だけ。html_only・error の行は本文が無い＝題名だけの判定になり、
+        # 後で本文が取れてもそのタグが残っていた（2026-11-14）。本文が取れた行は collect の write_catalog がタグを空のまま渡す。
+        targets = [r for r in rows if not r["policy_tags"] and not r["doc_nature"]
+                   and (r.get("status") or "ok") in INDEXED_STATUS]
 
     if args.count:
         print(len(targets))

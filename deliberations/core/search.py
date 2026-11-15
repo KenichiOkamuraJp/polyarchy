@@ -233,8 +233,12 @@ def coverage() -> dict:
 
 
 def coverage_note() -> str:
-    parts = [f"{c['name']}（第{c['sessions'][0]}〜{c['sessions'][1]}回・{c['period'][0]}〜{c['period'][1]}）"
-             for c in coverage().values() if c["period"]]
+    # コードも添える＝説明文に会議体を列挙しない（2026-11-14）ので、絞り込みのコードはここと vocabulary で知らせる。
+    # 回の番号が無い会議体（Source.session_is_date＝session_no は開催日 YYYYMMDD）は「第…回」と書かない。
+    from deliberations.ingest.sources import BY_ORG
+    parts = [f"{c['name']}（{org}・" + ("回の番号なし＝session_no は開催日・" if BY_ORG[org].session_is_date
+                                      else f"第{c['sessions'][0]}〜{c['sessions'][1]}回・")
+             + f"{c['period'][0]}〜{c['period'][1]}）" for org, c in coverage().items() if c["period"]]
     return ("該当なし。収録＝" + "・".join(parts) + "の公開の配布資料と記録。会議の決定文書は政策主張DB"
             "（search_policy_docs）。上の会議体以外の審議会・会議（規制改革推進会議の本会議・ほかの WG など）は未収録。")
 

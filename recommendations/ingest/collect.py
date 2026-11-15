@@ -28,9 +28,10 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from datetime import date as _date
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -69,11 +70,40 @@ CATALOG_COLUMNS = [
 ]
 
 
+# ホストごとの取得の作法の例外（2026-11-14）。経済産業省（www.meti.go.jp）は UA の文字列で弾き（この名乗りに 403）、
+# 続けて取ると AWS WAF の JS チャレンジ（HTTP 202・x-amzn-waf-action ヘッダ・本文なし）を返す＝ブラウザの名乗りで、
+# 前の要求から interval 秒あけて取る。チャレンジは解かない＝WafChallenge を投げ、そのホストへはこの実行の間は送らない
+# （時間をおいて --skip-existing で続きから）。ほかのホストは既定（この名乗り・SLEEP_S）。
+BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+HOST_RULES = {"www.meti.go.jp": {"browser_ua": True, "interval": 120.0}}
+_host_last: dict[str, float] = {}
+_waf_hosts: set[str] = set()
+
+
+class WafChallenge(RuntimeError):
+    """取得元が人の確認（JS チャレンジ）を返した＝解かない。"""
+
+
 def _get(url: str) -> requests.Response:
-    r = requests.get(url, timeout=30, headers=UA)
+    host = urlparse(url).hostname or ""
+    rule = HOST_RULES.get(host)
+    if host in _waf_hosts:
+        raise WafChallenge(f"{host} はこの実行でチャレンジを返した＝送らない（時間をおいて --skip-existing で続きから）: {url}")
+    if rule:  # 前の要求からの間隔（取った後に毎回寝ない＝新着の確認が 1 本だけ取るときに待たない）
+        wait = rule["interval"] - (time.monotonic() - _host_last.get(host, -1e9))
+        if wait > 0:
+            time.sleep(wait)
+    r = requests.get(url, timeout=30, headers={"User-Agent": BROWSER_UA} if rule and rule["browser_ua"] else UA)
+    if rule:
+        _host_last[host] = time.monotonic()
+    if r.status_code == 202 or r.headers.get("x-amzn-waf-action"):
+        _waf_hosts.add(host)
+        raise WafChallenge(f"WAF のチャレンジ（HTTP {r.status_code}）＝解かない・時間をおいて --skip-existing で続きから: {url}")
     r.raise_for_status()
     r.encoding = "utf-8"  # 経団連は宣言ISO-8859-1だが実体UTF-8
-    time.sleep(SLEEP_S)
+    if not rule:
+        time.sleep(SLEEP_S)
     return r
 
 
@@ -131,6 +161,9 @@ def extract_article_text(html: str) -> str:
 #   html_thin  HTML 本文が HTML_THIN_CHARS 未満＝抽出失敗とみなし保存しない
 #   html_only  PDF も HTML 本文抽出も無い（政府系＝本文 PDF が見つからない）
 #   error      PDF 解決・ダウンロード・HTML 抽出のいずれかで例外
+# 索引に入るのは本文のある ok・html_text だけ（ingest.INGEST_OK_STATUS から「カタログ未登録」を除いたもの＝ここで
+# llama_index を読まないための写し・test_common が突き合わせる）。それ以外の行の分野タグは題名だけで判定したもの。
+INDEXED_STATUS = ("ok", "html_text")
 
 ORG_TYPE = {"keidanren": "経済団体", "rengo": "労働団体", "nissho": "経済団体",
             "gov": "政府", "doyukai": "経済団体"}
@@ -855,9 +888,35 @@ def gov_zaiseishin_index() -> list[dict]:
     return entries
 
 
-def _gov_resolve_pdf(source: str, html_url: str) -> str | None:
-    """HTML詳細ページから本文PDFのURLを返す（source別ロジック）。無ければ None。"""
+def _inno_body_pdf(soup: BeautifulSoup, page_url: str) -> tuple[str | None, str | None]:
+    """イノベーション小委員会の報告のページから (本文 PDF の URL, 題)。通信しない（test_common が決まった HTML で確かめる）。
+
+    本文＝リンクの文字から「（PDF形式：…）」を除いたものが「…中間とりまとめ」か「…中間とりまとめ（本文）」の PDF
+    （年版で書き方が違う＝2026 年版は 1 本だけで（本文）が無く、2025 年版は（本文）と（参考資料）が並ぶ・2026-11-14 に確認）。
+    ちょうど 1 本のときだけ返す（0 本・2 本以上は None＝html_only で catalog に残る＝気づける・推定で選ばない）。
+    題＝<title> から「（METI/経済産業省）」を除いたもの（分科会の名前が年で違う＝ページのとおりに）。読めなければ None。"""
+    bodies = set()
+    for a in soup.find_all("a", href=True):
+        t = re.sub(r"\s+", "", unicodedata.normalize("NFKC", a.get_text()))
+        t = re.sub(r"\(PDF形式:[^)]*\)$", "", t)
+        if a["href"].lower().endswith(".pdf") and re.search(r"中間とりまとめ(\(本文\))?$", t):
+            bodies.add(urljoin(page_url, a["href"]))
+    title = " ".join(soup.title.get_text().split()) if soup.title else ""
+    title = title[:-len("（METI/経済産業省）")].strip() if title.endswith("（METI/経済産業省）") else ""
+    if len(bodies) > 1:
+        print(f"  ! 本文らしい PDF が {len(bodies)} 本＝選ばない: {page_url} {sorted(bodies)}", file=sys.stderr)
+    return (bodies.pop() if len(bodies) == 1 else None), (title if title.endswith("中間とりまとめ") else None)
+
+
+def _gov_resolve_pdf(source: str, html_url: str, entry: dict | None = None) -> str | None:
+    """HTML詳細ページから本文PDFのURLを返す（source別ロジック）。無ければ None。
+    entry を渡すと、ページから読める題で entry["title"] を置き換える系統がある（inno）。"""
     soup = BeautifulSoup(_get(html_url).text, "html.parser")
+    if source == "inno":
+        pdf, name = _inno_body_pdf(soup, html_url)
+        if entry is not None and name:
+            entry["title"] = f"{name}（{_reiwa(entry['date'])}）"
+        return pdf
     if source == "cefp":
         pdfs = [urljoin(html_url, a["href"]) for a in soup.find_all("a", href=True)
                 if a["href"].lower().endswith(".pdf")]
@@ -1071,6 +1130,189 @@ def gov_aigl_index() -> list[dict]:
     return entries
 
 
+# --- 科学技術・イノベーションと防衛・デュアルユースの決定文書（2026-11-14 追加＝収録拡充計画_科学技術・イノベーションの
+#     決定文書.md）。範囲＝2024 年以降に決まったものと、それより前の決定でも今の版（K Program の第二次ビジョン・SIP の
+#     推進費の基本方針・ムーンショット目標の当初の決定）。本文だけ（概要・英訳・参考資料は採らない）。
+#   - kihon    第 7 期科学技術・イノベーション基本計画（閣議決定）。日付は掲載ページの閣議案件のリンクの和暦。
+#   - togo     統合イノベーション戦略（2024 年版から）。一覧のリンク「統合イノベーション戦略YYYY（YYYY年M月D日閣議決定）」
+#              → 年のページの【全体版】。
+#   - moonshot ムーンショット目標の決定文書。目標のページのリンク「目標N（決定主体、令和…決定）」＝日付と決定主体はここから。
+#              5 年目評価の後の改定（ms_haihuiNNN/ の PDF＝題は「5年目評価について（目標N）」）も入れる＝目標の変遷を追える。
+#   - inno     産業構造審議会 イノベーション小委員会の中間とりまとめ（経済産業省＝HOST_RULES）。一覧の「YYYY年M月D日 中間
+#              とりまとめ」→ 報告のページの本文 PDF（_inno_body_pdf）。一覧は新着の確認でも取る・報告のページと PDF は取込のときだけ。
+#   - kprog・gsc・sip・bridge・aifors  決定日が掲載ページに書かれていない＝PINNED_GOV（表紙で確かめた決定日）。
+# 新しい系統の文書は、取った PDF の 1 頁目に決定日が載っていて、それより後の日付が載っていないことを確かめる（_cover_date_ok
+# ＝同じ名前のまま改正版に差し替わったら止まる・表を直す合図）。掲載ページからリンクが消えても止まる。
+
+KIHON_PAGE = "https://www8.cao.go.jp/cstp/kihonkeikaku/index7.html"
+TOGO_INDEX = "https://www8.cao.go.jp/cstp/tougosenryaku/index.html"
+TOGO_FROM = 2024
+MOONSHOT_TARGET = "https://www8.cao.go.jp/cstp/moonshot/target.html"
+INNO_INDEX = "https://www.meti.go.jp/shingikai/sankoshin/sangyo_gijutsu/innovation/index.html"
+INNO_FROM = 2024
+
+# 系統 → [(num, 掲載ページ, PDF のリンク〔ページからの相対〕, 題, 決定日〔表紙の最終改正の日〕, 題の日付の後ろ〔決定主体〕)]。2026-11-14 に掲載ページと表紙で確認。
+# GSC のフラッグシップ拠点整備に関する基本計画は表紙が「令和8年9月」で日が無い＝入れない（推定しない）。
+PINNED_GOV: dict[str, list[tuple[str, str, str, str, str, str]]] = {
+    "kprog": [
+        ("vision2_20230828", "https://www8.cao.go.jp/cstp/anzen_anshin/kprogram.html", "siryo1.pdf",
+         "経済安全保障重要技術育成プログラム 研究開発ビジョン（第二次）", "2023-08-28", " 経済安全保障推進会議・統合イノベーション戦略推進会議決定"),
+        ("vision2_20250307", "https://www8.cao.go.jp/cstp/anzen_anshin/kprogram.html", "2_vision2-kaitei.pdf",
+         "経済安全保障重要技術育成プログラム 研究開発ビジョン（第二次）一部改定", "2025-03-07", " 経済安全保障推進会議・統合イノベーション戦略推進会議決定"),
+        ("unyo_20220916", "https://www8.cao.go.jp/cstp/anzen_anshin/kprogram.html", "unyo-hyouka.pdf",
+         "経済安全保障重要技術育成プログラムの運用・評価指針", "2022-09-16", " 内閣官房・内閣府"),
+    ],
+    "gsc": [
+        ("kihonhoushin_20240829", "https://www8.cao.go.jp/cstp/campus/index.html", "kihonhoushin.pdf",
+         "グローバル・スタートアップ・キャンパス構想 基本方針", "2024-08-29", " 統合イノベーション戦略推進会議決定"),
+        ("senkou_20250610", "https://www8.cao.go.jp/cstp/campus/index.html", "senkoukatsudou_jisshi.pdf",
+         "グローバル・スタートアップ・キャンパス構想 先行的活動に関する実施方針", "2025-06-10", " 内閣官房グローバル・スタートアップ・キャンパス構想推進室長決定"),
+        ("unei_20251107", "https://www8.cao.go.jp/cstp/campus/index.html", "management_corporation.pdf",
+         "グローバル・スタートアップ・キャンパス構想の運営法人等について", "2025-11-07", " 内閣官房GSC構想推進室長・内閣府科学技術・イノベーション推進事務局長決定"),
+        ("security_20260917", "https://www8.cao.go.jp/cstp/campus/index.html", "kenkyu_taiou.pdf",
+         "グローバル・スタートアップ・キャンパス（GSC）構想における研究セキュリティ・研究インテグリティ等の対応方針", "2026-09-17", " 内閣官房GSC構想推進室長・内閣府科学技術・イノベーション推進事務局長決定"),
+        ("chizai_20260917", "https://www8.cao.go.jp/cstp/campus/index.html", "chizai_matters.pdf",
+         "グローバル・スタートアップ・キャンパス（GSC）構想における知財関係の対応方針", "2026-09-17", " 内閣官房GSC構想推進室長・内閣府科学技術・イノベーション推進事務局長決定"),
+        ("ipmgmt_20260917", "https://www8.cao.go.jp/cstp/campus/index.html", "chizai_management.pdf",
+         "グローバル・スタートアップ・キャンパス（GSC）構想における知的財産マネジメントに係る基本方針", "2026-09-17", " 内閣官房GSC構想推進室長・内閣府科学技術・イノベーション推進事務局長決定"),
+    ],
+    "sip": [
+        ("suishinhi_20221223", "https://www8.cao.go.jp/cstp/gaiyo/sip/overview.html", "sipkihonhoushin.pdf",
+         "科学技術イノベーション創造推進費に関する基本方針", "2022-12-23", "改正 総合科学技術・イノベーション会議"),
+        ("unyo_20241017", "https://www8.cao.go.jp/cstp/gaiyo/sip/overview.html", "sipshishin.pdf",
+         "戦略的イノベーション創造プログラム（SIP）運用指針", "2024-10-17", "改正 ガバニングボード"),
+        ("hyouka_20241017", "https://www8.cao.go.jp/cstp/gaiyo/sip/overview.html", "sip_evaluation.pdf",
+         "戦略的イノベーション創造プログラム（SIP）評価に関する運用指針", "2024-10-17", "改正 ガバニングボード"),
+    ],
+    "bridge": [
+        ("unyo_20261008", "https://www8.cao.go.jp/cstp/bridge/bridge_gaiyo.html", "../prism/unyoshishin_202610.pdf",
+         "研究開発とSociety5.0との橋渡しプログラム（BRIDGE）運用指針", "2026-10-08", "最終改正 ガバニングボード"),
+    ],
+    "aifors": [
+        ("20260331", "https://www.mext.go.jp/b_menu/shingi/chousa/shinkou/077/aifors_strategy.html",
+         "/content/20260403-mxt_jyohoka01-000048752_1.pdf", "AI for Scienceの推進に向けた基本的な戦略方針", "2026-03-31", " 文部科学省"),
+    ],
+}
+
+
+def _reiwa(iso: str) -> str:
+    y, mo, d = int(iso[:4]), int(iso[5:7]), int(iso[8:10])
+    return f"令和{y - 2018}年{mo}月{d}日"
+
+
+def _cover_dates(text: str) -> list[str]:
+    """1 頁目の文字（NFKC・空白を除いたもの）にある日付（和暦・西暦）を ISO で全部。"""
+    out = []
+    for m in re.finditer(r"(令和|平成)(元|\d+)年(\d+)月(\d+)日", text):
+        yy = 1 if m.group(2) == "元" else int(m.group(2))
+        out.append(f"{(2018 if m.group(1) == '令和' else 1988) + yy}-{int(m.group(3)):02d}-{int(m.group(4)):02d}")
+    out += [f"{y}-{int(mo):02d}-{int(d):02d}" for y, mo, d in re.findall(r"(20\d\d)年(\d+)月(\d+)日", text)]
+    return out
+
+
+def _cover_date_ok(pdf_path: Path, iso: str) -> str | None:
+    """PDF の 1 頁目に決定日 iso があり、それより後の日付が無いか。問題があれば理由（無ければ None）。"""
+    import fitz  # PyMuPDF（取込側と同じ抽出器）
+    with fitz.open(pdf_path) as doc:
+        text = re.sub(r"\s+", "", unicodedata.normalize("NFKC", doc[0].get_text()))
+    dates = _cover_dates(text)
+    if iso not in dates:
+        return f"1 頁目に決定日 {iso} が無い（読めた日付 {sorted(set(dates))}）"
+    later = sorted(d for d in set(dates) if d > iso)
+    return f"1 頁目に決定日より後の日付 {later}＝改正版に差し替わった疑い" if later else None
+
+
+def _page_links(page: str) -> dict[str, str]:
+    """掲載ページのリンク（絶対 URL → リンクの文字）。"""
+    soup = BeautifulSoup(_get(page).text, "html.parser")
+    return {urljoin(page, a["href"]): " ".join(a.get_text().split()) for a in soup.find_all("a", href=True)}
+
+
+def _pinned_index(source: str) -> list[dict]:
+    """PINNED_GOV の 1 系統。掲載ページにリンクが無ければ止める（移転・差し替え＝表を直す）。"""
+    entries, cache = [], {}
+    for num, page, href, title, iso, by in PINNED_GOV[source]:
+        if page not in cache:
+            cache[page] = _page_links(page)
+        links = cache[page]
+        pdf_url = urljoin(page, href)
+        if pdf_url not in links:
+            raise RuntimeError(f"{page} に {pdf_url} へのリンクが無い（移転・改正で差し替え＝PINNED_GOV を直す）")
+        entries.append({"source": source, "num": num, "title": f"{title}（{_reiwa(iso)}{by}）", "date": iso,
+                        "doc_type": "方針", "pdf_url": pdf_url, "html_url": None, "cover_date": iso})
+    return entries
+
+
+def gov_kihon_index() -> list[dict]:
+    """第 7 期科学技術・イノベーション基本計画の本文。リンクの文字「…基本計画 本文」・日付は閣議案件のリンクの和暦。"""
+    links = _page_links(KIHON_PAGE)
+    honbun = [u for u, t in links.items() if u.lower().endswith(".pdf") and re.search(r"基本計画\s*本文", t)]
+    iso = next((_wareki_to_iso(t) for t in links.values() if "閣議案件" in t and _wareki_to_iso(t)), "")
+    if len(honbun) != 1 or not iso:
+        raise RuntimeError(f"{KIHON_PAGE}: 本文の PDF（{len(honbun)} 本）か閣議決定の日が読めない（ページの改装）")
+    return [{"source": "kihon", "num": "7", "date": iso, "doc_type": "方針",
+             "title": f"第7期科学技術・イノベーション基本計画（{_reiwa(iso)}閣議決定）",
+             "pdf_url": honbun[0], "html_url": None, "cover_date": iso}]
+
+
+def gov_togo_index() -> list[dict]:
+    """統合イノベーション戦略（TOGO_FROM 年版から）の【全体版】PDF。"""
+    entries = []
+    for page, t in _page_links(TOGO_INDEX).items():
+        m = re.fullmatch(r"統合イノベーション戦略(\d{4})\s*[（(](\d{4})年(\d+)月(\d+)日閣議決定[）)]", t)
+        if not m or int(m.group(1)) < TOGO_FROM:
+            continue
+        iso = f"{m.group(2)}-{int(m.group(3)):02d}-{int(m.group(4)):02d}"
+        zentai = [u for u, lt in _page_links(page).items() if u.lower().endswith(".pdf") and "【全体版】" in lt]
+        if len(zentai) != 1:
+            raise RuntimeError(f"{page}: 【全体版】の PDF が {len(zentai)} 本（1 本でない＝選ばない）")
+        entries.append({"source": "togo", "num": m.group(1), "date": iso, "doc_type": "方針",
+                        "title": f"統合イノベーション戦略{m.group(1)}（{_reiwa(iso)}閣議決定）",
+                        "pdf_url": zentai[0], "html_url": None, "cover_date": iso})
+    return entries
+
+
+def gov_moonshot_index() -> list[dict]:
+    """ムーンショット目標の決定文書。リンクの文字「目標８，９（総合科学技術・イノベーション会議、令和3年9月28日決定）」。
+    num＝g<目標>_<決定日>（目標の並びは 1-6・8-9）。改定の前の版も残す。"""
+    entries, seen = [], set()
+    for url, t in _page_links(MOONSHOT_TARGET).items():
+        t = unicodedata.normalize("NFKC", t)
+        m = re.match(r"目標\s*([\d~～,，]+)\s*\((総合科学技術・イノベーション会議|健康・医療戦略推進本部)、(.+?)決定\)", t)
+        if not m or not url.lower().endswith(".pdf"):
+            continue
+        goals = re.sub(r"[~～,，]", "-", m.group(1))
+        iso = _wareki_to_iso(m.group(3))
+        if not iso:
+            raise RuntimeError(f"{MOONSHOT_TARGET}: 決定日が読めない: {t}")
+        num = f"g{goals}_{iso.replace('-', '')}"
+        if num in seen:
+            continue
+        seen.add(num)
+        shown = m.group(1).replace("~", "〜").replace("～", "〜")
+        title = (f"ムーンショット型研究開発制度5年目評価について（目標{shown}）" if "/ms_haihui" in url
+                 else f"ムーンショット型研究開発制度が目指すべき「ムーンショット目標」について（目標{shown}）")
+        entries.append({"source": "moonshot", "num": num, "date": iso, "doc_type": "方針",
+                        "title": f"{title}（{_reiwa(iso)} {m.group(2)}決定）",
+                        "pdf_url": url, "html_url": None, "cover_date": iso, "decided_by": m.group(2)})
+    return entries
+
+
+def gov_inno_index() -> list[dict]:
+    """イノベーション小委員会の中間とりまとめ（INNO_FROM 年から）。一覧だけを取る＝本文 PDF と題は取込のときに報告のページから
+    （_gov_resolve_pdf → _inno_body_pdf）。題はそれまでの仮。"""
+    entries = []
+    for page, t in _page_links(INNO_INDEX).items():
+        m = re.fullmatch(r"(\d{4})年(\d+)月(\d+)日\s*中間とりまとめ", t)
+        if not m or int(m.group(1)) < INNO_FROM:
+            continue
+        iso = f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+        entries.append({"source": "inno", "num": iso.replace("-", ""), "date": iso, "doc_type": "報告書",
+                        "title": f"産業構造審議会 イノベーション小委員会 中間とりまとめ（{_reiwa(iso)}）",
+                        "pdf_url": None, "html_url": page, "cover_date": None})
+    return entries
+
+
 def _title_with_subtitle(pdf_path: Path, title: str) -> str:
     """本文 1 頁目の「<title>」の次の行が「～…～」なら副題として足す（版の見分け）。無ければ title のまま。"""
     import fitz  # PyMuPDF（取込側と同じ抽出器）
@@ -1087,33 +1329,44 @@ def _title_with_subtitle(pdf_path: Path, title: str) -> str:
 GOV_SOURCES = {"cefp": gov_cefp_index, "kisei": gov_kisei_index,
                "zaiseishin": gov_zaiseishin_index,
                "dgk": gov_dgk_index, "aiplan": gov_aiplan_index,
-               "dsgl": gov_dsgl_index, "juten": gov_juten_index, "seicho": gov_seicho_index, "aigl": gov_aigl_index}
+               "dsgl": gov_dsgl_index, "juten": gov_juten_index, "seicho": gov_seicho_index, "aigl": gov_aigl_index,
+               "kihon": gov_kihon_index, "togo": gov_togo_index, "moonshot": gov_moonshot_index,
+               **{src: (lambda s=src: _pinned_index(s)) for src in PINNED_GOV},
+               "inno": gov_inno_index}  # inno（経済産業省）は最後＝チャレンジで止まってもほかの系統は取り終えている
 
 
 def collect_gov(years: list[int] | None, limit: int | None,
                 skip_existing: bool = False, source: str | None = None) -> list[dict]:
-    """政府(諮問会議/規制改革/財政審/デジタル行財政改革会議/人工知能基本計画/DS-920/重点計画/日本成長戦略/AI事業者ガイドライン)の成果文書を収集。
+    """政府の決定文書（系統＝GOV_SOURCES）を収集。
 
     source 指定で単一サブ系統のみ（スパイク/テスト用）。years 指定で発行年フィルタ。
     limit はサブ系統ごとの取得上限（横断合計でなく各系統に適用）。
+    1 系統の目次が取れない（ページの改装・経済産業省のチャレンジ）ときは、その系統を飛ばして続ける（最後に一覧で示す）。
     """
     out_dir = _out_dir("gov")
     rows = []
     today = _date.today().isoformat()
     yrset = {str(y) for y in years} if years else None
     sources = [source] if source else list(GOV_SOURCES)
+    failed: dict[str, str] = {}
     for src in sources:
         print(f"--- gov:{src} ---")
         taken = 0
-        for e in GOV_SOURCES[src]():
+        try:
+            entries = GOV_SOURCES[src]()
+        except Exception as ex:  # noqa: BLE001  目次が取れない系統は飛ばす（ほかの系統は続ける）
+            print(f"  ! 目次が取れない gov:{src}: {ex}", file=sys.stderr)
+            failed[src] = str(ex)[:160]
+            continue
+        for e in entries:
             if limit and taken >= limit:
                 break
             if yrset and e["date"][:4] not in yrset:
                 continue
             pdf_url, resolve_error = e["pdf_url"], False
             try:
-                if not pdf_url:  # HTML詳細から本文PDFを解決
-                    pdf_url = _gov_resolve_pdf(src, e["html_url"])
+                if not pdf_url:  # HTML詳細から本文PDFを解決（inno は題も報告のページから）
+                    pdf_url = _gov_resolve_pdf(src, e["html_url"], e)
             except Exception as ex:
                 print(f"  ! resolve失敗 {e.get('html_url')}: {ex}", file=sys.stderr)
                 resolve_error = True
@@ -1125,9 +1378,18 @@ def collect_gov(years: list[int] | None, limit: int | None,
             }, "gov", out_dir, today, skip_existing)
             if e.get("title_from_pdf") and row["status"] == "ok":
                 row["title"] = _title_with_subtitle(out_dir / row["file_name"], e["title"])
+            if e.get("cover_date") and row["status"] == "ok":
+                problem = _cover_date_ok(out_dir / row["file_name"], e["cover_date"])
+                if problem:  # 表紙が決定日と合わない＝取り込まない（ファイルは消す＝--skip-existing で使い回さない）
+                    print(f"  ! 表紙の照合 {row['file_name']}: {problem}", file=sys.stderr)
+                    (out_dir / row["file_name"]).unlink(missing_ok=True)
+                    row["status"] = "error"
             if row["status"] == "ok":
                 taken += 1
             rows.append(row)
+    if failed:
+        print("\n★ 目次が取れなかった系統（取り直していない）: " + "・".join(f"{k}（{v}）" for k, v in failed.items()),
+              file=sys.stderr)
     return rows
 
 
@@ -1258,8 +1520,11 @@ def write_catalog(rows: list[dict]) -> None:
         reused = r.pop("_reused", False)
         old = existing.get(r["file_name"])
         if old:
+            # ★本文が無かった行（html_only など）のタグは題名だけの判定＝今回本文が取れて索引に入る行へは持ち越さない
+            # （空のまま＝追い判定の既定の対象になり本文で判定し直す・2026-11-14）。取込は catalog のタグを payload に写す。
+            title_only = (old.get("status") or "ok") not in INDEXED_STATUS and r.get("status") in INDEXED_STATUS
             for col in ("policy_tags", "doc_nature"):
-                if not (r.get(col) or "").strip() and (old.get(col) or "").strip():
+                if not title_only and not (r.get(col) or "").strip() and (old.get(col) or "").strip():
                     r[col] = old[col]
             keep = REUSED_KEEP if reused else ("retrieved_at",) if r.get("status") == "error" else ()
             for col in keep:
@@ -1288,7 +1553,7 @@ def main(argv=None) -> int:
     ap.add_argument("--limit", type=int, default=None, help="取得PDF数の上限（スパイク用）")
     ap.add_argument("--skip-existing", action="store_true", help="既存ファイルは再取得しない")
     ap.add_argument("--source", choices=list(GOV_SOURCES), default=None,
-                    help="政府のサブ系統を1つに限定（cefp/kisei/zaiseishin/dgk/aiplan/dsgl/juten/seicho/aigl）")
+                    help="政府のサブ系統を1つに限定（一覧は GOV_SOURCES）")
     args = ap.parse_args(argv)
     if args.check_ua:
         print(UA["User-Agent"])

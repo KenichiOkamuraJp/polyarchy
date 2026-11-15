@@ -65,14 +65,16 @@ class Unit:
         return "".join(s if s == "\n" else s.strip() for s in self.lines)
 
 
-def _merge_marker_only(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
-    """「○」「・」だけの行を次の行と合わせる（議事概要の書式）。"""
+def _merge_marker_only(lines: list[tuple[int, str]], tight: bool = False) -> list[tuple[int, str]]:
+    """「○」「・」だけの行を次の行と合わせる（議事概要の書式）。tight＝「○」と次の行を空白なしで合わせる
+    （style="split_mark"＝ムーンショットの戦略推進会議：逐語の「○平野PD 本文」の「○」だけが前の行に割れる型）。"""
     out: list[tuple[int, str]] = []
     i = 0
     while i < len(lines):
         p, s = lines[i]
         if s.strip() in ("○", "〇", "・") and i + 1 < len(lines):
-            out.append((p, s.strip() + " " + lines[i + 1][1].strip()))
+            sep = "" if tight and s.strip() != "・" else " "
+            out.append((p, s.strip() + sep + lines[i + 1][1].strip()))
             i += 2
             continue
         out.append((p, s))
@@ -80,12 +82,14 @@ def _merge_marker_only(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
     return out
 
 
-def _is_named(name: str) -> bool:
-    """発言者の型に当たる名前か（役職・会議の役割か、府省・事務局などの組織）。集合名詞は除く。"""
+def _is_named(name: str, titles: tuple[str, ...] = ()) -> bool:
+    """発言者の型に当たる名前か（役職・会議の役割か、府省・事務局などの組織）。集合名詞は除く。
+    titles＝その会議体だけで発言者と読む肩書の末尾（Source.member_titles＝CSTI の「…議員」）。"""
     n = re.sub(r"^(次に|また|冒頭|最後に|続いて|その後)、?", "", name)
-    if GROUP.match(n):
+    if GROUP.match(n) or (titles and re.fullmatch(r"(各|有識者)?(" + "|".join(map(re.escape, titles)) + r")", n)):
         return False
-    return bool(re.search(ROLE_SUFFIX + r"$", n) or re.search(BODY_SUFFIX + r"$", n))
+    return bool(re.search(ROLE_SUFFIX + r"$", n) or re.search(BODY_SUFFIX + r"$", n)
+                or any(n.endswith(t) and len(n) > len(t) for t in titles))
 
 
 def _clean(name: str) -> str:
@@ -157,11 +161,24 @@ def parse_paren(path: str) -> tuple[list[Unit], list[tuple[int, str]]]:
     return [u for u in units if u.text], head
 
 
-def parse(path: str, style: str = "") -> tuple[list[Unit], list[tuple[int, str]]]:
-    """記録を解析して (単位の列, 本文より前の行＝出席者の一覧) を返す。style＝Source.record_style。"""
+def parse(path: str, style: str = "", titles: tuple[str, ...] = ()) -> tuple[list[Unit], list[tuple[int, str]]]:
+    """記録を解析して (単位の列, 本文より前の行＝出席者の一覧) を返す。style＝Source.record_style。
+    titles＝Source.member_titles（その会議体だけで発言者と読む肩書の末尾）。
+
+    style="heading"：「○」の行が無く【名前】の見出しだけの議事要旨（CSTI 本会議）＝本文は議事の節の最初の見出しから。
+    style="split_mark"：「○」と発言者の行が 2 行に割れる逐語（ムーンショットの戦略推進会議）。
+    style="anon_marks"：名前の無い箇条の議事要旨（経済産業省＝「委員等からの主な意見」の下に「○」「⚫」だけの行と本文が交互）＝
+    印だけの行を匿名の箇条（・）として読む。「○染谷委員長 …」の逐語の行はそのまま。「<議題1 について>」は節の見出し。"""
     if style == "paren":
         return parse_paren(path)
-    lines = _merge_marker_only(record_lines(path))
+    raw_lines = record_lines(path)
+    if style == "anon_marks":
+        # 箇条の印だけの行（「○」・防衛産業 WG の「⚫」・Wingdings の \uf06e）＝匿名の箇条の頭
+        raw_lines = [(p, "・" if s.strip() in ("○", "〇", "⚫", "●", "\uf06e") else s) for p, s in raw_lines]
+        if not any(s.strip() == "・" or re.match(r"^\s*[○〇・]\S", s) for _, s in raw_lines):
+            # 印が文字として取れず行頭の空白だけが残る版（防衛産業 WG 第 2 回）＝印の行がひとつも無い記録に限り、行頭が空白の行を箇条の頭に
+            raw_lines = [(p, re.sub(r"^\s+(?=[^\s【<＜\d])", "・", s)) for p, s in raw_lines]
+    lines = _merge_marker_only(raw_lines, tight=style == "split_mark")
     # 本文の始まり＝最初の「○／〇」の行のうち文になっているもの（出席者の一覧の「○AI 戦略会議 構成員」を除く）
     # 規制改革推進会議の WG のように発言者の行がすべて名前だけの記録は、名前だけの最初の行から（括弧の型・府省名・役職）
     start = next((k for k, (_, s) in enumerate(lines)
@@ -169,6 +186,12 @@ def parse(path: str, style: str = "") -> tuple[list[Unit], list[tuple[int, str]]
     alone = next((k for k, (_, s) in enumerate(lines)
                   if VERBATIM_ALONE.match(s.strip()) or (VERBATIM_PAREN.match(s.strip()) and not VERBATIM_PAREN.match(s.strip()).group(2))), len(lines))
     start = min(start, alone)
+    if style == "anon_marks" and start == len(lines):  # 「○」の行が無い（名前の無い箇条だけ）＝議事概要の節の最初の箇条から
+        sec = next((k for k, (_, s) in enumerate(lines) if re.fullmatch(r"[■◼]?\s*議事概要", s.strip())), 0)
+        start = next((k for k, (_, s) in enumerate(lines) if k > sec and BULLET.match(s.strip())), len(lines))
+    if style == "heading":  # 議事の節（「6.議事」）の後の最初の【名前】から（配布資料の一覧の【非公開】などを拾わない）
+        sec = next((k for k, (_, s) in enumerate(lines) if re.fullmatch(r"\d+\s*[.．]\s*議事", s.strip())), 0)
+        start = min(start, next((k for k, (_, s) in enumerate(lines) if k > sec and HEADING.match(s.strip())), len(lines)))
     head, body = lines[:start], lines[start:]
     units: list[Unit] = []
     ctx: str | None = None      # 続く箇条の発言者（名前 / "ANON" / None）
@@ -182,7 +205,7 @@ def parse(path: str, style: str = "") -> tuple[list[Unit], list[tuple[int, str]]
         return u
 
     for k, (p, raw) in enumerate(body):
-        s = raw.strip()
+        s = re.sub(r"^([○〇])[○〇]+(?=\S)", r"\1", raw.strip())  # 「○○福田PD」＝印の重なり（原文の誤り）は 1 つに
         if m := (VERBATIM_PAREN_LATIN.match(s) or VERBATIM_PAREN.match(s)):
             cur, ctx, written_section = new(m.group(1), "verbatim", p, m.group(2) or ""), None, False
             continue
@@ -206,7 +229,7 @@ def parse(path: str, style: str = "") -> tuple[list[Unit], list[tuple[int, str]]
             if inner.startswith("提出者："):  # 書面の発言要旨＝見出しの下の箇条まで 1 つの発言
                 cur, ctx = new(inner.split("：", 1)[1].strip(), "written", p, m.group(2)), None
             else:
-                ctx, ctx_mode = (inner if _is_named(inner) else None), "named"
+                ctx, ctx_mode = (inner if _is_named(inner, titles) else None), "named"
                 cur = new(inner if ctx else UNKNOWN, "named" if ctx else "anonymous", p, m.group(2)) if m.group(2) else None
             continue
         if NARRATION.match(s):
@@ -223,12 +246,15 @@ def parse(path: str, style: str = "") -> tuple[list[Unit], list[tuple[int, str]]
         if m := BULLET.match(s):
             t = m.group(1)
             nb = NAMED_BULLET.match(t)
-            if nb and _is_named(nb.group(1)):
+            if nb and _is_named(nb.group(1), titles):
                 cur = new(nb.group(1), "named", p, t)
             elif ctx and ctx != "ANON":
                 cur = new(ctx, ctx_mode, p, t)
             else:
                 cur = new(UNKNOWN, "anonymous", p, t)
+            continue
+        if style == "anon_marks" and SECTION.match(s.replace("＜", "<").replace("＞", ">")):
+            cur, ctx = None, None  # 「<議題2 について>」＝節の見出し（前の箇条の続きにしない）
             continue
         if m := NOTE.match(s):
             cur, ctx = new(UNKNOWN, "narration", p, m.group(1)), None

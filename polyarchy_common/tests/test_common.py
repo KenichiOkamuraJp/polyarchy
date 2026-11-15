@@ -2932,6 +2932,183 @@ def test_check_new_empty_index_is_failure():
     assert all(r["new"] == 0 for k, r in rows.items() if k != "nissho"), rows
 
 
+def test_gov_science_sources_offline():
+    """科学技術・イノベーションの決定文書の系統（2026-11-14）の、通信しない部分を固定する。
+    ① 経済産業省の報告のページ（イノベーション小委員会）から本文 PDF だけを拾う。年版で書き方が違う（2026 年版は「…中間
+       とりまとめ（PDF形式：…）」1 本・2025・2024 年版は「…（本文）（PDF形式：…）」と（参考資料）・（概要）が並ぶ）。0 本・2 本以上
+       なら選ばない（None）。題は <title> から（分科会の名前が年で違う）。HTML は 2026-11-14 に見たページのリンクの文字と同じ形。
+    ② 表紙の照合：決定日が 1 頁目に無い・それより後の日付がある（改正版に差し替わった）なら理由を返す（日付の読み取りの部分）。
+    ③ 本文の無かった行（html_only）の題名だけのタグを、本文が取れた行へ持ち越さない（ほかの持ち越しは従来どおり）。
+       追い判定の既定の対象は索引に入る行だけ。INDEXED_STATUS は取込の INGEST_OK_STATUS の写し。
+    ④ 経済産業省はブラウザの名乗りで取り、WAF のチャレンジ（202・x-amzn-waf-action）が出たらそのホストへ送らない（解かない）。
+    ⑤ 新着の確認は、政府の 1 系統の目次が取れなくても、ほかの系統の新着を数えたうえで行を「チェック失敗」にする。"""
+    import csv
+    import re
+    import tempfile
+    import types
+    from pathlib import Path
+    from bs4 import BeautifulSoup
+    from recommendations.ingest import check_new as cn
+    from recommendations.ingest import collect as col
+    base = "https://www.meti.go.jp/shingikai/sankoshin/sangyo_gijutsu/innovation/"
+
+    def page(title, links):
+        body = "".join(f'<li><a href="{h}">{t}</a></li>' for t, h in links)
+        return BeautifulSoup(f"<html><head><title>{title}（METI/経済産業省）</title></head><body><ul>{body}</ul>"
+                             '<a href="index.html">イノベーション小委員会</a></body></html>', "html.parser")
+    new = "産業構造審議会 イノベーション・環境分科会 イノベーション小委員会 中間とりまとめ"
+    old = "産業構造審議会 産業技術環境分科会 イノベーション小委員会 中間とりまとめ"
+    cases = {
+        "2026": (page(new, [("イノベーション小委員会 中間とりまとめ（PDF形式：6,248KB）", "pdf/20260522_1.pdf")]),
+                 (f"{base}pdf/20260522_1.pdf", new)),
+        "2025": (page(new, [("イノベーション小委員会 中間とりまとめ（本文）（PDF形式：2,851KB）", "pdf/20250417_1.pdf"),
+                            ("イノベーション小委員会 中間とりまとめ（参考資料）（PDF形式：7,626KB）", "pdf/20250417_2.pdf")]),
+                 (f"{base}pdf/20250417_1.pdf", new)),
+        "2024": (page(old, [("イノベーション小委員会 中間とりまとめ（概要）（PDF形式：2,729KB）", "pdf/20240621_2.pdf"),
+                            ("イノベーション小委員会 中間とりまとめ（本文）（PDF形式：443KB）", "pdf/20240621_1.pdf")]),
+                 (f"{base}pdf/20240621_1.pdf", old)),
+        "2 本": (page(new, [("イノベーション小委員会 中間とりまとめ（本文）（PDF形式：1KB）", "a.pdf"),
+                           ("イノベーション小委員会 中間とりまとめ（PDF形式：1KB）", "b.pdf")]), (None, new)),
+        "0 本": (page("別のページ", [("中間とりまとめ（概要）（PDF形式：1KB）", "c.pdf")]), (None, None)),
+    }
+    for k, (soup, want) in cases.items():
+        got = col._inno_body_pdf(soup, base + "x_report.html")
+        assert got == want, (k, got)                                                                   # ①
+
+    assert col._cover_dates("決定令和4年12月23日改正2024年8月29日平成26年5月23日") == \
+        ["2022-12-23", "2014-05-23", "2024-08-29"]                                                     # ②
+
+    d = Path(tempfile.mkdtemp())                                                                      # ③
+    keep_cat = col.CATALOG
+    try:
+        col.CATALOG = d / "catalog.csv"
+
+        def row(fn, status, tags=""):
+            r = col.catalog_row(fn, "gov", "t", "2025-04-17", "報告書", "", "u", status, "2026-11-14")
+            r.update(policy_tags=tags, doc_nature="主張・提言" if tags else "")
+            return r
+        col.write_catalog([row("a.pdf", "html_only", "x"), row("b.pdf", "html_only", "x"), row("c.pdf", "ok", "x")])
+        col.write_catalog([row("a.pdf", "ok"), row("b.pdf", "html_only"), row("c.pdf", "ok")])
+        out = {r["file_name"]: r for r in csv.DictReader(col.CATALOG.open(encoding="utf-8"))}
+    finally:
+        col.CATALOG = keep_cat
+    assert (out["a.pdf"]["policy_tags"], out["a.pdf"]["doc_nature"]) == ("", ""), out["a.pdf"]
+    assert out["b.pdf"]["policy_tags"] == "x" and out["c.pdf"]["policy_tags"] == "x", out
+    here = Path(col.__file__).parent
+    tagger = (here / "policy_tagger.py").read_text(encoding="utf-8")
+    assert re.search(r'targets = \[r for r in rows if not r\["policy_tags"\] and not r\["doc_nature"\]\s*'
+                     r'and \(r\.get\("status"\) or "ok"\) in INDEXED_STATUS\]', tagger), "追い判定が本文の無い行も拾う"
+    m = re.search(r"^INGEST_OK_STATUS = \{(.*)\}", (here / "ingest.py").read_text(encoding="utf-8"), re.M)
+    assert m and set(re.findall(r'"(\w+)"', m.group(1))) - {"uncataloged"} == set(col.INDEXED_STATUS), m
+
+    calls = []                                                                                        # ④
+
+    def fake_get(url, timeout, headers):
+        calls.append((url, headers["User-Agent"]))
+        return types.SimpleNamespace(status_code=202, headers={"x-amzn-waf-action": "challenge"}, text="",
+                                     raise_for_status=lambda: None)
+    keep = (col.requests.get, set(col._waf_hosts), dict(col._host_last))
+    try:
+        col.requests.get = fake_get
+        col._host_last["www.meti.go.jp"] = -1e9
+        for _ in range(2):
+            try:
+                col._get(base + "index.html")
+                raise AssertionError("チャレンジで止まらない")
+            except col.WafChallenge:
+                pass
+    finally:
+        col.requests.get = keep[0]
+        col._waf_hosts.clear()
+        col._waf_hosts.update(keep[1])
+        col._host_last.clear()
+        col._host_last.update(keep[2])
+    assert len(calls) == 1 and "Chrome/" in calls[0][1], calls                                       # 2 回目は送らない
+
+    def ok_src():
+        return [{"num": "2099", "title": "取れた系統の新しい文書"}]
+
+    def bad_src():
+        raise col.WafChallenge("WAF のチャレンジ")
+    errors: dict = {}
+    cands = cn._gov_cands({"togo": ok_src, "inno": bad_src}, errors)                                # ⑤
+    assert cands == [(["gov_togo_2099"], "取れた系統の新しい文書")] and list(errors) == ["inno"], (cands, errors)
+
+
+def test_deliberations_batch4_offline():
+    """審議会議事録DB 第 4 便（2026-11-14）の、通信しない部分を固定する。
+    ① 回の番号が無い会議体（session_is_date）は記録の 6 桁（giji_240215.pdf）を 20YYMMDD に読む。ほかの会議体は従来どおり。
+    ② 慎重に取るホスト（SLOW_HOSTS＝経済産業省）は、WAF のチャレンジが出たらその実行の間は送らない・1 回の本数の上限を
+       超えたら送らない。どちらも「通信で見ていない」として積む（黙って手元の古いもので済ませない）。ほかのホストは影響を受けない。
+    ③ curl -D - の出力（リダイレクトで応答のヘッダが続く）から最後の応答のヘッダと本文を分ける。
+    ④ 発言者の区分：大臣の科学技術顧問・大臣官房の官職を政務にしない／会議体だけの肩書（member_titles）は構成員／出席者欄の
+       事務局の節（attendee_sections）にある官職は事務局。設定の無い会議体では「…議員」を構成員にしない。"""
+    import re
+    from deliberations.ingest import collect as dc
+    from deliberations.ingest.attribution import FUSHO, JIMU, KOSEI, SEIMU, UNKNOWN, speaker_role
+    from deliberations.ingest.sources import BY_ORG
+
+    y = BY_ORG["csti_yusiki"]
+    m = re.search(y.record_href, "https://www8.cao.go.jp/cstp/gaiyo/yusikisha/giji_240215.pdf")
+    assert m and dc._group_no(y, m) == 20240215, m                                                    # ①
+    m = re.search(y.record_href, "https://www8.cao.go.jp/cstp/gaiyo/yusikisha/20250417/giji_250417.pdf")
+    assert m and dc._group_no(y, m) == 20250417, m
+    assert not re.search(y.record_href, "https://www8.cao.go.jp/cstp/gaiyo/yusikisha/20250116_seisaku/giji_250116_seisaku.pdf")
+    c = BY_ORG["csti"]
+    m = re.search(c.session_href, "https://www8.cao.go.jp/cstp/siryo/haihui085/haihu-085.html")
+    m2 = re.search(c.session_href, "https://www8.cao.go.jp/cstp/siryo/haihu-086/haihu-086.html")
+    assert m and m2 and dc._group_no(c, m) == 85 and dc._group_no(c, m2) == 86
+    assert re.search(c.skip_material, "参考資料7第71回総合科学技術・イノベーション会議議事録 (案)（PDF形式：823KB）")
+
+    sent = []                                                                                         # ②
+
+    def fake_fetch(url):
+        sent.append(url)
+        if "meti" in url:
+            raise dc.WafChallenge("WAF のチャレンジ（HTTP 202）")
+        return b"ok"
+    keep = (dc.fetch, dc._local, dict(dc._sent), dict(dc._blocked), dc.RAW_DIR)
+    import tempfile
+    from pathlib import Path
+    try:
+        dc.fetch, dc._local, dc.RAW_DIR = fake_fetch, (lambda path: None), Path(tempfile.mkdtemp())
+        dc._sent.clear()
+        dc._blocked.clear()
+        unseen: list = []
+        meti = "https://www.meti.go.jp/shingikai/x/"
+        assert dc._get(meti + "a.pdf", "x/a.pdf", False, unseen=unseen) == (None, False)
+        assert dc._get(meti + "b.pdf", "x/b.pdf", False, unseen=unseen) == (None, False)
+        assert dc._get("https://www8.cao.go.jp/c.pdf", "y/c.pdf", False, unseen=unseen) == (b"ok", True)
+        assert [u.split("/")[-1] for u in sent] == ["a.pdf", "c.pdf"], sent                       # チャレンジの後は送らない
+        assert [(x["path"], x["reason"]) for x in unseen] == [("x/a.pdf", "チャレンジ"), ("x/b.pdf", "チャレンジの後")], unseen
+        dc._blocked.clear()
+        dc._sent["www.meti.go.jp"] = dc.SLOW_HOSTS["www.meti.go.jp"]["budget"]
+        unseen = []
+        assert dc._get(meti + "d.pdf", "x/d.pdf", False, unseen=unseen) == (None, False)
+        assert len(sent) == 2 and unseen[0]["reason"].startswith("1 回の実行の上限"), (sent, unseen)
+    finally:
+        dc.fetch, dc._local = keep[0], keep[1]
+        dc._sent.clear()
+        dc._sent.update(keep[2])
+        dc._blocked.clear()
+        dc._blocked.update(keep[3])
+        dc.RAW_DIR = keep[4]
+
+    out = b"HTTP/1.1 301 Moved\r\nLocation: x\r\n\r\nHTTP/2 202\r\nx-amzn-waf-action: challenge\r\n\r\n<html>"   # ③
+    head, body = dc._split_headers(out)
+    assert head.startswith(b"HTTP/2 202") and b"x-amzn-waf-action" in head and body == b"<html>", (head, body)
+
+    head = "(事務局)井上事務局長、嶋崎参事官、沖外務大臣科技顧問(その他)宮園議員"                    # ④
+    assert speaker_role("沖外務大臣科技顧問", y, head) == UNKNOWN
+    assert speaker_role("嶋崎参事官", y, head) == JIMU
+    assert speaker_role("宮園議員", y, head) == KOSEI
+    assert speaker_role("城内科学技術政策担当大臣", y, head) == SEIMU
+    assert speaker_role("中澤SPD", y, head) == UNKNOWN
+    old = BY_ORG["ai_senryaku"]
+    assert speaker_role("奥野大臣官房審議官", old) == FUSHO
+    assert speaker_role("宮園議員", old) == UNKNOWN and speaker_role("嶋崎参事官", old, head) == FUSHO
+
+
 def test_collect_keeps_existing_rows():
     """収集の再走査（--skip-existing）は、今回取得していない行のカタログの記述を書き換えない（2026-10-30・運用側の定型更新から）。
     ① 経団連の年別目次が取得済みの 055・056 の日付を 10-05 → 10-13（掲載の更新日と思われる）で出し、collect が既存の行の

@@ -5,6 +5,7 @@ MCP サーバのスモーク：ツールが 2 本・読み取り専用の注記�
 """
 import asyncio
 import os
+import re
 import sys
 
 os.environ.setdefault("DELIB_QUERY_LOG", "off")  # スモークの問を捕捉ログに混ぜない
@@ -27,11 +28,21 @@ def main() -> int:
             bad.append(f"{t.name} に title／注釈の title（annotations.title）／注釈の 3 つの明示（readOnlyHint=True・destructiveHint=False・openWorldHint=False）が無い")
         if "layer" in (t.input_schema.get("properties") or {}):
             bad.append(f"{t.name} に layer 引数がある（公開固定に反する）")
-    # 説明文の会議体の一覧（手書き）が収録の会議体（ingest.sources.BY_ORG）と揃っている＝会議体を足して説明文を直し忘れない（2026-10-09）
+    # 会議体は説明文に列挙しない（2026-11-14〜・足すたびに ChatGPT のコネクタを作り直していた）＝説明文にコードが無く、
+    # 返り値（該当なしの coverage_note・収録に無いコードを渡したときの vocabulary）に収録の全コードがあること。
+    from deliberations.core.search import coverage, coverage_note
     from deliberations.ingest.sources import BY_ORG
-    missing = sorted(code for code in BY_ORG if f"{code}=" not in srv.SEARCH_DESC)
-    if missing:
-        bad.append(f"検索の説明文の会議体（orgs）に無いコード {missing}（説明文を直すとコネクタの作り直しが要る）")
+    defs = srv.INSTRUCTIONS + srv.SEARCH_DESC + srv.LIST_DESC
+    listed = sorted(code for code in BY_ORG if re.search(rf"(?<![a-z_]){code}(?![a-z_])", defs))
+    if listed:
+        bad.append(f"説明文に会議体のコード {listed}（会議体を足すたびにコネクタの作り直しが要る形に戻る）")
+    note, held = coverage_note(), list(coverage())
+    vocab = srv.search_deliberations("x", orgs=["no_such_org"]).get("vocabulary", {}).get("orgs", [])
+    missing = sorted(code for code in held if code not in vocab or f"（{code}・" not in note)
+    if missing or set(vocab) - set(held):
+        bad.append(f"収録のある会議体と coverage_note・vocabulary が食い違う（無い {missing}・余分 {sorted(set(vocab) - set(held))}）")
+    if empty := sorted(set(BY_ORG) - set(held)):
+        print(f"[mcp_smoke] 取得元を定義したが収録の無い会議体（返り値に出さない）: {empty}")
     r = srv.search_deliberations("デジタル行財政改革会議の改組と事務局機能の移管", top_k=5)
     if not r["results"]:
         bad.append("検索が空")

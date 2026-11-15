@@ -28,6 +28,8 @@ BODY_RE = re.compile(r"(省|庁|府|事務局|推進室|委員会|会議|研究�
 EXTERNAL_RE = re.compile(r"株式会社|有限会社|代表取締役|取締役|社長|理事長|会長|協会|連合会|会議所|財団|社団|大学|機構|法人")
 # ヒアリングの会議（Source.hearing）だけで外部と読む語（府省・委員・事務局の型に当たらない関係者）
 HEARING_EXTERNAL_RE = re.compile(r"研究所|教授|弁護士|組合|連盟|(県|市|町|村)$")
+# 大臣の科学技術顧問（CSTI の有識者議員懇談会の「沖外務大臣科技顧問」）＝SEIMU_RE の「大臣」に当てない
+ADVISER_RE = re.compile(r"(科技|科学技術)顧問$")
 DATE_RE = re.compile(r"(\d{4}|令和\s*(\d+|元)|[○〇]+)\s*年\s*[\d○〇]+\s*月(\s*[\d○〇]+\s*日)?")
 
 
@@ -39,6 +41,17 @@ def _is_secretariat(name: str, src: Source) -> bool:
     """その会議の事務局か：記録で確かめた事務局の名を含む、または会議名を含んで「事務局」で終わる。"""
     n = _ns(name)
     return any(_ns(x) in n for x in src.secretariat) or (_ns(src.name) in n and n.endswith("事務局"))
+
+
+def _listed_as_secretariat(surname: str, head_text: str) -> bool:
+    """出席者欄の事務局の節（「(事務局)」「〈事務局〉」「【事務局】」から次の括弧の見出しまで）に、その姓が書かれているか
+    （Source.attendee_sections の会議体＝CSTI の有識者議員懇談会・ムーンショットの戦略推進会議）。"""
+    if not surname:
+        return False
+    h = _ns(head_text)
+    # 節の終わり＝次の括弧の見出し（「(文部科学省)」「(説明者)」「〈PD〉」）。名前の後ろの「(Web)」「(代理)」は節の見出しではない
+    segs = re.findall(r"[(〈【]事務局[)〉】](.*?)(?=[(〈【](?!Web|WEB|web|オンライン|代理)[^)〉】]{1,12}[)〉】]|$)", h)
+    return any(surname in seg for seg in segs)
 
 
 def _in_secretariat_section(surname: str, head_text: str) -> bool:
@@ -64,8 +77,14 @@ def speaker_role(speaker: str, src: Source, head_text: str = "") -> str:
         return FUSHO if re.search(r"(省|庁)", org) else UNKNOWN
     if src.hearing and (m := re.fullmatch(r"(.+?)\(([^()]{2,})\)", s)):
         return _hearing_paren_role(m.group(1), m.group(2), src, head_text)  # 括弧の中の官職の「大臣官房」で政務にしない
-    if "国家公安委員会委員長" in s or SEIMU_RE.search(s):
+    if ADVISER_RE.search(s):
+        return UNKNOWN  # 「沖外務大臣科技顧問」＝大臣の科学技術顧問（政務ではない・所属は記録に無い＝推定しない）
+    if "大臣官房" in s and OFFICIAL_RE.search(s):
+        pass  # 「奥野大臣官房審議官」＝官職（「大臣」で政務にしない）＝下の官職の判定へ
+    elif "国家公安委員会委員長" in s or SEIMU_RE.search(s):
         return SEIMU
+    if src.member_titles and any(s.endswith(t) and len(s) > len(t) for t in src.member_titles):
+        return KOSEI  # 「○宮園議員」＝CSTI の有識者議員・「○染谷委員長」＝審議会の委員長（その会議体の構成員）
     if re.search(r"(会議|本部|審議会)議長(代理)?$", s):  # 「…会議議長」＝別の会議体の代表
         return FUSHO
     if re.search(r"議長(代理)?$", s):
@@ -82,6 +101,8 @@ def speaker_role(speaker: str, src: Source, head_text: str = "") -> str:
             return JIMU
         if src.hearing and _in_secretariat_section(OFFICIAL_RE.sub("", s), head_text):
             return JIMU  # 「大平参事官」＝出席者欄の（事務局）の節に書かれた名前
+        if src.attendee_sections and _listed_as_secretariat(OFFICIAL_RE.sub("", s), head_text):
+            return JIMU  # 「嶋崎参事官」＝出席者欄の事務局の節に書かれた名前
         # 「濱野事務局長」のように所属が無いときは、出席者欄で同じ姓の肩書を読む
         sur = OFFICIAL_RE.sub("", s)
         m = re.search(re.escape(sur) + r".{0,6}?([^\s]{0,40}?" + OFFICIAL_RE.pattern.rstrip("$") + ")", _ns(head_text)) if sur else None
@@ -136,6 +157,7 @@ def by_name(name: str, src: Source | None = None) -> Presenter | None:
         n = re.sub(r"御提出資料", "提出資料", re.sub(r"^当日(投影|配布)資料", "", n))
         n = re.sub(r"提出資料提出資料", "提出資料", n)
         n = re.sub(r"（分割版\d+）$", "", n)
+    n = re.sub(r"(委員|構成員)(ご|御)提出資料$", r"\1提出資料", n)  # 「染谷委員ご提出資料」（経済産業省）
     rules = [
         (r"^(.+?)様提出資料", GAIBU, "「…様提出資料」＝敬称つき＝会議に招いた外部の提出者（日本成長戦略会議）"),
         (r"^(.+?有識者議員)提出資料", KOSEI, "「…有識者議員提出資料」＝合同開催の相手の会議の民間議員"),
@@ -148,7 +170,8 @@ def by_name(name: str, src: Source | None = None) -> Presenter | None:
         (r"^(.+?(省|庁))提出資料", FUSHO, "「…省・庁提出資料」"),
         (r"^(.+?(会議|本部|審議会))提出資料" if hearing else r"^(.+?(会議|本部|研究会|審議会))提出資料", FUSHO,
          "「…会議提出資料」＝別の政府の会議体"),
-        (r"^(.*?(株式会社|法人|協会|連合会|会議所|大学|財団|機構).*?)提出資料", GAIBU, "「法人・団体名＋提出資料」"),
+        (r"^(.*?(株式会社|合同会社|法人|協会|連合会|会議所|大学|財団|機構|Corporation|Inc\.?|Ltd\.?|LLC).*?)提出資料", GAIBU,
+         "「法人・団体名＋提出資料」"),
     ]
     for pat, typ, rule in rules:
         if m := re.match(pat, n):
@@ -169,8 +192,10 @@ def _classify_line(line: str, src: Source) -> tuple[str, str] | None:
         return None  # 名簿・組織図の役割の行（提出者の行ではない）
     if re.match(r"^[◎○〇●◆■□]", s):
         return None  # 組織図の箇条（「◎文科大臣」＝体制の図の担当大臣・提出者の行ではない）
-    if "大臣" in s and len(s) <= 30 and not re.search(r"[、。()「」]", s):
-        return SEIMU, line.strip()
+    if s.endswith("殿"):
+        return None  # 宛先（「文部科学大臣 阿部 俊子 殿」＝答申・申請書の宛先・提出者ではない）
+    if "大臣" in s and len(s) <= 30 and not re.search(r"[、。()「」]", s) and not re.search(r"による|の判断|の決定|評価", s):
+        return SEIMU, line.strip()  # 「文部科学大臣による認定の判断」「主務大臣評価の決定」＝文の一部は除く
     if "事務局" in s and len(s) <= 40:
         return (JIMU if _is_secretariat(s, src) else FUSHO), line.strip()
     if re.search(r"(省|庁)$", s) and len(s) <= 20:
@@ -182,7 +207,8 @@ def _classify_line(line: str, src: Source) -> tuple[str, str] | None:
 
 def _is_meeting_line(line: str, src: Source) -> bool:
     s = _ns(line)
-    return bool(re.fullmatch(r"(第\S{1,4}回)?" + re.escape(_ns(src.name)), s))
+    names = [_ns(src.name)] + [_ns(a) for a in src.meeting_aliases]  # 表紙の会議の略称（「CSTI本会議」）も会議の名＝提出者ではない
+    return any(re.fullmatch(r"(第\S{1,4}回)?" + re.escape(n) + r"(資料)?", s) for n in names)
 
 
 def by_cover(path: str, src: Source) -> Presenter | None:
@@ -201,6 +227,9 @@ def by_cover(path: str, src: Source) -> Presenter | None:
         if c := _classify_line(ln, src):
             typ, pres = c
             nxt = cands[i + 1].strip() if i + 1 < len(cands) else ""
+            after = lines[lines.index(ln) + 1] if ln in lines and lines.index(ln) + 1 < len(lines) else ""
+            if typ == SEIMU and (_ns(nxt).endswith("殿") or _ns(after).endswith("殿")):
+                continue  # 「文部科学大臣」の次の行（候補の並び・ページの上で）が「阿部 俊子 殿」＝2 行に分かれた宛先
             if typ == SEIMU and pres.endswith("大臣") and re.fullmatch(r"[^\s\d資料]{2,6}", _ns(nxt)):
                 pres = f"{pres} {nxt}"  # 「…担当大臣」の次の行の氏名
             elif typ in (JIMU, FUSHO) and re.fullmatch(r"\S{1,15}(室|課|部|グループ)", _ns(nxt)):
@@ -209,6 +238,41 @@ def by_cover(path: str, src: Source) -> Presenter | None:
             if typ == JIMU:
                 rule += "。その会議の事務局（出席者欄の【事務局】と同じ組織）"
             return Presenter(typ, pres, "表紙", rule, evidence=" / ".join(cands[i:i + 2]) if pres != ln.strip() else ln.strip())
+    return None
+
+
+PD_RE = re.compile(r"プログラムディレクター|^(サブ)?PD(?=[^\s等の]{2,8}$)|\((サブ)?PD\)|\(SPD\)")
+INSTITUTION_RE = re.compile(r"(大学|機構|法人|研究所|センター)(\([A-Za-z]{2,8}\))?$")
+
+
+def by_cover_people(path: str, src: Source) -> Presenter | None:
+    """表紙（1 ページ目の上の方）の、人・研究機関の提出者の行（Source.cover_people の会議体だけ）。
+    ① 「プログラムディレクター(PD)國吉康夫」＝PD（研究者）＝提出者は書かれたとおり・区分は推定しない（不明）。名前が次の行なら足す。
+    ② 氏名だけの行の次が「(…大学／研究所…」の所属の行＝人＝区分は推定しない（不明）。
+    ③ 研究機関の名前だけの行（「JST研究開発戦略センター(CRDS)」）＝外部（発言者の EXTERNAL_RE と同じ扱い）。
+    「【研究推進法人】…」のような括弧の見出しつきの行・一般の語（「研究推進法人」）は提出者の行にしない。"""
+    import unicodedata
+    lines = [ln.strip() for ln in page_lines(path, 1)[:16] if ln.strip()]
+    for i, ln in enumerate(lines):
+        s = _ns(unicodedata.normalize("NFKC", ln))
+        nxt = _ns(unicodedata.normalize("NFKC", lines[i + 1])) if i + 1 < len(lines) else ""
+        if len(s) > 40 or re.search(r"[、。「」]", s) or re.match(r"^[【●•・◆■□◎○〇※]", s):
+            continue
+        if PD_RE.search(s):
+            # 名前が同じ行に無ければ、続く短い行（「福田」「敏男」のように姓と名が割れることがある）を 2 行まで足す
+            parts = [ln.rstrip(":：")]
+            if re.search(r"(ディレクター|\(S?PD\)|PD)[:：]?$", s):
+                parts += [x for x in lines[i + 1:i + 3] if re.fullmatch(r"[^\s\d()（）:：]{1,5}", _ns(x))][:2]
+            who = " ".join(parts)
+            return Presenter(UNKNOWN, who, "表紙", "表紙のプログラムディレクターの行（PD は研究者＝区分は推定しない）", evidence=who)
+        if ":" in s or "：" in s:
+            continue
+        if re.fullmatch(r"[^\s\d()]{2,6}", s) and nxt.startswith("(") and re.search(r"大学|機構|研究所|法人|センター", nxt):
+            who = f"{ln} {lines[i + 1]}"
+            return Presenter(UNKNOWN, who, "表紙", "表紙の氏名と所属の行（人＝区分は推定しない）", evidence=who)
+        if INSTITUTION_RE.search(s) and not re.fullmatch(r"(研究推進|対象|当該)?(法人|機構|大学)", s) \
+                and not re.search(r"会議|について|に向けた|プログラム", s):
+            return Presenter(GAIBU, ln, "表紙", "表紙の研究機関の名前の行（発言者の EXTERNAL_RE と同じ扱い）", evidence=ln)
     return None
 
 
@@ -256,7 +320,8 @@ def material_presenter(row: dict, src: Source) -> Presenter:
         res = Presenter(KOSEI, b.presenter if b else UNKNOWN, "資料名" if not b else "本文",
                         p.rule + ("／" + b.rule if b else ""), page_presenters=b.page_presenters if b else {})
     else:
-        res = by_cover(row["path"], src) or by_body(row["path"], src) or \
+        res = by_cover(row["path"], src) or (by_cover_people(row["path"], src) if src.cover_people else None) or \
+            by_body(row["path"], src) or \
             Presenter(JIMU, JIMU, "既定", "提出者の記載なし（資料名・表紙・本文）＝会議資料の慣行により事務局")
     res.origin_body, res.origin_basis = origin_of(row["path"])
     return res

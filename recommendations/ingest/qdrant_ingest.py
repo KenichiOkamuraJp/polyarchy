@@ -57,6 +57,24 @@ ISSUER_OF_GOV_PREFIX = {
     "dsgl": "デジタル社会推進会議幹事会",  # DS-920＝表紙に「デジタル社会推進会議幹事会決定」
     "seicho": "日本成長戦略本部",
     "aigl": "総務省・経済産業省",  # AI事業者ガイドライン＝両省の策定（閣議決定ではない）  # 日本成長戦略＝本部が案を作り閣議決定・官民投資ロードマップ＝本部決定
+    # 科学技術・イノベーションの決定文書（2026-11-14）。表紙の決定主体
+    "kihon": "総合科学技術・イノベーション会議",  # 基本計画＝CSTI が答申し閣議決定
+    "togo": "統合イノベーション戦略推進会議",  # 推進会議が案を作り閣議決定
+    "kprog": "経済安全保障推進会議・統合イノベーション戦略推進会議",  # 研究開発ビジョン＝合同会議決定
+    "gsc": "内閣官房・内閣府",  # 構想推進室長・科学技術・イノベーション推進事務局長の決定
+    "sip": "総合科学技術・イノベーション会議 ガバニングボード",
+    "bridge": "総合科学技術・イノベーション会議 ガバニングボード",
+    "moonshot": "総合科学技術・イノベーション会議",
+    "aifors": "文部科学省",
+    "inno": "産業構造審議会 イノベーション小委員会",
+}
+# 同じ系統で表紙の決定主体が違う文書（ファイル名の stem で引く＝系統の値より先）。
+ISSUER_OF_GOV_FILE = {
+    "gov_kprog_unyo_20220916": "内閣官房・内閣府",  # 運用・評価指針
+    "gov_gsc_kihonhoushin_20240829": "統合イノベーション戦略推進会議",
+    "gov_gsc_senkou_20250610": "内閣官房",  # 構想推進室長決定（内閣府の局長は無い）
+    "gov_sip_suishinhi_20221223": "総合科学技術・イノベーション会議",  # 推進費の基本方針＝本会議
+    "gov_moonshot_g7_20200714": "健康・医療戦略推進本部",
 }
 
 CLIENT_TIMEOUT = 300
@@ -68,6 +86,9 @@ def issuer_of(payload: dict) -> str:
     if org in ISSUER_OF_ORG:
         return ISSUER_OF_ORG[org]
     if org == "gov":
+        stem = (payload.get("file_name") or "").rsplit(".", 1)[0]
+        if stem in ISSUER_OF_GOV_FILE:
+            return ISSUER_OF_GOV_FILE[stem]
         parts = (payload.get("file_name") or "").split("_")
         return ISSUER_OF_GOV_PREFIX.get(parts[1] if len(parts) > 1 else "", "")
     return ""

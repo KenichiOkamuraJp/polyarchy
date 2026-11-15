@@ -47,6 +47,18 @@ def _known(ids: set[str], bases: list[str]) -> bool:
 ORGS = ("keidanren", "rengo", "nissho", "doyukai", "gov")
 
 
+def _gov_cands(sources: dict, errors: dict[str, str]) -> list[tuple[list[str], str]]:
+    """政府の系統を 1 つずつ。1 系統の失敗（経済産業省の WAF のチャレンジ・ページの改装）でほかの系統の新着を隠さない
+    （2026-11-14）。失敗した系統は errors に積む＝呼び出し側が行を「チェック失敗」にする。"""
+    cands = []
+    for src, fn in sources.items():
+        try:
+            cands += [([f"gov_{src}_{e['num']}"], e["title"]) for e in fn()]
+        except Exception as e:  # noqa: BLE001
+            errors[src] = str(e)[:80]
+    return cands
+
+
 def check() -> dict:
     ids = catalog_ids()
     result = {"checked_at": datetime.now().isoformat(timespec="seconds"), "orgs": {}}
@@ -71,9 +83,9 @@ def check() -> dict:
                           for e in rengo_teigen_index()],
         "nissho": lambda: [([f"nissho_{e['year']}_{e['stem']}"], e["title"]) for e in nissho_index()],
         "doyukai": lambda: [([f"doyukai_{e['year']}_{e['stem']}"], e["title"]) for e in doyukai_index()],
-        "gov": lambda: [([f"gov_{src}_{e['num']}"], e["title"])
-                        for src, fn in GOV_SOURCES.items() for e in fn()],
+        "gov": lambda: _gov_cands(GOV_SOURCES, gov_errors),
     }
+    gov_errors: dict[str, str] = {}
     for org, plan in plans.items():
         row = {"total_index": 0, "new": 0, "new_samples": [], "error": None}
         try:
@@ -88,6 +100,9 @@ def check() -> dict:
                     row["new"] += 1
                     if len(row["new_samples"]) < 3:
                         row["new_samples"].append(title[:60])
+            if org == "gov" and gov_errors:  # 取れた系統の新着は数えたうえで、行は「チェック失敗」にする
+                row["source_errors"] = gov_errors
+                raise RuntimeError("目次が取れない系統: " + "・".join(gov_errors))
         except Exception as e:  # noqa: BLE001
             row["error"] = str(e)[:200]
             log.warning("新着チェック失敗（%s）: %s", org, e)
